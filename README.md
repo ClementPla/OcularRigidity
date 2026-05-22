@@ -42,17 +42,25 @@ Dependencies include PyTorch, PyTorch Lightning, numpy, scipy, zstandard, and py
 
 ## Usage
 
-I strongly recommend to read the [example notebooks](notebook/example.ipynb).
+I strongly recommend to read the [example notebook](notebook/example.ipynb).
 
 ### Running segmentation on a single recording
 
 ```python
-from ocularrigidity.segmentation import ChoroidSegmentationModule, infer
-from ocularrigidity.io import load_cube
 
-model = ChoroidSegmentationModule.load_from_checkpoint("path/to/checkpoint.ckpt")
-data = load_cube("path/to/recording/")
-mask = infer(model, data, scale_factor=0.5, batch_size=128, device="cuda")
+
+from ocularrigidity.data.io import save_mask
+from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
+from ocularrigidity.segmentation.inference import infer
+
+model = (
+    get_choroid_segmentation_model()
+)  # Model is automatically downloaded on first call.
+
+# See the docstring of the infer function for more details on the parameters. The most important ones are scale_factor, which controls the resizing of the input, which controls the pixel size, and batch_size, which controls the speed of inference (the larger, the faster, but also the more VRAM you need).
+# The model was trained with a pixel size, axial of 1.95um and lateral of 5.95um (at a resolution of 1536x1024). Match to your data.
+mask = infer(model, data, scale_factor=0.5, batch_size=16, device="cuda:0")
+save_mask(mask, OUTPUT_MASK_PATH)  # Use packed + zstd compressed, so very light
 ```
 
 ### Batch processing
@@ -60,6 +68,10 @@ mask = infer(model, data, scale_factor=0.5, batch_size=128, device="cuda")
 A script is provided to run inference over a dataset and mirror the input folder structure in an output directory. Errors on individual recordings are logged without interrupting the batch.
 
 ### Visualization
+
+> [!WARNING]
+> DEPRECATED
+
 
 A standalone viewer application lets you browse processed recordings and inspect segmentations over time:
 
@@ -69,16 +81,6 @@ python -m ocularrigidity.viewer
 
 The viewer supports play/pause, frame stepping, speed control, and overlay toggling.
 
----
-
-## Project structure
-
-ocularrigidity/
-├── segmentation/      # model, training, inference, post-processing
-├── data/                # data loaders and mask (de)serialization
-├── viewer/            # pygame UI for mask inspection. Soon to be deprecated
-├── rigidity/          # pressure-area analysis and fitting
-└── scripts/           # batch processing utilities
 
 
 ---
