@@ -42,6 +42,8 @@ Dependencies include PyTorch, PyTorch Lightning, numpy, scipy, zstandard, and py
 
 ## Usage
 
+I strongly recommend to read the [example notebooks](notebook/example.ipynb).
+
 ### Running segmentation on a single recording
 
 ```python
