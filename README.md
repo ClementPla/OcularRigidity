@@ -48,7 +48,12 @@ I strongly recommend to read the [example notebook](notebook/example.ipynb).
 
 ```python
 
-
+from ocularrigidity.data.compression import mp4_to_cube, read_gray
+from ocularrigidity.data.io import load_cube
+# We provide diffferents readers for the data.
+# load_cube : read a folder containing a cube.bin file
+# mp4_to_cube : read a .mp4 video
+# read_gray : read .mkv video (this name sucks)
 from ocularrigidity.data.io import save_mask
 from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
 from ocularrigidity.segmentation.inference import infer

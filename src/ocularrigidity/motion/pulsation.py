@@ -8,6 +8,10 @@ The CardiacCycleExtractor class encapsulates the entire pipeline for extracting 
 - Scoring components with a Lomb-Scargle periodogram to find the most cardiac-like one
 - Optionally standardizing the sign of the selected component for interpretability
 The results are cached as properties, so each step is computed lazily and only once. The final cardiac component can be accessed via the separable_components and ica_mixing properties, and the selected cardiac frequency is available in lomb_scargle_results.
+
+TODO: Split into multiple classes/functions? The CardiacCycleExtractor is quite monolithic, and it might be cleaner to split it into multiple classes or functions that handle different parts of the pipeline. For example, we could have a separate class for the Lomb-Scargle scoring, or for the ICA/PCA decomposition. This would make the code more modular and easier to test.
+
+
 """
 
 from pathlib import Path
