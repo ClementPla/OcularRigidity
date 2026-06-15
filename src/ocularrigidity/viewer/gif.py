@@ -120,6 +120,7 @@ def render_mask_quiver(
     annotate_scale: bool = True,
     smooth_window: int = 4,
     cyclic: bool = True,
+    only_y: bool = False,
 ) -> None:
     if frames.ndim != 3:
         raise ValueError(f"`frames` must have shape (T, H, W); got {frames.shape}.")
@@ -210,8 +211,14 @@ def render_mask_quiver(
         valid = np.isfinite(mags) & (mags >= min_magnitude)
 
         for (x0, y0), (dx, dy), mag in zip(p0_xy[valid], disp[valid], mags[valid]):
+            if only_y:
+                # Recompute magnitude and direction using only the y component, for better visualization of small vertical displacements.
+                mag = abs(dy)
+                dx = 0.0
+                
             ex = x0 + dx * arrow_scale
             ey = y0 + dy * arrow_scale
+            
             norm = 0.0 if vmax == vmin else (mag - vmin) / (vmax - vmin)
             arrow_color_rgb = tuple(int(c * 255) for c in cmap(norm)[:3])
             cv2.arrowedLine(

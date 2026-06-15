@@ -106,7 +106,12 @@ class RegisteredVideo:
     @property
     def raw_masks(self):
         if self._raw_masks is None:
-            raw_mask_path = self.root_masks / self.video / "mask.npz"
+            # If self.video points to a file, take its parent directory as the video name for mask loading
+            if (self.root_data / self.video).is_file():
+                video_id = self.video.parent
+            else:
+                video_id = self.video
+            raw_mask_path = self.root_masks / video_id / "mask.npz"
             if not raw_mask_path.exists():
                 raise FileNotFoundError(f"Raw mask not found at {raw_mask_path}")
             masks = load_mask(raw_mask_path)
