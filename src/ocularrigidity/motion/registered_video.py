@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from ocularrigidity.data.compression import mp4_to_cube
+from ocularrigidity.data.compression import mp4_to_cube, read_gray
 from ocularrigidity.data.io import load_cube, load_mask
 from ocularrigidity.registration.apply import (
     apply_registration_lines_torch,
@@ -94,10 +94,18 @@ class RegisteredVideo:
     def raw_frames(self):
         if self._raw_frames is None:
             if self.use_encoded_video:
-                root_file = self.root_data / self.video / "cube.mp4"
-                if not root_file.exists():
-                    raise FileNotFoundError(f"Encoded video not found at {root_file}")
-                frames = mp4_to_cube(self.root_data / self.video / "cube.mp4")
+                if (self.root_data / self.video).is_file():
+                    try:
+                        frames = mp4_to_cube(self.root_data / self.video)
+                    except Exception as e:
+                        frames = read_gray(self.root_data / self.video)
+                else:
+                    root_file = self.root_data / self.video / "cube.mp4"
+                    if not root_file.exists():
+                        raise FileNotFoundError(
+                            f"Encoded video not found at {root_file}"
+                        )
+                    frames = mp4_to_cube(self.root_data / self.video / "cube.mp4")
             else:
                 frames = load_cube(self.root_data / self.video)
             self._raw_frames = frames[self._frame_slice]
@@ -106,7 +114,7 @@ class RegisteredVideo:
     @property
     def raw_masks(self):
         if self._raw_masks is None:
-            # If self.video points to a file, take its parent directory as the video name for mask loading
+            # If self.video points to a file, take its parent directory as the video id for mask loading
             if (self.root_data / self.video).is_file():
                 video_id = self.video.parent
             else:
