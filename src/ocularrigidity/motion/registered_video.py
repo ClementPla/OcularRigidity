@@ -7,28 +7,13 @@ import torch
 
 from ocularrigidity.data.compression import mp4_to_cube, read_gray
 from ocularrigidity.data.io import load_cube, load_mask
-from ocularrigidity.registration.apply import (
-    apply_registration_lines_torch,
-    apply_registration_torch,
-)
-from ocularrigidity.registration.estimate_curve import (
-    estimate_dx_from_images,
-    register_curves_torch,
-)
+
+
+from ocularrigidity.registration.rigid import register_masks_by_displacement
 from ocularrigidity.rigidity.features import (
     compute_deltaY_boundaries,
 )
 from ocularrigidity.segmentation.postprocess.smoothing import extract_boundaries_gpu
-from enum import Enum, StrEnum
-
-
-class RegistrationTransform(StrEnum):
-    """Type of transformation to apply during registration."""
-
-    EUCLIDEAN = "euclidean"
-    SIMILARITY = "similarity"
-    TILT = "tilt"
-    AFFINE = "affine"
 
 
 class RegisteredVideo:
@@ -39,15 +24,12 @@ class RegisteredVideo:
         root_data: Path,
         skip_first_n_frames: int = 3,
         drop_last_n_frames: int = 0,
-        refine_iters: int = 2,
-        min_pts: int = 10,
-        transform: str = "tilt",
-        flatten: bool = True,
-        horizontal_scaling: bool = False,
+        flatten: bool = False,
         horizontal_alignment: bool = True,
         verbose: bool = True,
         use_encoded_video: bool = True,
         device: str = "cuda",
+        batch_size: int = 256,
     ):
         self.video = video
         self.root_masks = root_masks
@@ -55,11 +37,7 @@ class RegisteredVideo:
 
         self.skip_first_n_frames = skip_first_n_frames
         self.drop_last_n_frames = drop_last_n_frames
-        self.refine_iters = refine_iters
-        self.min_pts = min_pts
-        self.transform = RegistrationTransform(transform)
         self.flatten = flatten
-        self.horizontal_scaling = horizontal_scaling
         self.horizontal_alignment = horizontal_alignment
         self.verbose = verbose
         self.use_encoded_video = use_encoded_video
@@ -75,6 +53,7 @@ class RegisteredVideo:
         self._csi = None
         self._registered_lines = None
         self._device = device
+        self._batch_size = batch_size
 
     def save_cache(self, path):
         np.savez(
@@ -126,58 +105,16 @@ class RegisteredVideo:
             self._raw_masks = masks[self._frame_slice]
         return self._raw_masks
 
-    # ------------------------------------------------------------------
-    # Registration
-    # ------------------------------------------------------------------
-    @property
-    def registration_params(self):
-        if self._registration_params is None:
-            self._registration_params = register_curves_torch(
-                self.boundary_masks,
-                ref_idx=0,
-                refine_iters=self.refine_iters,
-                min_pts=self.min_pts,
-                device=self._device,
-                transform=self.transform,
-                horizontal_alignment=False,
-                horizontal_scaling=self.horizontal_scaling,
-            )
-        if self.horizontal_alignment:
-            dx = estimate_dx_from_images(self.raw_frames, 0, 100)
-            self._registration_params[:, 0] = dx
-        return self._registration_params
-
     @property
     def registered_masks(self):
         if self._registered_masks is None:
-            self._registered_masks = (
-                apply_registration_torch(
-                    self.raw_masks,
-                    self.registration_params,
-                    mode="nearest",
-                    flatten_bms=self.boundary_masks if self.flatten else None,
-                    ref_idx_for_flatten=0 if self.flatten else None,
-                    batch_size=256,
-                    device=self._device,
-                    verbose=self.verbose,
-                ).numpy()
-                > 0
-            )
+            self.compute_registration()
         return self._registered_masks
 
     @property
     def registered_frames(self):
         if self._registered_frames is None:
-            self._registered_frames = apply_registration_torch(
-                self.raw_frames,
-                self.registration_params,
-                mode="bilinear",
-                flatten_bms=self.boundary_masks if self.flatten else None,
-                ref_idx_for_flatten=0 if self.flatten else None,
-                batch_size=256,
-                device=self._device,
-                verbose=self.verbose,
-            ).numpy()
+            self.compute_registration()
         return self._registered_frames
 
     @property
@@ -210,12 +147,21 @@ class RegisteredVideo:
     def registered_lines(self):
         """Registered (BM, CSI) as (T, 2, W) — BM at index 0, CSI at index 1."""
         if self._registered_lines is None:
-            lines = torch.stack([self.boundary_masks, self.csi], dim=1)
-            self._registered_lines = apply_registration_lines_torch(
-                lines,
-                self.registration_params,
-                flatten_bms=self.boundary_masks if self.flatten else None,
-                ref_idx_for_flatten=0 if self.flatten else None,
-                device=self._device,
-            )
+            self.compute_registration()
         return self._registered_lines
+
+    def compute_registration(self):
+        raw_masks = self.raw_masks
+        raw_frames = self.raw_frames
+        registered_masks, registered_frames = register_masks_by_displacement(
+            raw_masks,
+            raw_frames,
+            batch_size=self._batch_size,
+            correct_dx=self.horizontal_alignment,
+            flatten_rpe=self.flatten,
+            verbose=self.verbose,
+        )
+        self._registered_masks = registered_masks.cpu().numpy() > 0
+        self._registered_frames = registered_frames.cpu().numpy()
+        csi, bm = extract_boundaries_gpu(registered_masks, to_numpy=False)
+        self._registered_lines = torch.stack([csi, bm], dim=1).cpu()

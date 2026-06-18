@@ -1,3 +1,6 @@
+from warnings import warn
+
+
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -6,6 +9,11 @@ from tqdm.auto import tqdm
 from typing import Optional, Tuple
 
 from ocularrigidity.registration.utils import _interp1d_batch_at
+
+warn(
+    "The apply module is deprecated and will likely be removed in a future release. ",
+    category=DeprecationWarning,
+)
 
 
 @torch.inference_mode()

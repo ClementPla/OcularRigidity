@@ -1,5 +1,4 @@
 """
-ocularrigidity/segmentation/postprocess/boundaries.py
 
 Boundary-aware post-processing with robust handling of fragmented/missing segmentations.
 """

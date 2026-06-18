@@ -939,11 +939,7 @@ def run_cardiac_pipeline(
     skip_first_n_frames: int = 3,
     drop_last_n_frames: int = 0,
     # Registration
-    refine_iters: int = 2,
-    min_pts: int = 10,
-    transform: str = "tilt",
     flatten: bool = True,
-    horizontal_scaling: bool = False,
     horizontal_alignment: bool = True,
     # Spatial smoother
     sigma_col: float = 5.0,
@@ -971,11 +967,7 @@ def run_cardiac_pipeline(
         root_masks=Path(root_masks),
         skip_first_n_frames=skip_first_n_frames,
         drop_last_n_frames=drop_last_n_frames,
-        refine_iters=refine_iters,
-        min_pts=min_pts,
-        transform=transform,
         flatten=flatten,
-        horizontal_scaling=horizontal_scaling,
         horizontal_alignment=horizontal_alignment,
         verbose=verbose,
         use_encoded_video=use_encoded_video,

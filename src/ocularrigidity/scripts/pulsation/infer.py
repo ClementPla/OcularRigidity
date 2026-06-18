@@ -16,7 +16,6 @@ import pandas as pd
 from ocularrigidity.motion.results import CardiacPipelineResults
 from ocularrigidity.rigidity.features import compute_deltaY_masks
 from ocularrigidity.segmentation.inference import infer
-from ocularrigidity.segmentation.postprocess.smoothing import smooth_boundary_2d
 from ocularrigidity.segmentation.trainer.pl_module import ChoroidSegmentationModule
 
 OVERWRITE = False
@@ -50,13 +49,9 @@ def compute_one_cycle(
                 timestamps_path=ROOT_DATA_MNT / video / "timestamp.txt",
                 skip_first_n_frames=10,
                 drop_last_n_frames=10,
-                refine_iters=1,
-                min_pts=10,
                 compute_n_cycle_video=True,
-                transform="tilt",
                 flatten=False,
-                horizontal_scaling=False,
-                horizontal_alignment=False,
+                horizontal_alignment=True,
                 verbose=True,
                 ICA_or_PCA=method,
                 use_encoded_video=True,
@@ -152,14 +147,14 @@ def extract_deltaY_from_one_cycle(output_file: Path, input_one_cycle: Path, n_cy
 if __name__ == "__main__":
     for method in ["pca"]:
         for phase_method in [
-            # "peak_locked",
+            "peak_locked",
             "iq",
         ]:
             root_one_cycle = Path(
-                f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline/one_cycle_{method}_{phase_method}/"
+                f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/one_cycle_{method}_{phase_method}/"
             )
             root_measures = Path(
-                f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline/measures_{method}_{phase_method}/"
+                f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/measures_{method}_{phase_method}/"
             )
             compute_one_cycle(
                 root_one_cycle,
@@ -169,7 +164,7 @@ if __name__ == "__main__":
             )
             extract_deltaY_from_one_cycle(
                 Path(
-                    f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline/deltaY_{method}_{phase_method}.pkl"
+                    f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/deltaY_{method}_{phase_method}.pkl"
                 ),
                 root_one_cycle,
             )

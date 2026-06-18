@@ -1,3 +1,5 @@
+from warnings import warn
+
 from typing import Optional
 
 import numpy as np
@@ -11,6 +13,11 @@ import torch.nn.functional as F
 from ocularrigidity.registration.utils import (
     _interp1d_at,
     _solve_y_linear_batched,
+)
+
+warn(
+    "The registration.estimate_curve module is deprecated and will likely be removed in a future release. ",
+    category=DeprecationWarning,
 )
 
 
