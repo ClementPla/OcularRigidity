@@ -29,7 +29,7 @@ class RegisteredVideo:
         verbose: bool = True,
         use_encoded_video: bool = True,
         device: str = "cuda",
-        batch_size: int = 256,
+        batch_size: int = 128,
     ):
         self.video = video
         self.root_masks = root_masks
