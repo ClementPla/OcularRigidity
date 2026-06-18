@@ -121,8 +121,6 @@ class CardiacPipelineResults:
     def __post_init__(self):
         if isinstance(self.video, str):
             self.video = Path(self.video)
-        if isinstance(self.registration_params, torch.Tensor):
-            self.registration_params = self.registration_params.cpu().numpy()
 
         if isinstance(self.registered_boundaries, torch.Tensor):
             self.registered_boundaries = self.registered_boundaries.cpu().numpy()
