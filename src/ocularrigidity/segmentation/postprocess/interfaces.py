@@ -1,8 +1,9 @@
 import numpy as np
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, median_filter
 from scipy.interpolate import interp1d
 from numba import njit, prange
 import torch
+import cv2
 
 
 @njit(parallel=True)
@@ -24,7 +25,6 @@ def extract_boundaries_fast(masks):
             if first != -1:
                 bm[t, w] = float(first)
 
-                # 2. Find Bottom Boundary (CSI)
                 # Only scan if we found a top; scan backwards
                 for h in range(H - 1, first - 1, -1):
                     if masks[t, h, w]:
@@ -34,7 +34,10 @@ def extract_boundaries_fast(masks):
 
 
 def extract_boundaries_gpu(
-    masks: np.ndarray, batch_size: int = 128, to_numpy: bool = True
+    masks: np.ndarray,
+    batch_size: int = 128,
+    to_numpy: bool = True,
+    device: str = "cuda",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     GPU-accelerated extraction of top (BM) and bottom (CSI) boundaries per column.
@@ -47,7 +50,7 @@ def extract_boundaries_gpu(
         (bm, csi), each (T, W) float32 with NaN for columns containing no True.
     """
     T, H, W = masks.shape
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(device if torch.cuda.is_available() else "cpu")
     if isinstance(masks, torch.Tensor):
         masks_torch = masks.to(device)
     else:
@@ -74,6 +77,101 @@ def extract_boundaries_gpu(
     if to_numpy:
         bm = bm.cpu().numpy()
         csi = csi.cpu().numpy()
+    return bm, csi
+
+
+def reject_column_outliers(
+    boundary: np.ndarray,
+    median_window: int = 11,
+    max_residual: float = 15.0,
+) -> np.ndarray:
+    """
+    Set per-column outliers in a (T, W) boundary to NaN.
+
+    A column is flagged when it deviates from a robust local median baseline
+    (computed along W) by more than `max_residual` pixels. This removes the
+    single-column spikes produced when the argmax-based extraction latches onto
+    a stray segmented pixel near an image edge.
+
+    Args:
+        boundary: (T, W) float array, NaN for missing columns.
+        median_window: width (in columns) of the median baseline filter.
+        max_residual: max allowed deviation (px) from the baseline.
+
+    Returns:
+        (T, W) float32 copy with outlier columns replaced by NaN.
+    """
+    out = boundary.astype(np.float32, copy=True)
+    valid = ~np.isnan(out)
+    idx = np.arange(out.shape[1])
+
+    # Fill holes per row so the median baseline is gap-free, then flag deviations.
+    filled = out.copy()
+    for t in range(out.shape[0]):
+        v = valid[t]
+        if v.sum() < 2:
+            continue
+        filled[t] = np.interp(idx, idx[v], out[t, v])
+
+    baseline = median_filter(filled, size=(1, median_window), mode="mirror")
+    outliers = np.abs(filled - baseline) > max_residual
+    out[outliers] = np.nan
+    return out
+
+
+def impute_small_holes(boundary: np.ndarray, max_hole: int = 5) -> np.ndarray:
+    """
+    Linearly interpolate interior NaN gaps of width <= `max_hole` columns in a
+    (T, W) boundary. Larger gaps and leading/trailing gaps are left as NaN so
+    downstream extrapolation/smoothing can handle them.
+
+    Args:
+        boundary: (T, W) float array, NaN for missing columns.
+        max_hole: maximum gap width (in columns) eligible for imputation.
+
+    Returns:
+        (T, W) float32 copy with small interior holes filled.
+    """
+    out = boundary.astype(np.float32, copy=True)
+    T, W = out.shape
+    idx = np.arange(W)
+    for t in range(T):
+        row = out[t]
+        valid = ~np.isnan(row)
+        if valid.sum() < 2:
+            continue
+        interp = np.interp(idx, idx[valid], row[valid])
+        nan = ~valid
+        padded = np.concatenate([[False], nan, [False]])
+        d = np.diff(padded.astype(np.int8))
+        starts = np.where(d == 1)[0]
+        ends = np.where(d == -1)[0]
+        for s, e in zip(starts, ends):
+            # Only fill bounded interior gaps; np.interp would otherwise
+            # extrapolate leading/trailing gaps as a flat line.
+            if (e - s) <= max_hole and s > 0 and e < W:
+                row[s:e] = interp[s:e]
+    return out
+
+
+def clean_boundaries(
+    bm: np.ndarray,
+    csi: np.ndarray,
+    max_hole: int = 5,
+    median_window: int = 11,
+    max_residual: float = 15.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Robustify raw (T, W) boundaries: reject column outliers (spikes), then
+    impute the small holes that rejection leaves behind.
+
+    Returns:
+        (bm, csi) cleaned float32 arrays.
+    """
+    bm = reject_column_outliers(bm, median_window, max_residual)
+    csi = reject_column_outliers(csi, median_window, max_residual)
+    bm = impute_small_holes(bm, max_hole)
+    csi = impute_small_holes(csi, max_hole)
     return bm, csi
 
 
@@ -217,6 +315,30 @@ def bandpass_boundary_2d_non_uniform(
     return interp1d(
         uniform_t, grid_bp, axis=0, kind="linear", fill_value="extrapolate"
     )(timestamps)
+
+
+def get_masks_contours(masks):
+    """
+    Get the contours of the masks using OpenCV findContours.
+
+    masks: (T, H, W) bool or (H, W) bool
+    returns: the largest-area contour for a single frame, or a list of them
+             (one per frame) for a (T, H, W) stack.
+    """
+    if masks.ndim == 2:
+        contours, _ = cv2.findContours(
+            masks.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        main_contour = max(contours, key=cv2.contourArea)
+        return main_contour
+    contours_list = []
+    for t in range(masks.shape[0]):
+        contours, _ = cv2.findContours(
+            masks[t].astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        main_contour = max(contours, key=cv2.contourArea)
+        contours_list.append(main_contour)
+    return contours_list
 
 
 def rebuild_mask(bm: np.ndarray, csi: np.ndarray, H: int) -> np.ndarray:

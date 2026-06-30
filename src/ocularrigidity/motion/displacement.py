@@ -1,11 +1,13 @@
 import numpy as np
 from ocularrigidity.registration.sparse_demons import track_points_with_demons
-from ocularrigidity.segmentation.postprocess.boundaries import (
+from ocularrigidity.segmentation.postprocess.interfaces import (
     get_masks_contours,
 )
+from scipy.signal import savgol_filter
 
 import numpy as np
 import SimpleITK as sitk
+import cv2
 
 
 def extract_displacement_at_boundaries(
@@ -13,7 +15,10 @@ def extract_displacement_at_boundaries(
     masks,
     reference_frame_idx=0,
     smooth_window=11,
-    max_displacement=20,  # Estimated max pixels a boundary moves over the video
+    max_displacement=20,  # Estimated max pixels a boundary moves over the video,
+    method="demons",
+    lk_window=35,
+    lk_levels: int = 3,
 ):
     """Compute pixel displacement optimized via dynamic ROI cropping."""
     ref_mask = masks[reference_frame_idx]
@@ -34,22 +39,55 @@ def extract_displacement_at_boundaries(
         if t == reference_frame_idx:
             continue
 
-        # Pass the pre-cropped or bounded regions to the demons tracker
-        p1, status = track_points_with_demons(
-            ref_frame=ref_frame,
-            current_frame=frames[t],
-            p0=p0,
-            std_dev=3.0,
-            roi_margin=max_displacement,
-            fixed_image=sitk_ref,
-        )
+        match method:
+            case "demons":
+                # Pass the pre-cropped or bounded regions to the demons tracker
+                p1, status = track_points_with_demons(
+                    ref_frame=ref_frame,
+                    current_frame=frames[t],
+                    p0=p0,
+                    std_dev=3.0,
+                    roi_margin=max_displacement,
+                    fixed_image=sitk_ref,
+                )
+
+            case "optical_flow":
+                lk_params = dict(
+                    winSize=(lk_window, lk_window),
+                    maxLevel=lk_levels,
+                    criteria=(
+                        cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+                        30,
+                        0.01,
+                    ),
+                    minEigThreshold=1e-4,
+                )
+                p1, status, _ = cv2.calcOpticalFlowPyrLK(
+                    ref_frame, frames[t], p0, None, **lk_params
+                )
 
         ok = status[:, 0].astype(bool)
         positions[t, ok] = p1[ok, 0, :]
 
     if smooth_window > 0:
-        from scipy.signal import savgol_filter
-
+        # Per-anchor linear interpolation through NaN gaps along time.
+        t_axis = np.arange(T)
+        for n in range(N):
+            valid = np.isfinite(positions[:, n, 0])
+            nv = int(valid.sum())
+            if nv == T:
+                continue
+            if nv < 2:
+                positions[:, n, :] = p0[n]
+                continue
+            idx = np.where(valid)[0]
+            for c in (0, 1):
+                positions[:, n, c] = np.interp(
+                    t_axis,
+                    idx,
+                    positions[idx, n, c],
+                    period=T,
+                )
         positions = savgol_filter(
             positions, window_length=smooth_window, polyorder=3, axis=0, mode="wrap"
         )
@@ -57,6 +95,14 @@ def extract_displacement_at_boundaries(
     p0_xy = p0[:, 0, :]
     disp = positions - p0_xy[None, :, :]
     return disp, p0[:, 0, :]
+
+
+def shoelace_area(coords):
+    # Extract row (y) and col (x) coordinates
+    y = coords[:, 0]
+    x = coords[:, 1]
+    # Shift and cross-multiply
+    return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(np.roll(x, 1), y))
 
 
 def compute_delta_A_from_displacements(reference_border, displacements):
@@ -79,19 +125,8 @@ def compute_delta_A_from_displacements(reference_border, displacements):
     T, N, _ = displacements.shape
     delta_A = np.zeros(T, dtype=np.float64)
 
-    # Helper function to compute polygon area via Shoelace formula
-    def shoelace_area(coords):
-        # Extract row (y) and col (x) coordinates
-        y = coords[:, 0]
-        x = coords[:, 1]
-        # Shift and cross-multiply
-        return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(np.roll(x, 1), y))
-
-    # 1. Compute the baseline reference area (A_0)
-    # Ensure coordinates are ordered sequentially along the perimeter loop
     A_0 = shoelace_area(reference_border)
 
-    # 2. Iterate through temporal frames to evaluate deformed states
     for t in range(T):
         # Apply the tracking displacement to the reference skeleton
         deformed_border = reference_border + displacements[t]
@@ -109,6 +144,23 @@ def compute_delta_A_from_displacements(reference_border, displacements):
         delta_A[t] = A_t - A_0
 
     return delta_A
+
+
+def compute_minimal_A(reference_border, displacements):
+    """Computes the minimal area enclosed by the deformed boundary across frames."""
+    T, N, _ = displacements.shape
+    min_A = np.inf
+
+    for t in range(T):
+        deformed_border = reference_border + displacements[t]
+        deformed_border = deformed_border[~np.isnan(deformed_border).any(axis=1)]
+        if len(deformed_border) < 3:
+            continue
+        A_t = shoelace_area(deformed_border)
+        if A_t < min_A:
+            min_A = A_t
+
+    return min_A
 
 
 def compute_delta_A_differential(reference_border, displacements):

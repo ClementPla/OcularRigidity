@@ -9,4 +9,4 @@ def get_choroid_segmentation_model():
     """
     return ChoroidSegmentationModule.from_pretrained(
         "ClementP/ChoroidSegmentationModule"
-    )
+    ).eval()

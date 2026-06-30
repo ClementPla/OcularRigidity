@@ -8,10 +8,9 @@ from tqdm import tqdm
 from ocularrigidity.data.io import load_cube
 from ocularrigidity.data.compression import cube_to_mp4, cube_to_mp4_fastest
 from ocularrigidity.data.measurements.dataframe import load_measurements
-from ocularrigidity.consts import ROOT_DATA_SMB, ROOT_DATA_MNT
+from ocularrigidity.consts import OUTPUT_FOLDER, ROOT_DATA_MNT
 
 
-OUTPUT_FOLDER = Path("/media/clement/HD/Santiago/OcularRigidity/outputs/compressed")
 LOG_FILE = OUTPUT_FOLDER / "processing.log"
 
 
