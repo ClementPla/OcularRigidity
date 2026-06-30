@@ -24,23 +24,20 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.spatial import cKDTree
 from sklearn.decomposition import PCA
 from scipy.signal import find_peaks
-from scipy.signal import (
-    firwin,
-    filtfilt,
-)  # Firwin instead of Butterworth to avoid phase distortion
-
+from ocularrigidity.motion.filters._1d import spatio_temporal_filter
 from ocularrigidity.motion.one_cycle import (
     _auto_n_bins,
     fold_video_numba_mean,
     fold_video_numba_median,
 )
+from ocularrigidity.motion.projection._1d import project_into_separable_components
 from ocularrigidity.motion.registered_video import RegisteredVideo
 
 from astropy.timeseries import LombScargle
 from sklearn.decomposition import FastICA
 from scipy.stats import skew
 
-from ocularrigidity.motion.results import CardiacPipelineResults
+from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
 class CardiacCycleExtractor:
@@ -51,15 +48,21 @@ class CardiacCycleExtractor:
         *,
         # Physiological prior
         bpm_range: tuple[float, float] = (30.0, 180.0),
+        # Retained for result traceability / pickle compatibility; the Butterworth
+        # path is currently disabled in favour of the FIR bandpass in filtered_signal.
         butter_order: int = 4,
         override_bpm: Optional[float] = None,
         expected_bpm: Optional[float] = None,
+        # When expected_bpm is given, the search band is narrowed to
+        # [(1-frac), (1+frac)] * expected_bpm (overriding bpm_range) so the FIR
+        # bandpass and Lomb-Scargle scoring focus on the physiological prior.
+        expected_bpm_band_frac: float = 0.3,
         # Frame trimming
         skip_first_n_frames: int = 3,
         drop_last_n_frames: int = 0,
         # Spatial smoother
         sigma_col: float = 5.0,
-        col_slice: slice = None,
+        col_slice: Optional[slice] = None,
         n_separable_components: int = 16,
         ica_random_state: int = 0,
         # Lomb-Scargle scoring
@@ -74,16 +77,48 @@ class CardiacCycleExtractor:
         harmonic_correction: bool = True,
         harmonic_tolerance_bpm: float = 12.0,
         harmonic_min_power_ratio: float = 0.2,
+        # Width (bpm) of the Gaussian prior applied to LS scoring around
+        # expected_bpm. Distinct from harmonic_tolerance_bpm (harmonic snapping).
+        bpm_prior_sigma_bpm: float = 12.0,
     ):
         self.registrator = registrator
         self.timestamps_path = timestamps_path
 
-        self.bpm_range = bpm_range
         self.butter_order = butter_order
         self.expected_bpm = expected_bpm
+        self.expected_bpm_band_frac = expected_bpm_band_frac
+
+        # Anchor the search band to the expected rate when known. harmonic_correction
+        # stays enabled, but with frac=0.3 the 2×/0.5× candidates fall outside this
+        # band and are reported as out-of-band rejections.
+        if expected_bpm is not None:
+            self.bpm_range = (
+                (1.0 - expected_bpm_band_frac) * expected_bpm,
+                (1.0 + expected_bpm_band_frac) * expected_bpm,
+            )
+            if verbose:
+                print(
+                    f"Anchoring bpm_range to expected {expected_bpm:.1f} bpm: "
+                    f"({self.bpm_range[0]:.1f}, {self.bpm_range[1]:.1f}) "
+                    f"(±{expected_bpm_band_frac:.0%}); requested {bpm_range} ignored."
+                )
+        else:
+            self.bpm_range = bpm_range
 
         self.skip_first_n_frames = skip_first_n_frames
         self.drop_last_n_frames = drop_last_n_frames
+
+        assert registrator.skip_first_n_frames == skip_first_n_frames, (
+            f"Mismatch between CardiacCycleExtractor.skip_first_n_frames "
+            f"({skip_first_n_frames}) and RegisteredVideo.skip_first_n_frames "
+            f"({registrator.skip_first_n_frames})."
+        )
+
+        assert registrator.drop_last_n_frames == drop_last_n_frames, (
+            f"Mismatch between CardiacCycleExtractor.drop_last_n_frames "
+            f"({drop_last_n_frames}) and RegisteredVideo.drop_last_n_frames "
+            f"({registrator.drop_last_n_frames})."
+        )
 
         self.sigma_col = sigma_col
         self.col_slice = col_slice
@@ -103,6 +138,7 @@ class CardiacCycleExtractor:
         self.harmonic_correction = harmonic_correction
         self.harmonic_tolerance_bpm = harmonic_tolerance_bpm
         self.harmonic_min_power_ratio = harmonic_min_power_ratio
+        self.bpm_prior_sigma_bpm = bpm_prior_sigma_bpm
         # ---- caches --------------------------------------------------
         self._timestamps_seconds = None
         self._uniform_time = None
@@ -146,20 +182,22 @@ class CardiacCycleExtractor:
     @property
     def thickness(self):
         if self._thickness is None:
-            """Thickness restricted to ``col_slice``, with outlier frames → NaN."""
+            """Thickness restricted to ``col_slice``, with holes (0/NaN) and
+            outlier frames → NaN."""
             src = self.registrator.thickness
             thickness = (
                 src[:, self.col_slice] if self.col_slice is not None else src
             ).copy()
 
-            has_holes = np.isnan(thickness).any(axis=1) | (thickness == 0).any(axis=1)
-            # If the holes are on the boundary
-            # Find the closest non-hole pixel to the left and right of the hole, and check if either is close enough to be a reliable proxy for thickness.
-            # Find the smallest and largest x index that is not a hole for each frame
+            # Trim fully-invalid border columns (those that are a hole — 0 or NaN —
+            # in every frame), then unify hole-marking on NaN so all downstream
+            # validity checks (which key on isnan) catch degenerate boundaries.
             x_valid = np.where(~np.isnan(thickness) & (thickness != 0))[1]
             slices = slice(np.min(x_valid), np.max(x_valid) + 1)
             thickness = thickness[:, slices]
+            thickness[thickness == 0] = np.nan
 
+            has_holes = np.isnan(thickness).any(axis=1)
             clean = thickness[~has_holes]
             if clean.size == 0:
                 if self.verbose:
@@ -169,9 +207,7 @@ class CardiacCycleExtractor:
 
             med = np.nanmedian(clean)
             frame_mean = np.nanmean(thickness, axis=1)
-            bad_frames = (
-                (frame_mean < 0.75 * med) | (frame_mean > 1.75 * med) | has_holes
-            )
+            bad_frames = (frame_mean < 0.75 * med) | (frame_mean > 1.25 * med)
 
             n_bad = int(bad_frames.sum())
             if n_bad and self.verbose:
@@ -280,40 +316,22 @@ class CardiacCycleExtractor:
         if self._filtered_signal is not None:
             return self._filtered_signal
 
-        # 1. Spatial Gaussian along W (NaN-aware) ---------------------
+        nyq = 0.5 * self.fs
+        low_hz = self.bpm_range[0] / 60.0
+        low = low_hz / nyq
+
+        high = min((self.bpm_range[1] / 60.0) / nyq, 0.99)
         not_gap = (~self.gap_mask).astype(np.float32)[:, None]
         data_masked = np.nan_to_num(self.interpolated_thickness, nan=0.0) * not_gap
         valid_masked = self.interpolated_validity * not_gap
-        num = gaussian_filter1d(
-            data_masked, sigma=self.sigma_col, axis=1, mode="nearest"
+        filtered = spatio_temporal_filter(
+            data_masked,
+            spatial_sigma=self.sigma_col,
+            temporal_low_freq=low,
+            temporal_high_freq=high,
+            fs=self.fs,
+            validity_mask=valid_masked,
         )
-        den = gaussian_filter1d(
-            valid_masked, sigma=self.sigma_col, axis=1, mode="nearest"
-        )
-        with np.errstate(divide="ignore", invalid="ignore"):
-            spatial = np.where(den > 0.1, num / den, np.nan)
-
-        # 2. Temporal Butterworth bandpass along T --------------------
-        nyq = 0.5 * self.fs
-        low = (self.bpm_range[0] / 60.0) / nyq
-        high = (self.bpm_range[1] / 60.0) / nyq
-
-        nan_mask = np.isnan(spatial)
-        filled = spatial.copy()
-        t_idx = np.arange(filled.shape[0])
-        for w in range(filled.shape[1]):
-            m = nan_mask[:, w]
-            if m.all():
-                filled[:, w] = 0.0
-            elif m.any():
-                filled[m, w] = np.interp(t_idx[m], t_idx[~m], filled[~m, w])
-
-        num_taps = 101  # Must be odd for bandpass
-        taps = firwin(num_taps, [low, high], pass_zero=False)
-        filtered = filtfilt(taps, 1.0, filled, axis=0)
-        # sos = butter(self.butter_order, [low, high], btype="bandpass", output="sos")
-        # filtered = sosfiltfilt(sos, filled, axis=0)
-        filtered[nan_mask] = np.nan
         filtered[self.gap_mask] = np.nan
 
         self._filtered_signal = filtered
@@ -329,30 +347,19 @@ class CardiacCycleExtractor:
     def _compute_separable_components(self):
         keep = self.component_kept_mask
         X = self.filtered_signal[keep]
-        X = X - X.mean(axis=0, keepdims=True)
 
-        if self.ICA_or_PCA.lower() == "pca":
-            pca = PCA(n_components=self.n_separable_components)
-            self._separable_components = pca.fit_transform(X)  # (T_kept, n_ic)
-            # PCA convention: components_ has shape (n_ic, W). Transpose to match
-            # FastICA's mixing_ shape (W, n_ic) so downstream code (projection
-            # back to thickness, ica_mixing[:, best]) doesn't need to branch.
-            self._ica_mixing = pca.components_.T  # (W, n_ic)
-        elif self.ICA_or_PCA.lower() == "ica":
-            ica = FastICA(
+        self._separable_components, self._ica_mixing = (
+            project_into_separable_components(
+                X,
+                method=self.ICA_or_PCA.lower(),
                 n_components=self.n_separable_components,
                 random_state=self.ica_random_state,
-                whiten="unit-variance",
                 max_iter=5000,
+                whiten="unit-variance",
                 tol=0.001,
                 fun="cube",
             )
-            self._separable_components = ica.fit_transform(X)  # (T_kept, n_ic)
-            self._ica_mixing = ica.mixing_  # (W, n_ic)
-        else:
-            raise ValueError(
-                f"ICA_or_PCA must be 'ICA' or 'PCA', got {self.ICA_or_PCA!r}"
-            )
+        )
 
     def _standardize_ic_sign(self):
         """Flip best IC so its sign matches physical thickness pulsation."""
@@ -423,7 +430,7 @@ class CardiacCycleExtractor:
         )
         if self.expected_bpm is not None:
             f_exp = self.expected_bpm / 60.0
-            sigma = self.harmonic_tolerance_bpm / 60.0
+            sigma = self.bpm_prior_sigma_bpm / 60.0
             prior = np.exp(-0.5 * ((peak_freq - f_exp) / sigma) ** 2)
             quality = quality * (0.1 + prior)  # 0.1 floor so we don't fully veto
 
@@ -455,6 +462,9 @@ class CardiacCycleExtractor:
             # BPM was overridden — pick IC with most LS power at f0
             j = int(np.argmin(np.abs(ls["freqs"] - self._cardiac_freq)))
             self._best_component_idx = int(np.argmax(ls["power"][j, :]))
+            # Standardize sign here too, so an overridden video's IQ phase origin
+            # is aligned with non-overridden videos.
+            self._standardize_ic_sign()
             if self.verbose:
                 print(
                     f"BPM fixed to {self._cardiac_freq * 60:.1f}; "
@@ -591,7 +601,6 @@ class CardiacCycleExtractor:
         f0 = self._cardiac_freq
         best = self._best_component_idx
 
-        # Lift IC back onto the full uniform_time grid (NaN where we had no data)
         ic_full = np.full(len(self.uniform_time), np.nan)
         ic_full[self.component_kept_mask] = self.separable_components[:, best]
 
@@ -934,6 +943,7 @@ def run_cardiac_pipeline(
     bpm_range: tuple[float, float] = (30.0, 180.0),
     override_bpm: Optional[float] = None,
     expected_bpm: Optional[float] = None,
+    expected_bpm_band_frac: float = 0.3,
     butter_order: int = 4,
     # Frame trimming
     skip_first_n_frames: int = 3,
@@ -943,7 +953,7 @@ def run_cardiac_pipeline(
     horizontal_alignment: bool = True,
     # Spatial smoother
     sigma_col: float = 5.0,
-    col_slice: slice = None,
+    col_slice: Optional[slice] = None,
     # ICA + LS + phase
     n_separable_components: int = 16,
     phase_smoother_cycles: float = 2.0,
@@ -959,8 +969,17 @@ def run_cardiac_pipeline(
     verbose: bool = True,
     use_encoded_video: bool = True,
     phase_method_for_fold: Literal["iq", "peak_locked"] = "peak_locked",
+    cache_dir: Path = None,
+    lateral_method: str = "xcorr",
+    subpixel: bool = True,
 ) -> CardiacPipelineResults:
-    """Run the cardiac pipeline and return the populated extractor."""
+    """Run the cardiac pipeline and return the populated extractor.
+
+    ``cache_dir`` is forwarded to :class:`RegisteredVideo`: registration is
+    deterministic across ICA/PCA and phase methods, so caching lets repeated
+    runs of the same video reuse the registered frames/masks instead of
+    recomputing them.
+    """
     registrator = RegisteredVideo(
         video=video_relpath,
         root_data=Path(root_data),
@@ -971,6 +990,9 @@ def run_cardiac_pipeline(
         horizontal_alignment=horizontal_alignment,
         verbose=verbose,
         use_encoded_video=use_encoded_video,
+        cache_dir=cache_dir,
+        lateral_method=lateral_method,
+        subpixel=subpixel,
     )
     extractor = CardiacCycleExtractor(
         registrator=registrator,
@@ -978,6 +1000,7 @@ def run_cardiac_pipeline(
         bpm_range=bpm_range,
         override_bpm=override_bpm,
         expected_bpm=expected_bpm,
+        expected_bpm_band_frac=expected_bpm_band_frac,
         butter_order=butter_order,
         skip_first_n_frames=skip_first_n_frames,
         drop_last_n_frames=drop_last_n_frames,

@@ -7,7 +7,10 @@ from ocularrigidity.consts import (
     ROOT_MASKS,
     ROOT_DATA_MNT,
     ROOT_COMPRESSED_VIDEO,
+    ROOT_REGISTERED_CACHE,
+    ROOT_CARDIAC_PIPELINE,
 )
+from ocularrigidity.pipeline_config import REGISTRATION, PULSATION, DELTA_Y
 from ocularrigidity.data.compression import cube_to_mkv_lossless, read_gray
 from pathlib import Path
 from ocularrigidity.data.measurements.dataframe import load_measurements
@@ -22,7 +25,11 @@ OVERWRITE = False
 
 
 def compute_one_cycle(
-    root_one_cycle, root_measures, method="pca", phase_method_for_fold="iq"
+    root_one_cycle,
+    root_measures,
+    method="pca",
+    phase_method_for_fold="iq",
+    cache_dir=None,
 ):
     df = load_measurements(include_HR=True)
     for index, row in tqdm(df.iterrows(), total=len(df)):
@@ -47,22 +54,25 @@ def compute_one_cycle(
                 root_masks=ROOT_MASKS,
                 root_data=ROOT_COMPRESSED_VIDEO,
                 timestamps_path=ROOT_DATA_MNT / video / "timestamp.txt",
-                skip_first_n_frames=10,
-                drop_last_n_frames=10,
+                skip_first_n_frames=REGISTRATION.skip_first_n_frames,
+                drop_last_n_frames=REGISTRATION.drop_last_n_frames,
                 compute_n_cycle_video=True,
-                flatten=False,
-                horizontal_alignment=True,
+                flatten=REGISTRATION.flatten,
+                horizontal_alignment=REGISTRATION.horizontal_alignment,
+                lateral_method=REGISTRATION.lateral_method,
+                subpixel=REGISTRATION.subpixel,
+                use_encoded_video=REGISTRATION.use_encoded_video,
                 verbose=True,
                 ICA_or_PCA=method,
-                use_encoded_video=True,
-                bpm_range=(30, 150),
-                sigma_col=1,
+                sigma_col=PULSATION.sigma_col,
                 expected_bpm=HR,
-                n_bins=30,
-                col_slice=None,
-                one_cycle_fold_method="median",
-                n_cycle=3,
+                expected_bpm_band_frac=PULSATION.expected_bpm_band_frac,
+                n_bins=PULSATION.n_bins,
+                col_slice=PULSATION.col_slice,
+                one_cycle_fold_method=PULSATION.one_cycle_fold_method,
+                n_cycle=PULSATION.n_cycle,
                 phase_method_for_fold=phase_method_for_fold,
+                cache_dir=cache_dir,
             )
         except Exception as e:
             print(f"Error processing {video}: {e}")
@@ -71,13 +81,15 @@ def compute_one_cycle(
         cube_to_mkv_lossless(
             result.cycles,
             str(one_cycle_path.parent / "one_cycle.mkv"),
-            fps=30,
+            fps=PULSATION.output_fps,
         )
         measure_path.parent.mkdir(parents=True, exist_ok=True)
         result.save(measure_path, include_cycles=False)
 
 
-def extract_deltaY_from_one_cycle(output_file: Path, input_one_cycle: Path, n_cycles=3):
+def extract_deltaY_from_one_cycle(
+    output_file: Path, input_one_cycle: Path, n_cycles=DELTA_Y.n_cycles
+):
     df = load_measurements(include_HR=True)
     model = ChoroidSegmentationModule.load_from_checkpoint(CHECKPOINT_PATH).cuda()
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -96,19 +108,13 @@ def extract_deltaY_from_one_cycle(output_file: Path, input_one_cycle: Path, n_cy
             masks = infer(
                 model,
                 data,
-                batch_size=32,
+                batch_size=DELTA_Y.batch_size,
                 scale_factor=(1.0, 1.0),
                 return_logit=False,
                 use_graphcut=True,
                 use_amp=True,
                 verbose=True,
-                graphcut_kwargs=dict(
-                    temporal_smooth=False,
-                    temporal_iterations=4,
-                    temporal_mu=1.0,
-                    temporal_sigma=2.0,
-                    lambda_smooth=1.0,
-                ),
+                graphcut_kwargs=DELTA_Y.graphcut_kwargs,
             )
             thickness = compute_deltaY_masks(masks)
             # thickness_smoothed = smooth_boundary_2d(
@@ -121,9 +127,9 @@ def extract_deltaY_from_one_cycle(output_file: Path, input_one_cycle: Path, n_cy
                 ]
                 fits, _ = estimate_cardiac_amplitude(
                     current_cycle,
-                    n_harmonics=1,
-                    residual_threshold_percentile=75,
-                    amplitude_threshold_percentile=50,
+                    n_harmonics=DELTA_Y.n_harmonics,
+                    residual_threshold_percentile=DELTA_Y.residual_threshold_percentile,
+                    amplitude_threshold_percentile=DELTA_Y.amplitude_threshold_percentile,
                 )
 
                 amplitude = fits.max(axis=0) - fits.min(axis=0)
@@ -145,26 +151,24 @@ def extract_deltaY_from_one_cycle(output_file: Path, input_one_cycle: Path, n_cy
 
 
 if __name__ == "__main__":
-    for method in ["pca"]:
-        for phase_method in [
-            "peak_locked",
-            "iq",
-        ]:
-            root_one_cycle = Path(
-                f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/one_cycle_{method}_{phase_method}/"
+    # Registration is identical across method/phase combos, so a shared cache
+    # (sibling of the compressed/ and masks/ roots) is computed once and reused.
+    for method in PULSATION.methods:
+        for phase_method in PULSATION.phase_methods:
+            root_one_cycle = (
+                ROOT_CARDIAC_PIPELINE / f"one_cycle_{method}_{phase_method}"
             )
-            root_measures = Path(
-                f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/measures_{method}_{phase_method}/"
+            root_measures = (
+                ROOT_CARDIAC_PIPELINE / f"measures_{method}_{phase_method}"
             )
             compute_one_cycle(
                 root_one_cycle,
                 root_measures,
                 method=method,
                 phase_method_for_fold=phase_method,
+                cache_dir=ROOT_REGISTERED_CACHE,
             )
             extract_deltaY_from_one_cycle(
-                Path(
-                    f"/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/deltaY_{method}_{phase_method}.pkl"
-                ),
+                ROOT_CARDIAC_PIPELINE / f"deltaY_{method}_{phase_method}.pkl",
                 root_one_cycle,
             )

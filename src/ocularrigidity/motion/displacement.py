@@ -1,6 +1,6 @@
 import numpy as np
 from ocularrigidity.registration.sparse_demons import track_points_with_demons
-from ocularrigidity.segmentation.postprocess.boundaries import (
+from ocularrigidity.segmentation.postprocess.interfaces import (
     get_masks_contours,
 )
 from scipy.signal import savgol_filter
@@ -97,7 +97,6 @@ def extract_displacement_at_boundaries(
     return disp, p0[:, 0, :]
 
 
-# Helper function to compute polygon area via Shoelace formula
 def shoelace_area(coords):
     # Extract row (y) and col (x) coordinates
     y = coords[:, 0]
@@ -126,11 +125,8 @@ def compute_delta_A_from_displacements(reference_border, displacements):
     T, N, _ = displacements.shape
     delta_A = np.zeros(T, dtype=np.float64)
 
-    # 1. Compute the baseline reference area (A_0)
-    # Ensure coordinates are ordered sequentially along the perimeter loop
     A_0 = shoelace_area(reference_border)
 
-    # 2. Iterate through temporal frames to evaluate deformed states
     for t in range(T):
         # Apply the tracking displacement to the reference skeleton
         deformed_border = reference_border + displacements[t]

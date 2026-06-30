@@ -25,6 +25,7 @@ class CardiacPipelineResults:
     bpm_range: tuple[float, float]
     override_cardiac_freq: Optional[float]
     expected_bpm: Optional[float]
+    expected_bpm_band_frac: float
     butter_order: int
     n_separable_components: int
     sigma_col: float
@@ -37,6 +38,7 @@ class CardiacPipelineResults:
     harmonic_correction: bool
     harmonic_tolerance_bpm: float
     harmonic_min_power_ratio: float
+    bpm_prior_sigma_bpm: float
 
     # Results
     registered_boundaries: np.ndarray
@@ -76,8 +78,9 @@ class CardiacPipelineResults:
             flatten=ex.registrator.flatten,
             horizontal_alignment=ex.registrator.horizontal_alignment,
             bpm_range=ex.bpm_range,
-            override_cardiac_freq=ex.cardiac_freq,
+            override_cardiac_freq=ex.cardiac_freq if ex._is_freq_overridden else None,
             expected_bpm=ex.expected_bpm,
+            expected_bpm_band_frac=ex.expected_bpm_band_frac,
             butter_order=ex.butter_order,
             n_separable_components=ex.n_separable_components,
             sigma_col=ex.sigma_col,
@@ -90,6 +93,7 @@ class CardiacPipelineResults:
             harmonic_correction=ex.harmonic_correction,
             harmonic_tolerance_bpm=ex.harmonic_tolerance_bpm,
             harmonic_min_power_ratio=ex.harmonic_min_power_ratio,
+            bpm_prior_sigma_bpm=ex.bpm_prior_sigma_bpm,
             registered_boundaries=ex.registrator.registered_lines,
             timestamps_seconds=ex.timestamps_seconds,
             uniform_time=ex.uniform_time,

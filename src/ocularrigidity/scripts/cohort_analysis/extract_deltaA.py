@@ -1,4 +1,6 @@
 from pathlib import Path
+from ocularrigidity.consts import ROOT_CARDIAC_PIPELINE
+from ocularrigidity.pipeline_config import DELTA_A
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.motion.displacement import (
@@ -7,11 +9,17 @@ from ocularrigidity.motion.displacement import (
     extract_displacement_at_boundaries,
 )
 from ocularrigidity.segmentation.closing_structures import trim_choroid
+import pickle
 import matplotlib.pyplot as plt
-
+from tqdm.auto import tqdm
 
 def extract_displacement(
-    video_path: Path, mask_path: Path, N_cycles: int = 3, method="optical_flow"
+    video_path: Path,
+    mask_path: Path,
+    N_cycles: int = DELTA_A.n_cycles,
+    method=DELTA_A.method,
+    smooth_window: int = DELTA_A.smooth_window,
+    lk_window: int = DELTA_A.lk_window,
 ):
     video = read_gray(video_path)
     mask = load_mask(mask_path)
@@ -34,8 +42,8 @@ def extract_displacement(
         displacement, reference_border_coordinates = extract_displacement_at_boundaries(
             video_cycle,
             mask_cycle,
-            smooth_window=11,
-            lk_window=35,
+            smooth_window=smooth_window,
+            lk_window=lk_window,
             method=method,
         )
         delta_a_differential = compute_delta_A_from_displacements(
@@ -55,10 +63,29 @@ def extract_displacement(
 
 
 if __name__ == "__main__":
-    mask_path = Path(
-        "/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline/measures_ica_peak_locked/433755/2023-03-09/Rigidity/OS/segmented_cycles.npz"
-    )
-    video_path = Path(
-        "/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline/one_cycle_ica_peak_locked/433755/2023-03-09/Rigidity/OS/one_cycle.mkv"
-    )
-    deltaA_per_cycle, minA_per_cycle = extract_displacement(video_path, mask_path)
+    input_dir = ROOT_CARDIAC_PIPELINE
+    segmented_dirs = list(input_dir.rglob("**/*segmented_cycles.npz"))
+    for segmented_dir in tqdm(segmented_dirs):
+        result_filepath = segmented_dir.parent / "deltaA_per_cycle.pkl"
+        if result_filepath.exists():
+            continue
+        try:
+            relative_path = segmented_dir.relative_to(input_dir)
+            video_path = input_dir / relative_path.parent / "one_cycle.mkv"
+            # We need to replace "measures_" with "one_cycle_" in the relative path to get the corresponding video path
+            video_path = Path(str(video_path).replace("measures_", "one_cycle_"))
+            (
+                deltaA_per_cycle,
+                minA_per_cycle,
+                displacement_per_cycle,
+                reference_coordinates_per_cycle,
+            ) = extract_displacement(video_path, segmented_dir)
+            results = {
+                "deltaA_per_cycle": deltaA_per_cycle,
+                "minA_per_cycle": minA_per_cycle,
+                "displacement_per_cycle": displacement_per_cycle,
+                "reference_coordinates_per_cycle": reference_coordinates_per_cycle,}
+            with open(result_filepath, "wb") as f:
+                pickle.dump(results, f)
+        except Exception as e:
+            print(f"Error processing {segmented_dir}: {e}")

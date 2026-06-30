@@ -1,6 +1,8 @@
 from pathlib import Path
 from functools import lru_cache
 from tqdm.auto import tqdm
+from ocularrigidity.consts import ROOT_CARDIAC_PIPELINE
+from ocularrigidity.pipeline_config import SEGMENTATION
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import save_mask
 from ocularrigidity.segmentation.inference import infer
@@ -17,7 +19,7 @@ def segment_videos(video_path: Path) -> Path:
     """Segment videos into individual cycles."""
     data = read_gray(video_path)
     model = get_model()
-    mask = infer(model, data, batch_size=16, device="cuda:0")
+    mask = infer(model, data, batch_size=SEGMENTATION.batch_size, device="cuda:0")
     return mask
 
 
@@ -42,9 +44,7 @@ def process_cohort(input_dir, output_dir):
 
 
 if __name__ == "__main__":
-    input_dir = Path(
-        "/media/clement/HD/Santiago/OcularRigidity/outputs/CardiacPipeline_V2/"
-    )
+    input_dir = ROOT_CARDIAC_PIPELINE
     one_cycle_dirs = list(input_dir.glob("one_cycle*"))
     pbar = tqdm(one_cycle_dirs, desc="Processing cycle directories")
     for one_cycle_dir in pbar:

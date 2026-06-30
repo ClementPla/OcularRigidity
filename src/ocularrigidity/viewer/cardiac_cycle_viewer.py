@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
-from scipy.integrate import solve_ivp
 from astropy.timeseries import LombScargle
 import numpy as np
 from ocularrigidity.motion.pulsation import CardiacCycleExtractor
-from ocularrigidity.motion.results import CardiacPipelineResults
+from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
 def plot_cardiac_signals(

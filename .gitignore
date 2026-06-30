@@ -9,6 +9,7 @@ __pycache__/
 .env
 # C extensions
 *.so
+.claude/
 
 # Distribution / packaging
 .Python
