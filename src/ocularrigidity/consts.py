@@ -19,9 +19,20 @@ ROOT_COMPRESSED_VIDEO = Path(
     "/media/clement/HD/Santiago/OcularRigidity/outputs/compressed/"
 )
 
+# Root passed to RegisteredVideo(cache_dir=...). The registration cache lives in
+# `registered_masks/` and `registered_frames/` subfolders below this root,
+# mirroring the layout of ROOT_COMPRESSED_VIDEO and ROOT_MASKS.
+ROOT_REGISTERED_CACHE = Path("/media/clement/HD/Santiago/OcularRigidity/outputs/")
+
+# Root holding the per-method/phase pulsation outputs (one_cycle_*, measures_*,
+# deltaY_*.pkl, misregistration_flags.csv) produced by the cohort scripts.
+ROOT_CARDIAC_PIPELINE = ROOT_REGISTERED_CACHE / "CardiacPipeline_V2"
+
 ROOT_ONE_CYCLE = Path("/media/clement/HD/Santiago/OcularRigidity/outputs/one_cycle/")
 
 
 CHECKPOINT_PATH = Path(
     "/home/clement/Documents/Projets/OcularRigidity/checkpoints/choroid-segmentation-epoch=29-dice=0.99.ckpt"
 )
+
+OUTPUT_FOLDER = Path("/media/clement/HD/Santiago/OcularRigidity/outputs/compressed")

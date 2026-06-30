@@ -1,23 +1,37 @@
 import sqlite3
+from typing import Optional
 
 import pandas as pd
 
 from ocularrigidity.consts import MEASUREMENTS_PATH, STUDY_PATH
 from ocularrigidity.data.measurements.studies import Study
-from typing import Optional
 
 
-def _merge_measure(df, df_aux, name, on_keys):
-    # AGGREGATE HERE: Ensure one value per key combo to prevent row duplication
-    # We take the mean if numeric, or first if it's a string/mixed.
-    df_aux_unique = (
-        df_aux.groupby(on_keys)["MeasureValue"]
-        .first()  # Or .mean() if columns are numeric
-        .reset_index()
+def _merge_measure(df, df_aux, name, measure_names, on_keys, numeric=False):
+    """Merge a single derived column, selecting from `measure_names` in priority
+    order. `measure_names` is an exact-match list, highest priority first; the
+    first instrument that has a value for a given key wins (coalesce)."""
+    aux = df_aux[df_aux["MeasureName"].isin(measure_names)].copy()
+    if aux.empty:
+        df[name] = pd.NA
+        return df
+
+    # priority rank so the preferred instrument wins on collisions
+    rank = {m: i for i, m in enumerate(measure_names)}
+    aux["_rank"] = aux["MeasureName"].map(rank)
+
+    # one value per key: lowest rank (preferred instrument) first
+    aux = (
+        aux.sort_values("_rank")
+        .groupby(on_keys, as_index=False)["MeasureValue"]
+        .first()
         .rename(columns={"MeasureValue": name})
     )
 
-    return df.merge(df_aux_unique, on=on_keys, how="left")  # .dropna(subset=[name])
+    out = df.merge(aux, on=on_keys, how="left")
+    if numeric:
+        out[name] = pd.to_numeric(out[name], errors="coerce")
+    return out
 
 
 def load_measurements(
@@ -27,16 +41,14 @@ def load_measurements(
     include_HR: bool = False,
     include_axial_length: bool = False,
     which_study: Optional[Study] = None,
+    iop_instrument: str = "Pascal IOP",   # 'Pascal IOP' (diastolic) matches Pascal OPA
     verbose: bool = False,
 ) -> pd.DataFrame:
     with sqlite3.connect(MEASUREMENTS_PATH) as con:
-        # Optimization: Filter for "PLEX Macular Video" at the SQL level to save RAM
         df = pd.read_sql_query(
             "SELECT * FROM measurements WHERE MeasureName LIKE '%PLEX Macular Video%'",
             con,
         )
-
-        # Load auxiliary data only if needed to save resources
         full_raw_df = None
         if any([include_OPA, include_IOP, include_HR, include_axial_length]):
             full_raw_df = pd.read_sql_query("SELECT * FROM measurements", con)
@@ -45,56 +57,68 @@ def load_measurements(
     df = df[~df["MeasureValue"].str.startswith("\\\\Usereve")]
     df["MeasureValue"] = df["MeasureValue"].str.replace("\\\\", "/", regex=False)
     df = df.dropna(subset=["MeasureValue"])
+
+    # SQLite LIKE is case-insensitive, so 'PLEX'/'Plex' variants both arrive ->
+    # may produce duplicate rows per (PatientId, Eye, Date). Collapse them.
+    df = df.drop_duplicates(subset=["PatientId", "Eye", "Date", "MeasureValue"])
     if verbose:
         print(f"Loaded {len(df)} video measurements after cleaning.")
+
     if include_diagnosis:
         with sqlite3.connect(MEASUREMENTS_PATH) as con:
             diagnosis = pd.read_sql_query(
                 "SELECT PatientId, Diagnosis, Eye, Type FROM diagnosis", con
             )
-        # Drop duplicates in diagnosis to prevent row bloat
         diagnosis = diagnosis.drop_duplicates(subset=["PatientId", "Eye"])
         df = df.merge(diagnosis, on=["PatientId", "Eye"], how="left")
         df = df.dropna(subset=["Diagnosis", "Type"])
 
-    # Handle auxiliary merges with the fixed helper
     if include_OPA and full_raw_df is not None:
-        aux = full_raw_df[
-            full_raw_df["MeasureName"].str.contains("OPA", case=False, na=False)
-        ]
-        df = _merge_measure(df, aux, "OPA", ["PatientId", "Eye", "Date"])
+        df = _merge_measure(
+            df, full_raw_df, "OPA",
+            measure_names=["Pascal OPA"],
+            on_keys=["PatientId", "Eye", "Date"],
+            numeric=True,
+        )
         if verbose:
             print(f"After merging OPA, dataset has {len(df)} records.")
+
     if include_IOP and full_raw_df is not None:
-        aux = full_raw_df[
-            full_raw_df["MeasureName"].str.contains("IOP", case=False, na=False)
-        ]
-        df = _merge_measure(df, aux, "IOP", ["PatientId", "Eye", "Date"])
+        # exact instrument; fall back only to other Pascal-like diastolic sources
+        # if you want — but do NOT silently mix Goldman/ORA conventions.
+        iop_priority = [iop_instrument]
+        df = _merge_measure(
+            df, full_raw_df, "IOP",
+            measure_names=iop_priority,
+            on_keys=["PatientId", "Eye", "Date"],
+            numeric=True,
+        )
         if verbose:
-            print(f"After merging IOP, dataset has {len(df)} records.")
+            n = df["IOP"].notna().sum()
+            print(f"After merging IOP ({iop_instrument}), {n}/{len(df)} have a value.")
 
     if include_axial_length and full_raw_df is not None:
-        aux = full_raw_df[
-            full_raw_df["MeasureName"].str.contains(
-                "Axial Length", case=False, na=False
-            )
-            | full_raw_df["MeasureName"].str.contains(
-                "IOLMaster AL", case=False, na=False
-            )
-        ]
-        # Use only PatientId/Eye as Axial Length is usually static across dates
-        df = _merge_measure(df, aux, "AxialLength", ["PatientId", "Eye"])
-        df["AxialLength"] = pd.to_numeric(df["AxialLength"], errors="coerce")
+        # AL is static per eye -> merge on (PatientId, Eye) only, ignoring Date.
+        # Prefer IOLMaster (optical biometry) over generic 'Axial Length'.
+        df = _merge_measure(
+            df, full_raw_df, "AxialLength",
+            measure_names=["IOLMaster AL", "Axial Length"],
+            on_keys=["PatientId", "Eye"],
+            numeric=True,
+        )
         if verbose:
             print(f"After merging Axial Length, dataset has {len(df)} records.")
+
     if include_HR and full_raw_df is not None:
-        aux = full_raw_df[
-            full_raw_df["MeasureName"].str.contains("HR", case=False, na=False)
-        ]
-        df = _merge_measure(df, aux, "HR", ["PatientId", "Date"])
-        df["HR"] = pd.to_numeric(df["HR"], errors="coerce")
+        df = _merge_measure(
+            df, full_raw_df, "HR",
+            measure_names=["HR"],
+            on_keys=["PatientId", "Date"],
+            numeric=True,
+        )
         if verbose:
             print(f"After merging HR, dataset has {len(df)} records.")
+
     if which_study is not None:
         with sqlite3.connect(STUDY_PATH) as con:
             study_df = pd.read_sql_query(

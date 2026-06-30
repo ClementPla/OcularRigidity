@@ -1,7 +1,7 @@
 import numpy as np
 
 
-from ocularrigidity.motion.results import CardiacPipelineResults
+from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
 def systolic_diastolic_amplitude_from_thickness(

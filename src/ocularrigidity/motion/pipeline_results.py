@@ -20,14 +20,12 @@ class CardiacPipelineResults:
     video: Path
     skip_first_n_frames: int
     drop_last_n_frames: int
-    transform: str
     flatten: bool
-    horizontal_scaling: bool
     horizontal_alignment: bool
-    refine_iters: int
     bpm_range: tuple[float, float]
     override_cardiac_freq: Optional[float]
     expected_bpm: Optional[float]
+    expected_bpm_band_frac: float
     butter_order: int
     n_separable_components: int
     sigma_col: float
@@ -40,9 +38,9 @@ class CardiacPipelineResults:
     harmonic_correction: bool
     harmonic_tolerance_bpm: float
     harmonic_min_power_ratio: float
+    bpm_prior_sigma_bpm: float
 
     # Results
-    registration_params: np.ndarray
     registered_boundaries: np.ndarray
     timestamps_seconds: np.ndarray
     uniform_time: np.ndarray
@@ -77,14 +75,12 @@ class CardiacPipelineResults:
             video=ex.registrator.video,
             skip_first_n_frames=ex.skip_first_n_frames,
             drop_last_n_frames=ex.drop_last_n_frames,
-            transform=ex.registrator.transform,
             flatten=ex.registrator.flatten,
-            horizontal_scaling=ex.registrator.horizontal_scaling,
             horizontal_alignment=ex.registrator.horizontal_alignment,
-            refine_iters=ex.registrator.refine_iters,
             bpm_range=ex.bpm_range,
-            override_cardiac_freq=ex.cardiac_freq,
+            override_cardiac_freq=ex.cardiac_freq if ex._is_freq_overridden else None,
             expected_bpm=ex.expected_bpm,
+            expected_bpm_band_frac=ex.expected_bpm_band_frac,
             butter_order=ex.butter_order,
             n_separable_components=ex.n_separable_components,
             sigma_col=ex.sigma_col,
@@ -97,7 +93,7 @@ class CardiacPipelineResults:
             harmonic_correction=ex.harmonic_correction,
             harmonic_tolerance_bpm=ex.harmonic_tolerance_bpm,
             harmonic_min_power_ratio=ex.harmonic_min_power_ratio,
-            registration_params=ex.registrator.registration_params,
+            bpm_prior_sigma_bpm=ex.bpm_prior_sigma_bpm,
             registered_boundaries=ex.registrator.registered_lines,
             timestamps_seconds=ex.timestamps_seconds,
             uniform_time=ex.uniform_time,
@@ -129,8 +125,6 @@ class CardiacPipelineResults:
     def __post_init__(self):
         if isinstance(self.video, str):
             self.video = Path(self.video)
-        if isinstance(self.registration_params, torch.Tensor):
-            self.registration_params = self.registration_params.cpu().numpy()
 
         if isinstance(self.registered_boundaries, torch.Tensor):
             self.registered_boundaries = self.registered_boundaries.cpu().numpy()

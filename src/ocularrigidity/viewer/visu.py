@@ -24,21 +24,21 @@ matplotlib.use("Agg")  # headless, for off-screen rendering into pygame surfaces
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-from ocularrigidity.data.io import load_mask, load_cube, load_cube_mp4
-from ocularrigidity.consts import ROOT_DATA_MNT, ROOT_MASKS, ROOT_COMPRESSED_VIDEO
-from ocularrigidity.registration.estimate_curve import (
-    register_bm_to_reference,
-    apply_transforms,
-    bbox_fast,
+from ocularrigidity.consts import (
+    ROOT_DATA_MNT,
+    ROOT_MASKS,
+    ROOT_COMPRESSED_VIDEO,
+    ROOT_REGISTERED_CACHE,
 )
-from ocularrigidity.segmentation.postprocess.smoothing import (
-    extract_boundaries,
+from ocularrigidity.motion.registered_video import RegisteredVideo
+from ocularrigidity.segmentation.postprocess.interfaces import (
+    extract_boundaries_gpu,
     rebuild_mask,
     smooth_boundary_2d,
 )
 from ocularrigidity.rigidity.features import (
     compute_deltaY_masks,
-    extract_thickness_distance,
+    compute_deltaY_boundaries,
 )
 
 
@@ -171,32 +171,29 @@ def probe_cube(input_bin: Path, input_compressed: Path, rel: str) -> dict:
     }
 
 
-def find_cube_for(input_bin: Path, input_compressed: Path, rel: str, prefer_mp4: bool):
-    info = probe_cube(input_bin, input_compressed, rel)
-    order = ["mp4", "bin"] if prefer_mp4 else ["bin", "mp4"]
-    for kind in order:
-        if info[kind]:
-            return info[f"{kind}_path"], kind
-    return None
-
-
 # --- Frame composition ------------------------------------------------------
 
 
-def compose_frames(
-    video: np.ndarray, mask: np.ndarray, show_mask: bool, mask_alpha: float = 0.4
+def compose_overlay_frame(
+    frame: np.ndarray,
+    mask: Optional[np.ndarray],
+    show_mask: bool,
+    mask_alpha: float = 0.4,
 ) -> np.ndarray:
-    """Pre-compose full overlay video. Returns (T, H, W, 3) uint8."""
-    T, H, W = video.shape
-    out = np.broadcast_to(video[..., None], (T, H, W, 3)).copy()
-    if not show_mask:
+    """Compose a single (H, W) frame into an (H, W, 3) uint8 overlay.
+
+    Composed lazily per displayed frame; pre-composing the whole video would
+    allocate gigabytes for long sequences.
+    """
+    out = np.repeat(frame[..., None], 3, axis=2)
+    if not show_mask or mask is None:
         return out
     overlay = np.array([255, 85, 85], dtype=np.float32)
     gray = np.arange(256, dtype=np.float32)
     lut = (gray[:, None] * (1 - mask_alpha) + overlay[None, :] * mask_alpha).astype(
         np.uint8
     )
-    out[mask] = lut[video[mask]]
+    out[mask] = lut[frame[mask]]
     return out
 
 
@@ -211,19 +208,24 @@ def render_charts(
     delta_y: np.ndarray,  # (T, W) or (T,)
     thickness: np.ndarray,  # (T, W) or (T,)
     area: np.ndarray,  # (T,)
-    current_t: int,
     width_px: int,
     height_px: int,
     dpi: int = 100,
-) -> pygame.Surface:
-    """Render 3 stacked charts into a single pygame Surface."""
+) -> tuple[pygame.Surface, tuple[float, float]]:
+    """Render 3 stacked charts into a pygame Surface (no playhead).
+
+    The playhead is drawn separately as a cheap pygame line so the (expensive)
+    matplotlib render only happens when the data changes, not every frame.
+    Returns ``(surface, (x0_px, x1_px))`` where the tuple is the pixel x-range
+    of the shared data area, used to position the playhead.
+    """
     fig = plt.figure(
         figsize=(width_px / dpi, (3 * height_px) / dpi), dpi=dpi, facecolor="#1c1c24"
     )
 
     series = [
         (delta_y, "deltaY (thickness)", "#ff5555"),
-        (thickness, "thickness (dist)", "#5599ff"),
+        (thickness, "thickness (span)", "#5599ff"),
         (area, "Area (pixel count)", "#55ff88"),
     ]
 
@@ -242,9 +244,7 @@ def render_charts(
             T = len(data)
             ax.plot(np.arange(T), data, color=color, linewidth=1.2)
 
-        # Vertical line at current frame
-        ax.axvline(current_t, color="#e6e6eb", linewidth=1.0, alpha=0.7)
-
+        ax.set_xlim(0, max(T - 1, 1))
         ax.set_title(name, color="#e6e6eb", fontsize=9, loc="left")
         ax.tick_params(colors="#9696a0", labelsize=8)
         for spine in ax.spines.values():
@@ -258,10 +258,13 @@ def render_charts(
     renderer = canvas.get_renderer()
     raw = renderer.buffer_rgba()
     size = canvas.get_width_height()
+    # Shared data-area x-range in pixels (kept inside every subplot's axes box).
+    x0_px = max(ax.get_position().x0 for ax in fig.axes) * size[0]
+    x1_px = min(ax.get_position().x1 for ax in fig.axes) * size[0]
     plt.close(fig)
 
     surf = pygame.image.frombuffer(raw, size, "RGBA").convert_alpha()
-    return surf
+    return surf, (x0_px, x1_px)
 
 
 # --- App --------------------------------------------------------------------
@@ -287,6 +290,10 @@ class App:
         self.input_root = input_root
         self.output_root = output_root
         self.use_compressed = True
+        # Registration cache: when on, RegisteredVideo reads/writes the
+        # registered frames+masks under ROOT_REGISTERED_CACHE so reloads are fast.
+        self.use_cache = True
+        self.cache_root = Path(ROOT_REGISTERED_CACHE)
         self.apply_smoothing = True
         self.sigma_time = 5.0
         self.sigma_col = 2.0
@@ -303,10 +310,15 @@ class App:
         # Derived (smoothed mask + composed frames + features)
         self.masks: Optional[np.ndarray] = None
         self.video: Optional[np.ndarray] = None
-        self.frames: Optional[np.ndarray] = None  # composed overlay (T,H,W,3)
         self._features_cache: Optional[dict] = None
+        # Cached current-frame surface (recomposed only when something changes)
+        self._frame_surf: Optional[pygame.Surface] = None
+        self._frame_key = None
+        # Bumped whenever masks/video change, to invalidate the frame cache
+        self._render_version = 0
+        # Static chart surface + playhead x-range; re-rendered only on data/resize
         self._chart_surface: Optional[pygame.Surface] = None
-        self._last_chart_t: int = -1
+        self._chart_xmap: Optional[tuple[float, float]] = None
 
         self.idx = 0
         self.playing = False
@@ -347,7 +359,7 @@ class App:
         self.input_entry = pygame_gui.elements.UITextEntryLine(
             relative_rect=pygame.Rect((pad, y), (col_w, 30)),
             manager=self.ui,
-            initial_text=self.input_root,
+            initial_text=str(self.input_root),
         )
         y += 38
 
@@ -360,7 +372,7 @@ class App:
         self.output_entry = pygame_gui.elements.UITextEntryLine(
             relative_rect=pygame.Rect((pad, y), (col_w, 30)),
             manager=self.ui,
-            initial_text=self.output_root,
+            initial_text=str(self.output_root),
         )
         y += 42
 
@@ -370,6 +382,16 @@ class App:
             manager=self.ui,
             object_id=ObjectID(
                 object_id="#toggle_on" if self.use_compressed else "#toggle_off"
+            ),
+        )
+        y += 38
+
+        self.cache_btn = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((pad, y), (col_w, 30)),
+            text=self._toggle_label("Use registration cache", self.use_cache),
+            manager=self.ui,
+            object_id=ObjectID(
+                object_id="#toggle_on" if self.use_cache else "#toggle_off"
             ),
         )
         y += 38
@@ -538,64 +560,52 @@ class App:
         if self.selected_rel is None:
             return
         rel = self.selected_rel
-        out = Path(self.output_root).expanduser()
-        inp = Path(self.input_root).expanduser()
-        inp_compressed = Path(ROOT_COMPRESSED_VIDEO).expanduser()
 
-        mask_path = out / rel / "mask.npz"
+        # Compressed mp4 lives under ROOT_COMPRESSED_VIDEO; raw cube.bin under
+        # the (editable) input root. RegisteredVideo handles loading + the rigid
+        # displacement registration, and (optionally) caches the result.
+        if self.use_compressed:
+            root_data = Path(ROOT_COMPRESSED_VIDEO).expanduser()
+        else:
+            root_data = Path(self.input_root).expanduser()
+
+        cache_dir = self.cache_root if self.use_cache else None
         try:
-            self.status_msg = f"Loading mask: {rel}"
+            self.status_msg = f"Loading + registering: {rel}"
             self._flush_status()
-            mask = load_mask(str(mask_path))[4:-1]
+            rv = RegisteredVideo(
+                video=Path(rel),
+                root_masks=Path(self.output_root).expanduser(),
+                root_data=root_data,
+                skip_first_n_frames=10,
+                drop_last_n_frames=10,
+                flatten=False,
+                horizontal_alignment=True,
+                use_encoded_video=self.use_compressed,
+                cache_dir=cache_dir,
+                verbose=False,
+            )
+            masks = rv.registered_masks
+            video = rv.registered_frames
         except Exception as e:
-            self.status_msg = f"Failed to load mask: {e}"
+            self.status_msg = f"Failed to load/register {rel}: {e}"
             return
 
-        # Find + load cube
-        found = find_cube_for(inp, inp_compressed, rel, prefer_mp4=self.use_compressed)
-        if found is None:
-            self.status_msg = f"No cube found for {rel}"
+        if video.shape != masks.shape:
+            self.status_msg = f"Shape mismatch: {video.shape} vs {masks.shape}"
             return
 
-        cube_path, kind = found
-        try:
-            self.status_msg = f"Loading {kind.upper()}: {cube_path.name}"
-            self._flush_status()
-            video = load_cube_mp4(cube_path) if kind == "mp4" else load_cube(cube_path)
-            video = video[4:-1]
-        except Exception as e:
-            self.status_msg = f"Cube load failed: {e}"
-            return
-
-        if video.shape != mask.shape:
-            self.status_msg = f"Shape mismatch: {video.shape} vs {mask.shape}"
-            return
-
-        # Crop + register
-        try:
-            self.status_msg = "Registering..."
-            self._flush_status()
-            zmin, zmax, ymin, ymax, xmin, xmax = bbox_fast(mask)
-            mask = mask[zmin:zmax, ymin:ymax, :]
-            video = video[zmin:zmax, ymin:ymax, :]
-
-            transforms = register_bm_to_reference(mask, reference_idx=0)
-            mask = apply_transforms(mask, transforms, is_mask=True)
-            video = apply_transforms(video, transforms, is_mask=False)
-        except Exception as e:
-            self.status_msg = f"Registration failed: {e}"
-            return
-
-        self._raw_masks = mask
+        self._raw_masks = masks
         self._raw_video = video
         self._rebuild_display()
 
         self.idx = 0
         self.playing = True
-        self.status_msg = f"Loaded {rel}  [{kind}]"
+        src = "mp4" if self.use_compressed else "bin"
+        self.status_msg = f"Loaded {rel}  [{src}{', cached' if self.use_cache else ''}]"
 
     def _rebuild_display(self):
-        """Re-derive self.masks, self.video, self.frames from _raw_* + current smoothing settings."""
+        """Re-derive self.masks/self.video + chart features from _raw_* + current smoothing settings."""
         if self._raw_masks is None:
             return
 
@@ -603,7 +613,7 @@ class App:
         self._flush_status()
 
         if self.apply_smoothing:
-            bm, csi = extract_boundaries(self._raw_masks)
+            bm, csi = extract_boundaries_gpu(self._raw_masks)
             csi_smooth = smooth_boundary_2d(
                 csi, sigma_time=self.sigma_time, sigma_col=self.sigma_col
             )
@@ -613,18 +623,19 @@ class App:
 
         self.video = self._raw_video
 
-        self.frames = compose_frames(
-            self.video, self.masks, show_mask=self.show_mask, mask_alpha=self.mask_alpha
-        )
-
-        # Compute features for charts
+        # Compute features for charts. Thickness is the BM→CSI span (fast,
+        # GPU boundary extraction) rather than a per-frame distance transform.
+        bm_f, csi_f = extract_boundaries_gpu(self.masks)
         self._features_cache = {
             "delta_y": compute_deltaY_masks(self.masks),
-            "thickness": extract_thickness_distance(self.masks),
+            "thickness": compute_deltaY_boundaries(bm_f, csi_f),
             "area": self.masks.sum(axis=(1, 2)).astype(np.float32),
         }
 
-        self._last_chart_t = -1  # force chart refresh
+        # Invalidate render caches; frames are composed lazily in draw_viewer.
+        self._render_version += 1
+        self._frame_key = None
+        self._chart_surface = None
 
     def _flush_status(self):
         self.screen.fill(BG)
@@ -657,11 +668,15 @@ class App:
         w, h = self.screen.get_size()
         return pygame.Rect(SIDEBAR_W, h - CONTROL_H, w - SIDEBAR_W, CONTROL_H)
 
+    @property
+    def n_frames(self) -> int:
+        return 0 if self.video is None else self.video.shape[0]
+
     def fit_frame_rect(self) -> pygame.Rect:
         area = self.viewer_rect()
-        if self.frames is None:
+        if self.video is None:
             return area
-        H, W = self.frames.shape[1], self.frames.shape[2]
+        H, W = self.video.shape[1], self.video.shape[2]
         aspect = W / H
         area_aspect = area.w / area.h
         if area_aspect > aspect:
@@ -678,7 +693,7 @@ class App:
         area = self.viewer_rect()
         pygame.draw.rect(self.screen, BG, area)
 
-        if self.frames is None:
+        if self.video is None:
             msg = "Select a mask from the sidebar"
             surf = self.font_lg.render(msg, True, TEXT_FAINT)
             self.screen.blit(
@@ -690,11 +705,25 @@ class App:
             )
             return
 
-        rgb = self.frames[self.idx]
-        surf = np_to_surface(rgb)
         target = self.fit_frame_rect()
-        surf = pygame.transform.smoothscale(surf, (target.w, target.h))
-        self.screen.blit(surf, target.topleft)
+        # Recompose + rescale only when the frame or display params change.
+        key = (
+            self.idx,
+            target.w,
+            target.h,
+            self.show_mask,
+            round(self.mask_alpha, 2),
+            self._render_version,
+        )
+        if key != self._frame_key or self._frame_surf is None:
+            mask = None if self.masks is None else self.masks[self.idx]
+            rgb = compose_overlay_frame(
+                self.video[self.idx], mask, self.show_mask, self.mask_alpha
+            )
+            surf = np_to_surface(rgb)
+            self._frame_surf = pygame.transform.smoothscale(surf, (target.w, target.h))
+            self._frame_key = key
+        self.screen.blit(self._frame_surf, target.topleft)
 
     def draw_charts(self):
         if self._features_cache is None:
@@ -704,19 +733,26 @@ class App:
         pygame.draw.rect(self.screen, BG, area)
         pygame.draw.line(self.screen, PANEL_BORDER, (area.x, 0), (area.x, area.h), 1)
 
-        # Re-render chart only when the current frame changes (expensive)
-        if self.idx != self._last_chart_t or self._chart_surface is None:
-            self._chart_surface = render_charts(
+        # Re-render the (expensive) matplotlib chart only when data/size change.
+        if self._chart_surface is None:
+            self._chart_surface, self._chart_xmap = render_charts(
                 self._features_cache["delta_y"],
                 self._features_cache["thickness"],
                 self._features_cache["area"],
-                current_t=self.idx,
                 width_px=area.w,
                 height_px=area.h // 3,
             )
-            self._last_chart_t = self.idx
 
         self.screen.blit(self._chart_surface, area.topleft)
+
+        # Playhead: a cheap vertical line at the current frame (no re-render).
+        n = self.n_frames
+        if n > 1 and self._chart_xmap is not None:
+            x0, x1 = self._chart_xmap
+            px = int(area.x + x0 + (self.idx / (n - 1)) * (x1 - x0))
+            pygame.draw.line(
+                self.screen, TEXT, (px, area.y + 4), (px, area.y + area.h - 4), 1
+            )
 
     def draw_controls(self):
         area = self.control_rect()
@@ -730,8 +766,8 @@ class App:
         bar_rect = pygame.Rect(area.x + pad, area.y + 14, area.w - 2 * pad, bar_h)
         pygame.draw.rect(self.screen, PANEL_BORDER, bar_rect, border_radius=3)
 
-        if self.frames is not None:
-            n = self.frames.shape[0]
+        if self.video is not None:
+            n = self.n_frames
             progress = self.idx / max(1, n - 1)
             fill_w = int(bar_rect.w * progress)
             if fill_w > 0:
@@ -744,8 +780,8 @@ class App:
         self._bar_rect = bar_rect
 
         y = area.y + 36
-        if self.frames is not None:
-            n = self.frames.shape[0]
+        if self.video is not None:
+            n = self.n_frames
             status = "PLAYING" if self.playing else "PAUSED"
             left = f"Frame {self.idx} / {n - 1}"
             smooth_info = (
@@ -781,6 +817,12 @@ class App:
                     self._toggle_label("Prefer compressed (mp4)", self.use_compressed)
                 )
                 self._update_toggle_style(self.compressed_btn, self.use_compressed)
+            elif event.ui_element is self.cache_btn:
+                self.use_cache = not self.use_cache
+                self.cache_btn.set_text(
+                    self._toggle_label("Use registration cache", self.use_cache)
+                )
+                self._update_toggle_style(self.cache_btn, self.use_cache)
             elif event.ui_element is self.smooth_btn:
                 self.apply_smoothing = not self.apply_smoothing
                 self.smooth_btn.set_text(
@@ -826,6 +868,9 @@ class App:
         elif event.type == pygame.WINDOWSIZECHANGED:
             self.ui.set_window_resolution(self.screen.get_size())
             self._relayout_sidebar()
+            # Cached surfaces are size-specific; force a re-render at new size.
+            self._chart_surface = None
+            self._frame_key = None
 
         elif event.type == pygame.KEYDOWN:
             if (
@@ -837,41 +882,36 @@ class App:
 
             if event.key in (pygame.K_q, pygame.K_ESCAPE):
                 return False
-            elif event.key == pygame.K_SPACE and self.frames is not None:
+            elif event.key == pygame.K_SPACE and self.video is not None:
                 self.playing = not self.playing
-            elif event.key == pygame.K_RIGHT and self.frames is not None:
-                self.idx = min(self.idx + 1, self.frames.shape[0] - 1)
+            elif event.key == pygame.K_RIGHT and self.video is not None:
+                self.idx = min(self.idx + 1, self.n_frames - 1)
                 self.playing = False
-            elif event.key == pygame.K_LEFT and self.frames is not None:
+            elif event.key == pygame.K_LEFT and self.video is not None:
                 self.idx = max(self.idx - 1, 0)
                 self.playing = False
             elif event.key == pygame.K_UP:
                 self.fps = min(self.fps + 5, 120)
             elif event.key == pygame.K_DOWN:
                 self.fps = max(self.fps - 5, 1)
-            elif event.key == pygame.K_r and self.frames is not None:
+            elif event.key == pygame.K_r and self.video is not None:
                 self.idx = 0
             elif event.key == pygame.K_F5:
                 self.refresh_entries()
             elif event.key == pygame.K_o:
                 self.show_mask = not self.show_mask
-                self._rebuild_display()
             elif event.key == pygame.K_PLUS:
                 self.mask_alpha = min(self.mask_alpha + 0.05, 1.0)
-                if self.show_mask:
-                    self._rebuild_display()
             elif event.key == pygame.K_MINUS:
                 self.mask_alpha = max(self.mask_alpha - 0.05, 0.0)
-                if self.show_mask:
-                    self._rebuild_display()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if (
                 self._bar_rect
                 and self._bar_rect.collidepoint(event.pos)
-                and self.frames is not None
+                and self.video is not None
             ):
                 rel = (event.pos[0] - self._bar_rect.x) / self._bar_rect.w
-                self.idx = int(np.clip(rel, 0, 1) * (self.frames.shape[0] - 1))
+                self.idx = int(np.clip(rel, 0, 1) * (self.n_frames - 1))
                 self.playing = False
 
         return True
@@ -897,10 +937,10 @@ class App:
             now = pygame.time.get_ticks()
             if (
                 self.playing
-                and self.frames is not None
+                and self.video is not None
                 and now - self.last_tick >= 1000 / self.fps
             ):
-                self.idx = (self.idx + 1) % self.frames.shape[0]
+                self.idx = (self.idx + 1) % self.n_frames
                 self.last_tick = now
 
             self.ui.update(dt)
