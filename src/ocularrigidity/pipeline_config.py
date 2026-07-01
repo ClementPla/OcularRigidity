@@ -25,6 +25,19 @@ class RegistrationConfig:
     lateral_method: Literal["xcorr", "fullframe", "both"] = "fullframe"
     subpixel: bool = True
     use_encoded_video: bool = True
+    # 2e passe (RPE) : recalage axial de chaque A-scan sur la mediane du volume
+    # deja recale (compensation d'ombres + LoG + correlation de phase par colonne).
+    # Desactive par defaut ; ne modifie ni le cache ni le comportement existant
+    # tant qu'il n'est pas active. Voir registration/axial/median_registration.py.
+    median_registration: bool = False
+    median_max_vshift: int = 30
+    # Compensation d'ombres et LoG sont decouples : activables independamment.
+    median_use_shadow: bool = True
+    median_use_log: bool = True
+    median_shadow_n: float = 4.0
+    median_shadow_a: float = 0.8
+    median_log_kernel_size: int = 9
+    median_log_sigma: float = 3.0
     # Not part of the cache key — only affects throughput on a cache miss.
     batch_size: int = 128
 
