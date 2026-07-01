@@ -180,6 +180,14 @@ def estimate_lateral_shift_fullframe(
 
         dx[start:end] = (center - peak_sub) * (crop_w / w)
 
+    # Pixel-precise request: snap to whole ORIGINAL-resolution pixels. The peak is
+    # already integer on the downsampled grid, but the back-projection
+    # (× crop_w / w) turns it into a fraction; rounding here makes the returned
+    # shift an integer number of pixels in the original image (not the
+    # downsampled one). With ``subpixel`` the fractional peak offset is kept.
+    if not subpixel:
+        dx = dx.round()
+
     if return_confidence:
         return dx, conf
 

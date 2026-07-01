@@ -17,6 +17,49 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 from tqdm.auto import tqdm
 
 
+@torch.inference_mode()
+def temporal_median(
+    frames,
+    ignore_zeros: bool = True,
+    device: str = "cuda",
+    row_chunk: int = 64,
+) -> torch.Tensor:
+    """Mediane temporelle d'un volume recale ``(T, H, W)`` -> template ``(H, W)``.
+
+    Concue pour operer sur le volume DEJA EN MEMOIRE apres
+    ``register_masks_by_displacement`` (pas de relecture disque). Le calcul reste
+    sur le GPU et est decoupe par blocs de lignes (``row_chunk``) pour borner la
+    memoire — meme esprit que le traitement par lots de ``F.grid_sample`` dans ce
+    module.
+
+    ``ignore_zeros`` (defaut) traite les pixels exactement nuls comme manquants :
+    ce sont les bords introduits par le zero-padding de ``grid_sample`` lors du
+    recalage, qui fausseraient sinon la mediane des colonnes de bord. On calcule
+    alors une ``nanmedian`` par pixel, comme l'``omitnan`` du MATLAB (``average.m``).
+
+    Returns
+    -------
+    torch.Tensor
+        Template median ``(H, W)`` (float32, sur ``device``).
+    """
+    if isinstance(frames, np.ndarray):
+        frames = torch.from_numpy(frames)
+    T, H, W = frames.shape
+    out = torch.empty((H, W), dtype=torch.float32, device=device)
+    for r0 in range(0, H, row_chunk):
+        r1 = min(r0 + row_chunk, H)
+        block = frames[:, r0:r1, :].to(device, torch.float32)  # (T, h, W)
+        if ignore_zeros:
+            block = block.masked_fill(block == 0, float("nan"))
+            med = torch.nanmedian(block, dim=0).values
+            med = torch.nan_to_num(med, nan=0.0)
+        else:
+            med = block.median(dim=0).values
+        out[r0:r1] = med
+        del block
+    return out
+
+
 def robust_temporal_dx(
     dx: torch.Tensor,
     conf: torch.Tensor = None,
@@ -150,6 +193,11 @@ def register_masks_by_displacement(
         # Real lateral eye motion is low-frequency; a wider Gaussian absorbs the
         # residual frame-to-frame jitter that survives outlier rejection.
         global_dx = smooth_translations(global_dx, sigma=4.0)
+        # Pixel-precise request: the estimator may already round, but the temporal
+        # smoothing above re-introduces fractions. Snap the applied lateral shift
+        # back to whole pixels so grid_sample copies source pixels exactly.
+        if not subpixel:
+            global_dx = global_dx.round()
 
     registered_masks_chunks = []
     registered_frames_chunks = []
@@ -201,10 +249,22 @@ def register_masks_by_displacement(
         displacement = bm_aligned - ref_bm.unsqueeze(0)  # t x W
 
         if flatten_rpe:
-            displacement = bm_aligned - ref_bm.mean()  # t x W
+            # nanmean (et non mean) : les colonnes de bord sans choroide donnent
+            # une frontiere NaN dans ref_bm ; ``ref_bm.mean()`` renverrait alors
+            # NaN -> displacement ENTIEREMENT NaN -> nan_to_num=0 -> AUCUN recalage
+            # vertical (le flatten ne fait rien). nanmean garde un niveau de flatten
+            # valide a partir des colonnes segmentees ; les colonnes NaN restent
+            # simplement non deplacees (comme en mode non-flatten). Rend robustes
+            # RegisteredVideo et tous les appelants, sans pre-remplissage des masques.
+            displacement = bm_aligned - torch.nanmean(ref_bm)  # t x W
 
         # Replace NaN to zeros in the displacement
         displacement = torch.nan_to_num(displacement, nan=0.0)
+        # Pixel-precise request: round the per-column vertical shift too, so the
+        # full applied transform (lateral dx + vertical dy) is integer-valued and
+        # the stored params match what grid_sample actually applies.
+        if not subpixel:
+            displacement = displacement.round()
         if return_params:
             displacement_chunks.append(displacement.detach().cpu())
         sample_y = grid_y + displacement.view(t, 1, -1)

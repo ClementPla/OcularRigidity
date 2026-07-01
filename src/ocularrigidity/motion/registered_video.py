@@ -41,6 +41,14 @@ class RegisteredVideo:
         cache_dir: Path = None,
         lateral_method: Literal["xcorr", "fullframe", "both"] = "xcorr",
         subpixel: bool = True,
+        median_registration: bool = False,
+        median_max_vshift: int = 30,
+        median_use_shadow: bool = True,
+        median_use_log: bool = True,
+        median_shadow_n: float = 4.0,
+        median_shadow_a: float = 0.8,
+        median_log_kernel_size: int = 9,
+        median_log_sigma: float = 3.0,
     ):
         self.video = video
         self.root_masks = root_masks
@@ -56,6 +64,16 @@ class RegisteredVideo:
         # Apply parabolic sub-pixel refinement to the lateral shift peak. Part of
         # the cache key so integer- and sub-pixel-registered results don't mix.
         self.subpixel = subpixel
+        # 2e passe de recalage axial (RPE) sur la mediane du volume. Desactivee
+        # par defaut ; ses parametres font partie de la cle de cache (_cache_meta).
+        self.median_registration = median_registration
+        self.median_max_vshift = median_max_vshift
+        self.median_use_shadow = median_use_shadow
+        self.median_use_log = median_use_log
+        self.median_shadow_n = median_shadow_n
+        self.median_shadow_a = median_shadow_a
+        self.median_log_kernel_size = median_log_kernel_size
+        self.median_log_sigma = median_log_sigma
         self.verbose = verbose
         self.use_encoded_video = use_encoded_video
 
@@ -120,6 +138,14 @@ class RegisteredVideo:
             horizontal_alignment=int(self.horizontal_alignment),
             lateral_method=self.lateral_method,
             subpixel=int(self.subpixel),
+            median_registration=int(self.median_registration),
+            median_max_vshift=int(self.median_max_vshift),
+            median_use_shadow=int(self.median_use_shadow),
+            median_use_log=int(self.median_use_log),
+            median_shadow_n=float(self.median_shadow_n),
+            median_shadow_a=float(self.median_shadow_a),
+            median_log_kernel_size=int(self.median_log_kernel_size),
+            median_log_sigma=float(self.median_log_sigma),
         )
 
     def _load_from_cache(self) -> bool:
@@ -332,6 +358,34 @@ class RegisteredVideo:
                         subpixel=self.subpixel,
                     )
                 )
+
+        # 2e passe optionnelle : recalage axial de chaque A-scan sur la mediane
+        # du volume deja recale (identification de la RPE). Opere sur le volume
+        # en memoire ; le deplacement par colonne est stocke dans transform["dy_median"].
+        if self.median_registration:
+            from ocularrigidity.registration.axial.median_registration import (
+                register_ascans_to_median,
+            )
+
+            registered_frames, registered_masks, dy_median = (
+                register_ascans_to_median(
+                    registered_frames,
+                    registered_masks,
+                    max_vshift=self.median_max_vshift,
+                    use_shadow=self.median_use_shadow,
+                    use_log=self.median_use_log,
+                    shadow_n=self.median_shadow_n,
+                    shadow_a=self.median_shadow_a,
+                    log_kernel_size=self.median_log_kernel_size,
+                    log_sigma=self.median_log_sigma,
+                    subpixel=self.subpixel,
+                    batch_size=self._batch_size,
+                    device=self._device,
+                    verbose=self.verbose,
+                )
+            )
+            params = dict(params)
+            params["dy_median"] = dy_median
 
         self._registered_masks = registered_masks.cpu().numpy() > 0
         self._registered_frames = registered_frames.cpu().numpy()
