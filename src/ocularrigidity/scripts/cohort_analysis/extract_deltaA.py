@@ -8,10 +8,11 @@ from ocularrigidity.motion.displacement import (
     compute_minimal_A,
     extract_displacement_at_boundaries,
 )
+from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.closing_structures import trim_choroid
 import pickle
-import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
+
 
 def extract_displacement(
     video_path: Path,
@@ -67,11 +68,12 @@ if __name__ == "__main__":
     segmented_dirs = list(input_dir.rglob("**/*segmented_cycles.npz"))
     for segmented_dir in tqdm(segmented_dirs):
         result_filepath = segmented_dir.parent / "deltaA_per_cycle.pkl"
-        if result_filepath.exists():
+        relative_path = segmented_dir.relative_to(input_dir)
+        current_video = relative_path.parent
+        if result_filepath.exists() and (Path(current_video) not in PROCESS_ANYWAY):
             continue
         try:
-            relative_path = segmented_dir.relative_to(input_dir)
-            video_path = input_dir / relative_path.parent / "one_cycle.mkv"
+            video_path = input_dir / current_video / "one_cycle.mkv"
             # We need to replace "measures_" with "one_cycle_" in the relative path to get the corresponding video path
             video_path = Path(str(video_path).replace("measures_", "one_cycle_"))
             (
@@ -84,7 +86,8 @@ if __name__ == "__main__":
                 "deltaA_per_cycle": deltaA_per_cycle,
                 "minA_per_cycle": minA_per_cycle,
                 "displacement_per_cycle": displacement_per_cycle,
-                "reference_coordinates_per_cycle": reference_coordinates_per_cycle,}
+                "reference_coordinates_per_cycle": reference_coordinates_per_cycle,
+            }
             with open(result_filepath, "wb") as f:
                 pickle.dump(results, f)
         except Exception as e:

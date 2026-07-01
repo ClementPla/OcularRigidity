@@ -5,6 +5,7 @@ from ocularrigidity.consts import ROOT_CARDIAC_PIPELINE
 from ocularrigidity.pipeline_config import SEGMENTATION
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import save_mask
+from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.inference import infer
 from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
 
@@ -37,7 +38,7 @@ def process_cohort(input_dir, output_dir):
         relative_path = video_path.relative_to(input_dir)
         pbar.set_postfix_str(f"Processing {relative_path.parent}")
         output_path = output_dir / relative_path.parent / "segmented_cycles.npz"
-        if output_path.exists():
+        if output_path.exists() and (Path(relative_path.parent) not in PROCESS_ANYWAY):
             continue
         mask = segment_videos(video_path)
         save_mask(mask, output_path)

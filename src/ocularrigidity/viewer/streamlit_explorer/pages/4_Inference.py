@@ -1,18 +1,6 @@
-"""Segmentation inference playground.
-
-Pick a one-cycle from the table, tune the choroid segmentation / graph-cut
-parameters and re-run the model on that single clip to see how the mask changes.
-
-Unlike the other pages this one *runs the model*, so it needs the torch stack.
-The heavy imports are deferred until you press **Run**, so the page stays
-navigable (and the rest of the app stays torch-free) until then. Inference runs
-on the full one-cycle frames — matching the cohort pipeline — and the result is
-center-cropped to a square only for display.
-"""
-
 import hashlib
 from pathlib import Path
-
+import numpy as np
 import streamlit as st
 
 from ocularrigidity.viewer import cohort_data as C
@@ -34,8 +22,12 @@ def get_model():
     return get_choroid_segmentation_model().cuda()
 
 
-def _mkv(root, suffix, case):
+def _mkv_one_cycle(root, suffix, case):
     return Path(root) / f"one_cycle_{suffix}" / case / "one_cycle.mkv"
+
+
+def _mkv_raw(root, suffix, case):
+    return Path(root) / ".." / "compressed" / case / "cube.mp4"
 
 
 # --- page --------------------------------------------------------------------
@@ -49,7 +41,9 @@ show_cols = [
     for c in ["case_id", "PatientId", "Date", "Eye", "deltaA", "deltaCT", "K_thickness"]
     if c in df.columns
 ]
-st.caption("Select a case, tune the parameters in the sidebar, then **Run segmentation**.")
+st.caption(
+    "Select a case, tune the parameters in the sidebar, then **Run segmentation**."
+)
 event = st.dataframe(
     df[show_cols],
     on_select="rerun",
@@ -67,6 +61,18 @@ case = df.iloc[rows[0]]["case_id"]
 
 # --- parameters --------------------------------------------------------------
 sb = st.sidebar
+with sb:
+    which_video = st.radio(
+        "Video to display", ["one_cycle", "raw"], horizontal=True, index=0
+    )
+    max_frame = st.slider(
+        "max_frame (for display only)",
+        1,
+        512,
+        512,
+        1,
+        help="Only the first N frames are shown in the video preview. The model runs on all frames.",
+    )
 sb.header("Inference")
 scale = sb.select_slider("scale_factor", options=[0.25, 0.5, 0.75, 1.0], value=0.5)
 batch = sb.slider("batch_size", 1, 32, 16, 1)
@@ -93,7 +99,10 @@ run = st.button("Run segmentation", type="primary")
 def _segment_and_render():
     from ocularrigidity.segmentation.inference import infer
 
-    mkv = _mkv(root, suffix, case)
+    if which_video == "raw":
+        mkv = _mkv_raw(root, suffix, case)
+    else:
+        mkv = _mkv_one_cycle(root, suffix, case)
     if not mkv.exists():
         st.error("This case has no `one_cycle.mkv`.")
         return None
@@ -108,8 +117,10 @@ def _segment_and_render():
         temporal_mu=gc_t_mu,
         temporal_sigma=gc_t_sigma,
     )
-
-    cube_full = R.read_cube(str(mkv))  # (T, H, W) — segment on full frames
+    with st.spinner("Loading video…"):
+        cube_full = R.read_cube(
+            str(mkv), _indices=np.arange(max_frame)
+        )  # (T, H, W) — segment on full frames
     with st.spinner("Running the choroid model…"):
         masks = infer(
             get_model(),
@@ -133,13 +144,24 @@ def _segment_and_render():
         f"{case}|{scale}|{batch}|{use_amp}|{use_gc}|{gc_kwargs}|{alpha}|{factor}".encode()
     ).hexdigest()[:10]
     base = f"infer_{sig}"
-    oc = R.write_mp4(cube, str(R.WORKDIR / f"{base}_oc.mp4"), fps=10, quality=5, preset="ultrafast")
+    oc = R.write_mp4(
+        cube, str(R.WORKDIR / f"{base}_oc.mp4"), fps=10, quality=5, preset="ultrafast"
+    )
     seg = R.write_mp4(
-        R.overlay_video(cube, mask_d, alpha), str(R.WORKDIR / f"{base}_seg.mp4"),
-        fps=10, quality=5, preset="ultrafast",
+        R.overlay_video(cube, mask_d, alpha),
+        str(R.WORKDIR / f"{base}_seg.mp4"),
+        fps=10,
+        quality=5,
+        preset="ultrafast",
     )
     coverage = float(mask_d.any(axis=1).mean())  # rough fraction of columns covered
-    return {"case": case, "oc": oc, "seg": seg, "coverage": coverage, "params": gc_kwargs}
+    return {
+        "case": case,
+        "oc": oc,
+        "seg": seg,
+        "coverage": coverage,
+        "params": gc_kwargs,
+    }
 
 
 if run:
@@ -158,7 +180,9 @@ if result is None:
     st.stop()
 
 if result["case"] != case:
-    st.warning(f"Showing the previous run for `{result['case']}`. Press **Run** to segment `{case}`.")
+    st.warning(
+        f"Showing the previous run for `{result['case']}`. Press **Run** to segment `{case}`."
+    )
 
 st.caption(f"Mask column coverage ≈ {result['coverage']:.2f}")
 c1, c2 = st.columns(2)

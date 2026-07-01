@@ -22,6 +22,8 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
     extract_boundaries_fast,
     extract_boundaries_gpu,
 )
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class RegisteredVideo:
@@ -41,6 +43,7 @@ class RegisteredVideo:
         cache_dir: Path = None,
         lateral_method: Literal["xcorr", "fullframe", "both"] = "xcorr",
         subpixel: bool = True,
+        overwrite_cache: bool = False,
     ):
         self.video = video
         self.root_masks = root_masks
@@ -78,6 +81,7 @@ class RegisteredVideo:
         self._transform = None
         self._device = device
         self._batch_size = batch_size
+        self._overwrite_cache = overwrite_cache
 
     def save_cache(self, path):
         np.savez(
@@ -125,7 +129,7 @@ class RegisteredVideo:
     def _load_from_cache(self) -> bool:
         """Populate registration results from cache. Returns True on a valid hit."""
         paths = self._cache_paths()
-        if not all(p.exists() for p in paths.values()):
+        if not all(p.exists() for p in paths.values()) or self._overwrite_cache:
             return False
         try:
             data = np.load(paths["transform"])
@@ -344,3 +348,32 @@ class RegisteredVideo:
 
         if self.cache_dir is not None:
             self._save_to_cache()
+
+    def plot(self, which="registered", index=None):
+        if which == "registered":
+            frames = self.registered_frames
+            masks = self.registered_masks
+        elif which == "raw":
+            frames = self.raw_frames
+            masks = self.raw_masks
+        else:
+            raise ValueError(f"Unknown 'which' value: {which}")
+
+        if index is None:
+            index = np.random.randint(0, len(frames))
+
+        frame = frames[index]
+        mask = masks[index]
+
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+        axes[0].imshow(frame, cmap="gray")
+        axes[0].set_title(f"{which} frame {index}")
+        axes[0].axis("off")
+        axes[1].imshow(frame, cmap="gray")
+        # Use contourf to fill the mask area with a semi-transparent color and edge visible
+        axes[1].contourf(mask, levels=[0.5, 1], colors=["red"], alpha=0.3)
+        axes[1].set_title(f"{which} frame {index} with mask overlay")
+        axes[1].axis("off")
+
+        plt.tight_layout()
+        plt.show()

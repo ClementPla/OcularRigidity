@@ -77,6 +77,7 @@ def register_masks_by_displacement(
     return_params: bool = False,
     lateral_method: str = "xcorr",
     subpixel: bool = True,
+    max_shift: int = 16,
 ):
     """Register frames/masks by lateral shift + vertical boundary displacement.
 
@@ -122,24 +123,31 @@ def register_masks_by_displacement(
             profile_chunks.append(blurred_frames.squeeze(1).mean(dim=1))
 
     all_bms = torch.cat(bms_list, dim=0).to(device)
-    ref_bm = all_bms[0]
+    # Find the reference indices: count the number of masks pixels per frame, take the median, and pick the frame closest to that median as the reference.
+    mask_counts = raw_masks.sum(dim=(1, 2))
+    median_count = mask_counts.median()
+    ref_idx = (mask_counts - median_count).abs().argmin()
+    ref_bm = all_bms[ref_idx]
 
     if correct_dx:
         if lateral_method == "fullframe":
             global_dx, conf = estimate_lateral_shift_fullframe(
                 raw_frames,
-                ref=raw_frames[0],  # same anchor as the vertical reference (frame 0)
+                ref=raw_frames[
+                    ref_idx
+                ],  # same anchor as the vertical reference (frame 0)
                 batch_size=batch_size,
                 device=device,
                 return_confidence=True,
                 subpixel=subpixel,
+                max_shift=max_shift,
             )
             global_dx = robust_temporal_dx(global_dx, conf=conf)
         elif lateral_method == "xcorr":
             profiles = torch.cat(profile_chunks, dim=0).to(device)
             global_dx = estimate_lateral_shift_xcorr_subpixel(
                 profiles,
-                profiles[0],
+                profiles[ref_idx],
                 101,
                 drop_edges=100,
                 subpixel=subpixel,

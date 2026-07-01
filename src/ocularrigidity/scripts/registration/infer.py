@@ -8,6 +8,7 @@ from pathlib import Path
 from ocularrigidity.data.measurements.dataframe import load_measurements
 from tqdm.auto import tqdm
 from ocularrigidity.motion.registered_video import RegisteredVideo
+from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 
 OVERWRITE = False
 
@@ -18,6 +19,7 @@ def register_all(cache_dir=None):
         video = Path(row["MeasureValue"])
         # Convert to unix path
         video = video.as_posix().replace("\\", "/")
+
         try:
             registrator = RegisteredVideo(
                 video=video,
@@ -33,7 +35,15 @@ def register_all(cache_dir=None):
                 lateral_method=REGISTRATION.lateral_method,
                 subpixel=REGISTRATION.subpixel,
                 batch_size=REGISTRATION.batch_size,
+                overwrite_cache=OVERWRITE or (Path(video) in PROCESS_ANYWAY),
             )
+            paths = registrator._cache_paths()
+            if Path(video) in PROCESS_ANYWAY:
+                print(f"Processing {video} anyway (in PROCESS_ANYWAY)")
+            if all(p.exists() for p in paths.values()) and (
+                Path(video) not in PROCESS_ANYWAY
+            ):
+                continue
             registrator.compute_registration()
         except Exception as e:
             print(f"Error registering {video}: {e}")
