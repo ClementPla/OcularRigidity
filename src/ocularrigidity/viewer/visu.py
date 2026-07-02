@@ -30,13 +30,13 @@ from ocularrigidity.consts import (
     ROOT_COMPRESSED_VIDEO,
     ROOT_REGISTERED_CACHE,
 )
-from ocularrigidity.motion.registered_video import RegisteredVideo
+from ocularrigidity.registration.registration_engine import VideoRegistrator
 from ocularrigidity.segmentation.postprocess.interfaces import (
     extract_boundaries_gpu,
     rebuild_mask,
     smooth_boundary_2d,
 )
-from ocularrigidity.rigidity.features import (
+from ocularrigidity.thickness.features import (
     compute_deltaY_masks,
     compute_deltaY_boundaries,
 )
@@ -573,14 +573,14 @@ class App:
         try:
             self.status_msg = f"Loading + registering: {rel}"
             self._flush_status()
-            rv = RegisteredVideo(
+            rv = VideoRegistrator(
                 video=Path(rel),
                 root_masks=Path(self.output_root).expanduser(),
                 root_data=root_data,
                 skip_first_n_frames=10,
                 drop_last_n_frames=10,
-                flatten=False,
-                horizontal_alignment=True,
+                flatten_rpe=False,
+                correct_transversal=True,
                 use_encoded_video=self.use_compressed,
                 cache_dir=cache_dir,
                 verbose=False,

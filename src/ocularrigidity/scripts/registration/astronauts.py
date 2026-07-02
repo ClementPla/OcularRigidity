@@ -38,7 +38,7 @@ import imageio.v3 as iio
 from ocularrigidity.data.spectralis import SpectralisStudy
 from ocularrigidity.data.io import save_mask
 from ocularrigidity.segmentation.inference import infer
-from ocularrigidity.motion.registered_video import RegisteredVideo
+from ocularrigidity.registration.registration_engine import VideoRegistrator
 from ocularrigidity.pipeline_config import RegistrationConfig
 
 # Importer registered_video -> compression.py force IMAGEIO_FFMPEG_EXE vers un
@@ -74,8 +74,9 @@ def estimate_fps(ts_us: np.ndarray) -> float:
     return float(min(max(fps, 1.0), 240.0))
 
 
-def write_gray_mp4(cube: np.ndarray, out_path, fps: float,
-                   ffmpeg_exe: str | None = None, crf: int = 18) -> None:
+def write_gray_mp4(
+    cube: np.ndarray, out_path, fps: float, ffmpeg_exe: str | None = None, crf: int = 18
+) -> None:
     """Encode un cube (T, H, W) uint8 en mp4 gris (libx264, quasi sans perte).
 
     La cadence reelle des frames etant irreguliere, ``fps`` n'est qu'une
@@ -86,11 +87,29 @@ def write_gray_mp4(cube: np.ndarray, out_path, fps: float,
     cube = np.ascontiguousarray(cube, dtype=np.uint8)
     T, H, W = cube.shape
     cmd = [
-        ffmpeg_exe, "-y", "-loglevel", "warning",
-        "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{W}x{H}", "-r", f"{float(fps):.6f}",
-        "-i", "-",
-        "-an", "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
-        "-pix_fmt", "yuv420p",
+        ffmpeg_exe,
+        "-y",
+        "-loglevel",
+        "warning",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "gray",
+        "-s",
+        f"{W}x{H}",
+        "-r",
+        f"{float(fps):.6f}",
+        "-i",
+        "-",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        str(crf),
+        "-pix_fmt",
+        "yuv420p",
         str(out_path),
     ]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -202,7 +221,7 @@ def export_registered_video(
     raw_dir : Path
         Dossier ``RawImages`` (ou ``RawData``) contenant les .tif et le .xml.
     cfg : RegistrationConfig
-        Parametres de recalage (flatten / horizontal_alignment / lateral_method /
+        Parametres de recalage (flatten_rpe / correct_transversal / lateral_method /
         subpixel + skip/drop + batch_size). Reutilisee de l'experience de l'app.
     model
         Modele de segmentation de la choroide (ChoroidSegmentationModule).
@@ -225,8 +244,12 @@ def export_registered_video(
     out_dir = raw_dir / out_subdir
     out_video = out_dir / f"registered_video{suffix}.mp4"
     if out_video.exists() and not overwrite:
-        return {"status": "skipped", "reason": "exists",
-                "out_dir": out_dir, "video": out_video}
+        return {
+            "status": "skipped",
+            "reason": "exists",
+            "out_dir": out_dir,
+            "video": out_video,
+        }
 
     series = load_ordered_oct_series(raw_dir)
     if len(series) < 2:
@@ -239,14 +262,23 @@ def export_registered_video(
     sl = slice(cfg.skip_first_n_frames, end)
     cube, ts_us = cube_full[sl], ts_full[sl]
     if cube.shape[0] < 2:
-        return {"status": "skipped", "reason": "too_few_frames",
-                "n_total": int(cube_full.shape[0]), "n_kept": int(cube.shape[0]),
-                "out_dir": out_dir}
+        return {
+            "status": "skipped",
+            "reason": "too_few_frames",
+            "n_total": int(cube_full.shape[0]),
+            "n_kept": int(cube.shape[0]),
+            "out_dir": out_dir,
+        }
 
     # Segmentation de la choroide (memes reglages que first_cc_registration.py).
     masks = np.asarray(
-        infer(model, cube, scale_factor=scale_factor,
-              batch_size=seg_batch_size, device=device),
+        infer(
+            model,
+            cube,
+            scale_factor=scale_factor,
+            batch_size=seg_batch_size,
+            device=device,
+        ),
         dtype=bool,
     )
     # Indispensable : combler les colonnes vides, sinon ref_bm.mean() = NaN et le
@@ -255,24 +287,23 @@ def export_registered_video(
 
     # Recalage via RegisteredVideo : frames/masques deja rognes fournis en
     # memoire (skip/drop=0 ici pour ne pas re-rogner, cache_dir=None).
-    registrator = RegisteredVideo(
+    registrator = VideoRegistrator(
         video=Path(out_subdir),
         root_data=raw_dir,
         root_masks=raw_dir,
         skip_first_n_frames=0,
         drop_last_n_frames=0,
-        flatten=cfg.flatten,
-        horizontal_alignment=cfg.horizontal_alignment,
+        correct_transversal=cfg.correct_transversal,
+        correct_axial=cfg.correct_axial,
+        flatten_rpe=cfg.flatten_rpe,
+        axial_refinement=cfg.axial_refinement,
+        fovea_correction_enabled=cfg.fovea_correction_enabled,
         lateral_method=cfg.lateral_method,
+        max_lateral_shift=cfg.max_lateral_shift,
+        smooth_transversal=cfg.smooth_transversal,
+        smooth_transversal_sigma=cfg.smooth_transversal_sigma,
+        max_axial_shift=cfg.max_axial_shift,
         subpixel=cfg.subpixel,
-        median_registration=cfg.median_registration,
-        median_max_vshift=cfg.median_max_vshift,
-        median_use_shadow=cfg.median_use_shadow,
-        median_use_log=cfg.median_use_log,
-        median_shadow_n=cfg.median_shadow_n,
-        median_shadow_a=cfg.median_shadow_a,
-        median_log_kernel_size=cfg.median_log_kernel_size,
-        median_log_sigma=cfg.median_log_sigma,
         verbose=verbose,
         device=device,
         batch_size=cfg.batch_size,
@@ -318,5 +349,10 @@ def export_registered_video(
         json.dumps(meta, indent=2, default=str), encoding="utf-8"
     )
 
-    return {"status": "ok", "video": out_video, "out_dir": out_dir,
-            "n_frames": int(reg_frames.shape[0]), "fps": fps}
+    return {
+        "status": "ok",
+        "video": out_video,
+        "out_dir": out_dir,
+        "n_frames": int(reg_frames.shape[0]),
+        "fps": fps,
+    }

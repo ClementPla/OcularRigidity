@@ -26,7 +26,7 @@ from albumentations.pytorch import ToTensorV2
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import Dataset
 
-from ocularrigidity.fovea.dsnt import pixel_to_normalized
+from ocularrigidity.segmentation.fovea.dsnt import pixel_to_normalized
 
 
 class FoveaKeypointDataset(Dataset):

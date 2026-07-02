@@ -12,7 +12,7 @@ import torch
 from huggingface_hub import PyTorchModelHubMixin
 from torch import optim
 
-from ocularrigidity.fovea.dsnt import (
+from ocularrigidity.segmentation.fovea.dsnt import (
     dsnt,
     euclidean_loss,
     flat_softmax,
@@ -90,5 +90,7 @@ class FoveaKeypointModule(pl.LightningModule, PyTorchModelHubMixin):
 
     def configure_optimizers(self):
         return optim.AdamW(
-            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
+            self.parameters(),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
         )

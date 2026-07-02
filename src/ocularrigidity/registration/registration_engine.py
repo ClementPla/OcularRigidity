@@ -13,8 +13,8 @@ from ocularrigidity.data.compression import (
 from ocularrigidity.data.io import load_cube, load_mask, save_mask
 
 
-from ocularrigidity.registration.rigid import register_masks_by_displacement
-from ocularrigidity.rigidity.features import (
+from ocularrigidity.registration.rigid import register_videos
+from ocularrigidity.thickness.features import (
     compute_deltaY_boundaries,
 )
 from ocularrigidity.segmentation.postprocess.interfaces import (
@@ -26,32 +26,39 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-class RegisteredVideo:
+class VideoRegistrator:
     def __init__(
         self,
         video: Path,
         root_masks: Path,
         root_data: Path,
+        # --- frame selection / loading ---
         skip_first_n_frames: int = 3,
         drop_last_n_frames: int = 0,
-        flatten: bool = False,
-        horizontal_alignment: bool = True,
-        verbose: bool = True,
         use_encoded_video: bool = True,
+        # --- what to correct ---
+        correct_transversal: bool = True,
+        correct_axial: bool = True,
+        flatten_rpe: bool = False,
+        axial_refinement: bool = False,
+        fovea_correction_enabled: bool = True,
+        # --- transversal (x) parameters ---
+        lateral_method: Literal["xcorr", "fullframe", "both"] = "xcorr",
+        max_lateral_shift: int = 16,
+        smooth_transversal: bool = True,
+        smooth_transversal_sigma: float = 2.0,
+        crop_factor: float = 0.66,
+        scale_factor: float = 1.0,
+        # --- axial (y) parameters ---
+        max_axial_shift: int = 30,
+        # --- general ---
+        subpixel: bool = True,
+        # --- runtime / cache ---
         device: str = "cuda",
         batch_size: int = 128,
         cache_dir: Path = None,
-        lateral_method: Literal["xcorr", "fullframe", "both"] = "xcorr",
-        subpixel: bool = True,
-        median_registration: bool = False,
-        median_max_vshift: int = 30,
-        median_use_shadow: bool = True,
-        median_use_log: bool = True,
-        median_shadow_n: float = 4.0,
-        median_shadow_a: float = 0.8,
-        median_log_kernel_size: int = 9,
-        median_log_sigma: float = 3.0,
         overwrite_cache: bool = False,
+        verbose: bool = True,
     ):
         self.video = video
         self.root_masks = root_masks
@@ -59,31 +66,39 @@ class RegisteredVideo:
 
         self.skip_first_n_frames = skip_first_n_frames
         self.drop_last_n_frames = drop_last_n_frames
-        self.flatten = flatten
-        self.horizontal_alignment = horizontal_alignment
+        self.use_encoded_video = use_encoded_video
+
+        # ``correct_transversal`` -> ``register_videos(correct_transversal=...)``
+        # (lateral x shift); ``correct_axial`` toggles the per-column vertical BM
+        # alignment; ``flatten_rpe`` aligns the BM to a constant row. See
+        # rigid.register_videos.
+        self.correct_transversal = correct_transversal
+        self.correct_axial = correct_axial
+        self.flatten_rpe = flatten_rpe
+        # Second axial pass (RPE) aligning each A-scan onto the volume's temporal
+        # median. ``max_axial_shift`` is its maximal tested vertical shift (px).
+        self.axial_refinement = axial_refinement
+        # Fovea-pit correction applied before registration (register_videos).
+        self.fovea_correction_enabled = fovea_correction_enabled
+
         # Lateral (x) shift estimator: "xcorr" (profile cross-correlation) or
         # "fullframe" (2D phase correlation). Part of the cache key below.
         self.lateral_method = lateral_method
-        # Apply parabolic sub-pixel refinement to the lateral shift peak. Part of
-        # the cache key so integer- and sub-pixel-registered results don't mix.
-        self.subpixel = subpixel
-        # 2e passe de recalage axial (RPE) sur la mediane du volume. Desactivee
-        # par defaut ; ses parametres font partie de la cle de cache (_cache_meta).
-        self.median_registration = median_registration
-        self.median_max_vshift = median_max_vshift
-        self.median_use_shadow = median_use_shadow
-        self.median_use_log = median_use_log
-        self.median_shadow_n = median_shadow_n
-        self.median_shadow_a = median_shadow_a
-        self.median_log_kernel_size = median_log_kernel_size
-        self.median_log_sigma = median_log_sigma
-        self.verbose = verbose
-        self.use_encoded_video = use_encoded_video
+        # Lateral search half-window (px) and optional temporal smoothing of the
+        # estimated dx (register_videos: smooth_transversal / _sigma).
+        self.max_lateral_shift = max_lateral_shift
+        self.smooth_transversal = smooth_transversal
+        self.smooth_transversal_sigma = smooth_transversal_sigma
+        self.crop_factor = crop_factor
+        self.scale_factor = scale_factor
+        self.max_axial_shift = max_axial_shift
 
-        # Optional on-disk cache of the registration result. When set, the
-        # registered frames/masks and the transform params are persisted under
-        # ``cache_dir`` (mirroring the layout of ROOT_COMPRESSED_VIDEO/ROOT_MASKS)
-        # and reused on subsequent runs. None (default) disables caching.
+        # Apply parabolic sub-pixel refinement to the shift peaks. Part of the
+        # cache key so integer- and sub-pixel-registered results don't mix.
+        self.subpixel = subpixel
+
+        self.verbose = verbose
+
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
 
         self._raw_frames = None
@@ -130,26 +145,21 @@ class RegisteredVideo:
         }
 
     def _cache_meta(self) -> dict:
-        """Registration parameters the cache is keyed on (validated on load).
-
-        Includes ``lateral_method`` so an xcorr-registered cache is never served
-        for a fullframe request (and vice versa).
-        """
+        """Registration parameters the cache is keyed on (validated on load)."""
         return dict(
             skip_first_n_frames=self.skip_first_n_frames,
             drop_last_n_frames=self.drop_last_n_frames,
-            flatten=int(self.flatten),
-            horizontal_alignment=int(self.horizontal_alignment),
+            correct_transversal=int(self.correct_transversal),
+            correct_axial=int(self.correct_axial),
+            flatten_rpe=int(self.flatten_rpe),
+            fovea_correction_enabled=int(self.fovea_correction_enabled),
             lateral_method=self.lateral_method,
+            max_lateral_shift=int(self.max_lateral_shift),
+            smooth_transversal=int(self.smooth_transversal),
+            smooth_transversal_sigma=float(self.smooth_transversal_sigma),
+            axial_refinement=int(self.axial_refinement),
+            max_axial_shift=int(self.max_axial_shift),
             subpixel=int(self.subpixel),
-            median_registration=int(self.median_registration),
-            median_max_vshift=int(self.median_max_vshift),
-            median_use_shadow=int(self.median_use_shadow),
-            median_use_log=int(self.median_use_log),
-            median_shadow_n=float(self.median_shadow_n),
-            median_shadow_a=float(self.median_shadow_a),
-            median_log_kernel_size=int(self.median_log_kernel_size),
-            median_log_sigma=float(self.median_log_sigma),
         )
 
     def _load_from_cache(self) -> bool:
@@ -313,81 +323,28 @@ class RegisteredVideo:
         raw_frames = self.raw_frames
         registered_masks = raw_masks
         registered_frames = raw_frames
-        if not self.horizontal_alignment:
-            registered_masks, registered_frames, params = (
-                register_masks_by_displacement(
-                    registered_masks,
-                    registered_frames,
-                    batch_size=self._batch_size,
-                    correct_dx=self.horizontal_alignment,
-                    flatten_rpe=self.flatten,
-                    verbose=self.verbose,
-                    return_params=True,
-                    lateral_method="xcorr",
-                    device=self._device,
-                    subpixel=self.subpixel,
-                )
-            )
-        else:
-            if self.lateral_method in ("xcorr", "both"):
-                registered_masks, registered_frames, params = (
-                    register_masks_by_displacement(
-                        registered_masks,
-                        registered_frames,
-                        batch_size=self._batch_size,
-                        correct_dx=self.horizontal_alignment,
-                        flatten_rpe=self.flatten,
-                        verbose=self.verbose,
-                        return_params=True,
-                        lateral_method="xcorr",
-                        device=self._device,
-                        subpixel=self.subpixel,
-                    )
-                )
-            if (
-                self.lateral_method in ("fullframe", "both")
-                and self.horizontal_alignment
-            ):
-                registered_masks, registered_frames, params = (
-                    register_masks_by_displacement(
-                        registered_masks,
-                        registered_frames,
-                        batch_size=self._batch_size,
-                        correct_dx=self.horizontal_alignment,
-                        flatten_rpe=self.flatten,
-                        verbose=self.verbose,
-                        return_params=True,
-                        lateral_method="fullframe",
-                        device=self._device,
-                        subpixel=self.subpixel,
-                    )
-                )
 
-        # 2e passe optionnelle : recalage axial de chaque A-scan sur la mediane
-        # du volume deja recale (identification de la RPE). Opere sur le volume
-        # en memoire ; le deplacement par colonne est stocke dans transform["dy_median"].
-        if self.median_registration:
-            from ocularrigidity.registration.axial.median_registration import (
-                register_ascans_to_median,
-            )
-
-            registered_frames, registered_masks, dy_median = register_ascans_to_median(
-                registered_frames,
-                registered_masks,
-                max_vshift=self.median_max_vshift,
-                use_shadow=self.median_use_shadow,
-                use_log=self.median_use_log,
-                shadow_n=self.median_shadow_n,
-                shadow_a=self.median_shadow_a,
-                log_kernel_size=self.median_log_kernel_size,
-                log_sigma=self.median_log_sigma,
-                subpixel=self.subpixel,
-                batch_size=self._batch_size,
-                device=self._device,
-                verbose=self.verbose,
-            )
-            params = dict(params)
-            params["dy_median"] = dy_median
+        registered_masks, registered_frames, params = register_videos(
+            registered_masks,
+            registered_frames,
+            correct_transversal=self.correct_transversal,
+            correct_axial=self.correct_axial,
+            flatten_rpe=self.flatten_rpe,
+            axial_refinement=self.axial_refinement,
+            fovea_correction_enabled=self.fovea_correction_enabled,
+            lateral_method=self.lateral_method,
+            max_lateral_shift=self.max_lateral_shift,
+            smooth_transversal=self.smooth_transversal,
+            smooth_transversal_sigma=self.smooth_transversal_sigma,
+            max_axial_shift=self.max_axial_shift,
+            subpixel=self.subpixel,
+            batch_size=self._batch_size,
+            device=self._device,
+            verbose=self.verbose,
+            return_params=True,
+            crop_factor=self.crop_factor,
+            scale_factor=self.scale_factor,
+        )
 
         self._registered_masks = registered_masks.cpu().numpy() > 0
         self._registered_frames = registered_frames.cpu().numpy()

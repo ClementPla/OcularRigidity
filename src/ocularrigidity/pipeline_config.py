@@ -5,41 +5,39 @@ from typing import Literal
 # the pulsation fold, the per-cycle deltaY fit and the deltaA tracking — they
 # must agree, so they all derive from this single value.
 N_CYCLES = 3
+AXIAL_PIXEL_SIZE_MM = 1.95e-3  # mm per pixel, axial scale of the OCT
 
 
 @dataclass(frozen=True)
 class RegistrationConfig:
-    """Parameters that form the registration cache key.
-
-    Consumed by ``RegisteredVideo`` directly (registration/infer.py) and, via
-    ``run_cardiac_pipeline``, by pulsation/infer.py. Every field except
-    ``batch_size`` participates in the cache key (see
-    ``RegisteredVideo._cache_meta``); changing any of them invalidates the cache
-    for ALL downstream stages, so change deliberately and regenerate.
-    """
-
     skip_first_n_frames: int = 20
     drop_last_n_frames: int = 10
-    flatten: bool = False
-    horizontal_alignment: bool = True
-    lateral_method: Literal["xcorr", "fullframe", "both"] = "fullframe"
-    subpixel: bool = True
     use_encoded_video: bool = True
-    # 2e passe (RPE) : recalage axial de chaque A-scan sur la mediane du volume
-    # deja recale (compensation d'ombres + LoG + correlation de phase par colonne).
-    # Desactive par defaut ; ne modifie ni le cache ni le comportement existant
-    # tant qu'il n'est pas active. Voir registration/axial/median_registration.py.
-    median_registration: bool = False
-    median_max_vshift: int = 30
-    # Compensation d'ombres et LoG sont decouples : activables independamment.
-    median_use_shadow: bool = True
-    median_use_log: bool = True
-    median_shadow_n: float = 4.0
-    median_shadow_a: float = 0.8
-    median_log_kernel_size: int = 9
-    median_log_sigma: float = 3.0
-    # Not part of the cache key — only affects throughput on a cache miss.
-    batch_size: int = 128
+
+    # What to correct.
+    correct_transversal: bool = False
+    correct_axial: bool = True
+    flatten_rpe: bool = False
+    axial_refinement: bool = True
+    fovea_correction_enabled: bool = True
+
+    # Transversal (x) parameters.
+    lateral_method: Literal["xcorr", "fullframe", "both"] = "fullframe"
+    max_lateral_shift: int = 16
+    smooth_transversal: bool = False
+    smooth_transversal_sigma: float = 2.0
+    crop_factor: float = (
+        0.66  # fraction of the frame width to keep for lateral registration
+    )
+    scale_factor: float = 1.0  # downscale factor for lateral registration
+
+    # Axial (y) parameters. ``max_axial_shift`` is the RPE-refinement pass's
+    # maximal tested vertical shift (px).
+    max_axial_shift: int = 7
+
+    # General.
+    subpixel: bool = True
+    batch_size: int = 256
 
 
 @dataclass(frozen=True)
@@ -106,7 +104,7 @@ class FriedenwaldConfig:
     """
 
     # OCT axial scale (mm per pixel). Axial-length independent.
-    s_axial_mm_per_px: float = 1.95e-3
+    s_axial_mm_per_px: float = AXIAL_PIXEL_SIZE_MM
     # Lateral width (px) the choroid area is integrated over, i.e. the trimmed
     # mask width fed to the shoelace area. Must match the real segmentation
     # geometry for dV (and hence K) to be unbiased.

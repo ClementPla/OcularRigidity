@@ -92,9 +92,12 @@ def read_cube(mkv_path: str, _indices=None) -> np.ndarray:
     return read_gray(mkv_path, indices=_indices)
 
 
-@lru_cache(maxsize=4)
-def read_masks(npz_path: str) -> np.ndarray:
-    return load_mask(npz_path)
+@st.cache_data(max_entries=4)
+def read_masks(npz_path: str, _indices=None) -> np.ndarray:
+    mask = load_mask(npz_path)
+    if _indices is not None:
+        mask = mask[_indices]
+    return mask
 
 
 def resize_cube(cube: np.ndarray, factor: int, *, nearest: bool = False) -> np.ndarray:

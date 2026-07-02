@@ -14,8 +14,8 @@ import streamlit as st
 import torch
 
 from ocularrigidity.pipeline_config import PULSATION
-from ocularrigidity.registration.export import DEFAULT_OUTPUT_SUBDIR
-from ocularrigidity.motion.one_cycle_export import (
+from ocularrigidity.scripts.registration.astronauts import DEFAULT_OUTPUT_SUBDIR
+from ocularrigidity.scripts.one_cycle.astronauts import (
     export_one_cycle_video,
     DEFAULT_ONE_CYCLE_NAME,
 )
@@ -48,7 +48,9 @@ with col_cfg:
     # ------------------------------------------------------------------- #
     st.header("Donnees")
     x = st.slider("Patient ID", 1, 14, 2, step=1)
-    y = st.multiselect("Moment", ["before", "after"], default=["before"], max_selections=1)
+    y = st.multiselect(
+        "Moment", ["before", "after"], default=["before"], max_selections=1
+    )
     z = st.multiselect("Oeil", ["OS", "OD"], default=["OD"], max_selections=1)
     moment = y[0] if y else None
     eye = z[0] if z else None
@@ -93,61 +95,99 @@ with col_cfg:
     # ------------------------------------------------------------------- #
     st.header("Parametres one-cycle")
     expected_bpm = st.number_input(
-        "FC attendue (BPM) — vide = detection auto", value=None,
-        min_value=1.0, step=1.0, placeholder="auto",
+        "FC attendue (BPM) — vide = detection auto",
+        value=None,
+        min_value=1.0,
+        step=1.0,
+        placeholder="auto",
         help="Ancre la recherche de frequence autour de la FC connue (si dispo).",
     )
     method = st.selectbox(
-        "Decomposition", ["ICA", "PCA"], index=0,
+        "Decomposition",
+        ["ICA", "PCA"],
+        index=0,
         help="Separation des composantes temporelles avant scoring Lomb-Scargle.",
     )
     phase_method = st.selectbox(
-        "Methode de phase (fold)", ["peak_locked", "iq"], index=0,
+        "Methode de phase (fold)",
+        ["peak_locked", "iq"],
+        index=0,
         help="peak_locked = phase 0 a chaque pic systolique ; iq = demodulation IQ.",
     )
     c1, c2 = st.columns(2)
     n_bins = c1.number_input(
-        "n_bins (frames / cycle)", value=int(PULSATION.n_bins), min_value=2, step=1,
+        "n_bins (frames / cycle)",
+        value=int(PULSATION.n_bins),
+        min_value=2,
+        step=1,
         help="Nombre de casiers de phase = nombre de frames du cycle reconstruit.",
     )
     n_cycle = c2.number_input(
-        "n_cycle (cycles moyennes)", value=int(PULSATION.n_cycle), min_value=1, step=1,
+        "n_cycle (cycles moyennes)",
+        value=int(PULSATION.n_cycle),
+        min_value=1,
+        step=1,
         help="Nombre de cycles (tranches temporelles) moyennes et concatenes.",
     )
     c3, c4 = st.columns(2)
     fold_method = c3.selectbox(
-        "Repliement (fold)", ["median", "mean"],
+        "Repliement (fold)",
+        ["median", "mean"],
         index=0 if PULSATION.one_cycle_fold_method == "median" else 1,
     )
     output_fps = c4.number_input(
-        "fps de sortie", value=int(PULSATION.output_fps), min_value=1, step=1,
+        "fps de sortie",
+        value=int(PULSATION.output_fps),
+        min_value=1,
+        step=1,
         help="Cadence d'affichage du .mp4 one-cycle.",
     )
 
     with st.expander("Parametres avances"):
         sigma_col = st.number_input(
-            "sigma_col (lissage spatial)", value=float(PULSATION.sigma_col),
-            min_value=0.0, step=0.5,
+            "sigma_col (lissage spatial)",
+            value=float(PULSATION.sigma_col),
+            min_value=0.0,
+            step=0.5,
         )
         cs1, cs2 = st.columns(2)
         col_lo = cs1.number_input(
-            "col_slice debut", value=int(PULSATION.col_slice.start), min_value=0, step=1,
+            "col_slice debut",
+            value=int(PULSATION.col_slice.start),
+            min_value=0,
+            step=1,
         )
         col_hi = cs2.number_input(
-            "col_slice fin", value=int(PULSATION.col_slice.stop), min_value=1, step=1,
+            "col_slice fin",
+            value=int(PULSATION.col_slice.stop),
+            min_value=1,
+            step=1,
         )
         target_fpb = st.number_input(
-            "target_frames_per_bin", value=25, min_value=1, step=1,
+            "target_frames_per_bin",
+            value=25,
+            min_value=1,
+            step=1,
         )
         band_frac = st.number_input(
-            "expected_bpm_band_frac", value=float(PULSATION.expected_bpm_band_frac),
-            min_value=0.0, max_value=1.0, step=0.05, format="%.2f",
+            "expected_bpm_band_frac",
+            value=float(PULSATION.expected_bpm_band_frac),
+            min_value=0.0,
+            max_value=1.0,
+            step=0.05,
+            format="%.2f",
         )
         n_comp = st.number_input(
-            "n_separable_components", value=16, min_value=2, step=1,
+            "n_separable_components",
+            value=16,
+            min_value=2,
+            step=1,
         )
         phase_cycles = st.number_input(
-            "phase_smoother_cycles", value=2.0, min_value=0.5, step=0.5,
+            "phase_smoother_cycles",
+            value=2.0,
+            min_value=0.5,
+            step=0.5,
         )
         harmonic = st.checkbox("harmonic_correction", value=True)
         b1, b2 = st.columns(2)

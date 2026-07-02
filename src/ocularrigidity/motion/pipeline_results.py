@@ -1,52 +1,44 @@
-from dataclasses import dataclass
 import dataclasses
+from dataclasses import dataclass
 from pathlib import Path
 import pickle
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
-
-from typing import TYPE_CHECKING
-
 import torch
 
+from ocularrigidity.motion.pulsation.config import NCycleConfig, PulseExtractionConfig
 
 if TYPE_CHECKING:
-    from ocularrigidity.motion.pulsation import CardiacCycleExtractor
+    from ocularrigidity.motion.pulsation import (
+        AbstractPulseExtractor,
+        NCycleReconstructor,
+    )
 
 
 @dataclass
 class CardiacPipelineResults:
-    # Parameters for reproducibility and traceability
+    # --- Provenance ------------------------------------------------------
     video: Path
+    config: PulseExtractionConfig
+    fold_config: Optional[NCycleConfig]
+    # Registration provenance (the registrator is not pickled with the result)
     skip_first_n_frames: int
     drop_last_n_frames: int
-    flatten: bool
-    horizontal_alignment: bool
+    flatten_rpe: bool
+    correct_transversal: bool
+    # Effective search band after ``expected_bpm`` anchoring, and the frequency
+    # override actually in force (if any).
     bpm_range: tuple[float, float]
     override_cardiac_freq: Optional[float]
-    expected_bpm: Optional[float]
-    expected_bpm_band_frac: float
-    butter_order: int
-    n_separable_components: int
-    sigma_col: float
-    col_slice: slice
-    ls_freq_oversample: float
-    ls_concentration_band_hz: float
-    phase_smoother_cycles: float
-    phase_density_threshold: float
-    ICA_or_PCA: str
-    harmonic_correction: bool
-    harmonic_tolerance_bpm: float
-    harmonic_min_power_ratio: float
-    bpm_prior_sigma_bpm: float
 
-    # Results
+    # --- Results (signal-generic naming) --------------------------------
     registered_boundaries: np.ndarray
     timestamps_seconds: np.ndarray
     uniform_time: np.ndarray
     gap_mask: np.ndarray
-    thickness: np.ndarray  # 2D
-    interpolated_thickness: np.ndarray  # 2D
+    signal: np.ndarray  # 2D (was `thickness`)
+    interpolated_signal: np.ndarray  # 2D (was `interpolated_thickness`)
     filtered_signal: np.ndarray  # 2D
     separable_components: np.ndarray  # 2D
     ica_mixing: np.ndarray  # 2D
@@ -64,42 +56,48 @@ class CardiacPipelineResults:
     confidence: str
     notes: list[str]
 
+    # --- Folding (from NCycleReconstructor) -----------------------------
     cycles: Optional[np.ndarray] = None
     counts: Optional[np.ndarray] = None
     n_bins: Optional[int] = None
     n_cycle: Optional[int] = None
 
+    # Convenience accessors so viewers written against the extractor work
+    # against results too.
+    @property
+    def expected_bpm(self):
+        return self.config.expected_bpm
+
+    @property
+    def component_kept_mask(self):
+        return ~np.isnan(self.filtered_signal).any(axis=1)
+
     @classmethod
-    def from_extractor(cls, ex: "CardiacCycleExtractor") -> "CardiacPipelineResults":
+    def from_objects(
+        cls,
+        extractor: "AbstractPulseExtractor",
+        reconstructor: "Optional[NCycleReconstructor]" = None,
+    ) -> "CardiacPipelineResults":
+        ex = extractor
+        reg = ex.registered_video
+        rec = reconstructor
+        notes = list(ex.notes) + (list(rec.notes) if rec is not None else [])
         return cls(
-            video=ex.registrator.video,
-            skip_first_n_frames=ex.skip_first_n_frames,
-            drop_last_n_frames=ex.drop_last_n_frames,
-            flatten=ex.registrator.flatten,
-            horizontal_alignment=ex.registrator.horizontal_alignment,
+            video=reg.video,
+            config=ex.config,
+            fold_config=rec.config if rec is not None else None,
+            skip_first_n_frames=reg.skip_first_n_frames,
+            drop_last_n_frames=reg.drop_last_n_frames,
+            flatten_rpe=reg.flatten_rpe,
+            correct_transversal=reg.correct_transversal,
             bpm_range=ex.bpm_range,
             override_cardiac_freq=ex.cardiac_freq if ex._is_freq_overridden else None,
-            expected_bpm=ex.expected_bpm,
-            expected_bpm_band_frac=ex.expected_bpm_band_frac,
-            butter_order=ex.butter_order,
-            n_separable_components=ex.n_separable_components,
-            sigma_col=ex.sigma_col,
-            col_slice=ex.col_slice,
-            ls_freq_oversample=ex.ls_freq_oversample,
-            ls_concentration_band_hz=ex.ls_concentration_band_hz,
-            phase_smoother_cycles=ex.phase_smoother_cycles,
-            phase_density_threshold=ex.phase_density_threshold,
-            ICA_or_PCA=ex.ICA_or_PCA,
-            harmonic_correction=ex.harmonic_correction,
-            harmonic_tolerance_bpm=ex.harmonic_tolerance_bpm,
-            harmonic_min_power_ratio=ex.harmonic_min_power_ratio,
-            bpm_prior_sigma_bpm=ex.bpm_prior_sigma_bpm,
-            registered_boundaries=ex.registrator.registered_lines,
+            registered_boundaries=reg.registered_lines,
             timestamps_seconds=ex.timestamps_seconds,
             uniform_time=ex.uniform_time,
             gap_mask=ex.gap_mask,
-            thickness=ex.thickness,
-            interpolated_thickness=ex.interpolated_thickness,
+            signal=ex.signal,
+            interpolated_signal=ex.interpolated_signal,
             filtered_signal=ex.filtered_signal,
             separable_components=ex.separable_components,
             ica_mixing=ex.ica_mixing,
@@ -115,11 +113,11 @@ class CardiacPipelineResults:
             phase_per_frame_peak_locked=ex.phase_per_frame_peak_locked,
             good_per_frame_peak_locked=ex.good_per_frame_peak_locked,
             confidence=ex.confidence,
-            notes=ex.notes,
-            cycles=ex.cycles,
-            counts=ex.counts,
-            n_bins=ex.n_bins,
-            n_cycle=ex.n_cycle,
+            notes=notes,
+            cycles=rec.cycles if rec is not None else None,
+            counts=rec.counts if rec is not None else None,
+            n_bins=rec.n_bins if rec is not None else None,
+            n_cycle=rec.n_cycle if rec is not None else None,
         )
 
     def __post_init__(self):

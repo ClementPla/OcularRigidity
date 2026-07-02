@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from astropy.timeseries import LombScargle
 import numpy as np
-from ocularrigidity.motion.pulsation import CardiacCycleExtractor
+from ocularrigidity.motion.pulsation import AbstractPulseExtractor
 from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
 def plot_cardiac_signals(
-    CC_ex: CardiacCycleExtractor | CardiacPipelineResults,
+    CC_ex: AbstractPulseExtractor | CardiacPipelineResults,
     include_2d_thickness: bool = True,
     include_2d_thickness_filtered: bool = True,
     include_1d_mean_thickness: bool = True,
@@ -44,7 +44,7 @@ def plot_cardiac_signals(
     if include_2d_thickness:
         ax = axes[ax_idx]
         t_uniform = np.linspace(0, raw_t.max(), len(raw_t))
-        thick_uniform = interp1d(raw_t, CC_ex.thickness, axis=0, bounds_error=False)(
+        thick_uniform = interp1d(raw_t, CC_ex.signal, axis=0, bounds_error=False)(
             t_uniform
         )
         ax.imshow(
@@ -52,14 +52,14 @@ def plot_cardiac_signals(
             aspect="auto",
             cmap="viridis",
             origin="lower",
-            extent=[0, raw_t.max(), 0, CC_ex.thickness.shape[1]],
+            extent=[0, raw_t.max(), 0, CC_ex.signal.shape[1]],
         )
 
         ax.set_title("2D Thickness Map (Time x Col)")
         ax.set_ylabel("Column Index")
         ax.set_xlabel("Time (s)")
         if include_1d_mean_thickness:
-            mean_thickness = np.nanmean(CC_ex.thickness, axis=1)
+            mean_thickness = np.nanmean(CC_ex.signal, axis=1)
             # Drop point outside 1st and 99th percentile to avoid outliers dominating the plot
             valid_idx = ~np.isnan(mean_thickness)
             mean_thickness = np.nan_to_num(
@@ -200,7 +200,7 @@ def plot_cardiac_signals(
                 label=f"Expected Cardiac Frequency ({expected_freq * 60:.1f} BPM)",
             )
         if include_spectrum_mean_thickness:
-            mean_thickness = np.nanmean(CC_ex.thickness, axis=1)
+            mean_thickness = np.nanmean(CC_ex.signal, axis=1)
             # Use lomb-scargle to get the spectrum of the mean thickness
             valid_idx = ~np.isnan(mean_thickness)
             bpm_range = CC_ex.bpm_range

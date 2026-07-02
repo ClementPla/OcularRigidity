@@ -1,7 +1,11 @@
 import numpy as np
 
 from ocularrigidity.motion.one_cycle import estimate_cardiac_amplitude
-from ocularrigidity.motion.pulsation import run_cardiac_pipeline
+from ocularrigidity.motion.pulsation import (
+    NCycleConfig,
+    PulseExtractionConfig,
+    run_cardiac_pipeline,
+)
 from ocularrigidity.consts import (
     CHECKPOINT_PATH,
     ROOT_MASKS,
@@ -17,7 +21,7 @@ from ocularrigidity.data.measurements.dataframe import load_measurements
 from tqdm.auto import tqdm
 import pandas as pd
 from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
-from ocularrigidity.rigidity.features import compute_deltaY_masks
+from ocularrigidity.thickness.features import compute_deltaY_masks
 from ocularrigidity.scripts.cohort_analysis.segment_n_cycles import get_model
 from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.inference import infer
@@ -59,24 +63,29 @@ def compute_one_cycle(
                 root_masks=ROOT_MASKS,
                 root_data=ROOT_COMPRESSED_VIDEO,
                 timestamps_path=ROOT_DATA_MNT / video / "timestamp.txt",
+                config=PulseExtractionConfig(
+                    ICA_or_PCA=method,
+                    sigma_col=PULSATION.sigma_col,
+                    expected_bpm=HR,
+                    expected_bpm_band_frac=PULSATION.expected_bpm_band_frac,
+                    col_slice=PULSATION.col_slice,
+                    verbose=True,
+                ),
+                fold_config=NCycleConfig(
+                    n_bins=PULSATION.n_bins,
+                    n_cycle=PULSATION.n_cycle,
+                    fold_method=PULSATION.one_cycle_fold_method,
+                    phase_method=phase_method_for_fold,
+                    verbose=True,
+                ),
                 skip_first_n_frames=REGISTRATION.skip_first_n_frames,
                 drop_last_n_frames=REGISTRATION.drop_last_n_frames,
                 compute_n_cycle_video=True,
-                flatten=REGISTRATION.flatten,
-                horizontal_alignment=REGISTRATION.horizontal_alignment,
+                flatten_rpe=REGISTRATION.flatten_rpe,
+                correct_transversal=REGISTRATION.correct_transversal,
                 lateral_method=REGISTRATION.lateral_method,
                 subpixel=REGISTRATION.subpixel,
                 use_encoded_video=REGISTRATION.use_encoded_video,
-                verbose=True,
-                ICA_or_PCA=method,
-                sigma_col=PULSATION.sigma_col,
-                expected_bpm=HR,
-                expected_bpm_band_frac=PULSATION.expected_bpm_band_frac,
-                n_bins=PULSATION.n_bins,
-                col_slice=PULSATION.col_slice,
-                one_cycle_fold_method=PULSATION.one_cycle_fold_method,
-                n_cycle=PULSATION.n_cycle,
-                phase_method_for_fold=phase_method_for_fold,
                 cache_dir=cache_dir,
             )
         except Exception as e:

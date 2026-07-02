@@ -17,7 +17,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from ocularrigidity.fovea.dsnt import dsnt, flat_softmax, normalized_to_pixel
+from ocularrigidity.segmentation.fovea.dsnt import (
+    dsnt,
+    flat_softmax,
+    normalized_to_pixel,
+)
 
 
 @torch.inference_mode()

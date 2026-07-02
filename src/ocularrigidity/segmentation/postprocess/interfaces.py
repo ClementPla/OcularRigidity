@@ -341,19 +341,19 @@ def get_masks_contours(masks):
     return contours_list
 
 
-def rebuild_mask(bm: np.ndarray, csi: np.ndarray, H: int) -> np.ndarray:
+def rebuild_mask(upper: np.ndarray, lower: np.ndarray, H: int) -> np.ndarray:
     """
     Rebuild (T, H, W) bool mask from (T, W) boundary curves.
     """
-    T, W = bm.shape
+    T, W = upper.shape
     y_grid = np.arange(H)[None, :, None]  # (1, H, 1)
-    bm_grid = bm[:, None, :]  # (T, 1, W)
-    csi_grid = csi[:, None, :]
+    bm_grid = upper[:, None, :]  # (T, 1, W)
+    csi_grid = lower[:, None, :]
 
     mask = (y_grid >= bm_grid) & (y_grid <= csi_grid)
 
     # Handle NaN columns (leave as False everywhere)
-    valid = ~(np.isnan(bm) | np.isnan(csi))
+    valid = ~(np.isnan(upper) | np.isnan(lower))
     mask = mask & valid[:, None, :]
     return mask
 
