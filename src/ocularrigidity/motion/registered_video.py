@@ -41,6 +41,9 @@ class RegisteredVideo:
         cache_dir: Path = None,
         lateral_method: Literal["xcorr", "fullframe", "both"] = "xcorr",
         subpixel: bool = True,
+        crop_w_x: float = 0.75,
+        bp_lo: float = 0.02,
+        bp_hi: float = 0.5,
         median_registration: bool = False,
         median_max_vshift: int = 30,
         median_use_shadow: bool = True,
@@ -64,6 +67,14 @@ class RegisteredVideo:
         # Apply parabolic sub-pixel refinement to the lateral shift peak. Part of
         # the cache key so integer- and sub-pixel-registered results don't mix.
         self.subpixel = subpixel
+        # Central fraction of the WIDTH kept before the FFT in the "fullframe"
+        # lateral estimator (height is not cropped). No effect when
+        # lateral_method == "xcorr".
+        self.crop_w_x = crop_w_x
+        # Bornes basse/haute (fraction de Nyquist) du passe-bande spectral de
+        # l'estimateur "fullframe". No effect when lateral_method == "xcorr".
+        self.bp_lo = bp_lo
+        self.bp_hi = bp_hi
         # 2e passe de recalage axial (RPE) sur la mediane du volume. Desactivee
         # par defaut ; ses parametres font partie de la cle de cache (_cache_meta).
         self.median_registration = median_registration
@@ -138,6 +149,9 @@ class RegisteredVideo:
             horizontal_alignment=int(self.horizontal_alignment),
             lateral_method=self.lateral_method,
             subpixel=int(self.subpixel),
+            crop_w_x=float(self.crop_w_x),
+            bp_lo=float(self.bp_lo),
+            bp_hi=float(self.bp_hi),
             median_registration=int(self.median_registration),
             median_max_vshift=int(self.median_max_vshift),
             median_use_shadow=int(self.median_use_shadow),
@@ -356,6 +370,9 @@ class RegisteredVideo:
                         lateral_method="fullframe",
                         device=self._device,
                         subpixel=self.subpixel,
+                        crop_w_x=self.crop_w_x,
+                        bp_lo=self.bp_lo,
+                        bp_hi=self.bp_hi,
                     )
                 )
 

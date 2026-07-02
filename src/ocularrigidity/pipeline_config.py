@@ -4,7 +4,7 @@ from typing import Literal
 # Number of cardiac cycles that are folded, segmented and measured. Shared by
 # the pulsation fold, the per-cycle deltaY fit and the deltaA tracking — they
 # must agree, so they all derive from this single value.
-N_CYCLES = 3
+N_CYCLES = 1
 
 
 @dataclass(frozen=True)
@@ -18,13 +18,23 @@ class RegistrationConfig:
     for ALL downstream stages, so change deliberately and regenerate.
     """
 
-    skip_first_n_frames: int = 20
-    drop_last_n_frames: int = 10
+    skip_first_n_frames: int = 0
+    drop_last_n_frames: int = 0
     flatten: bool = False
     horizontal_alignment: bool = True
     lateral_method: Literal["xcorr", "fullframe", "both"] = "fullframe"
-    subpixel: bool = True
+    subpixel: bool = False
     use_encoded_video: bool = True
+    # Fraction centrale de la LARGEUR conservee avant la FFT dans le recalage
+    # lateral fullframe (estimate_lateral_shift_fullframe), pour eviter les
+    # artefacts de bord ; la hauteur n'est pas rognee. Sans effet si
+    # lateral_method == "xcorr".
+    crop_w_x: float = 0.66
+    # Bornes basse/haute (fraction de la freq. de Nyquist) du passe-bande
+    # spectral applique dans le recalage lateral fullframe
+    # (estimate_lateral_shift_fullframe). Sans effet si lateral_method == "xcorr".
+    bp_lo: float = 0.03
+    bp_hi: float = 0.2
     # 2e passe (RPE) : recalage axial de chaque A-scan sur la mediane du volume
     # deja recale (compensation d'ombres + LoG + correlation de phase par colonne).
     # Desactive par defaut ; ne modifie ni le cache ni le comportement existant
@@ -32,8 +42,8 @@ class RegistrationConfig:
     median_registration: bool = False
     median_max_vshift: int = 30
     # Compensation d'ombres et LoG sont decouples : activables independamment.
-    median_use_shadow: bool = True
-    median_use_log: bool = True
+    median_use_shadow: bool = False
+    median_use_log: bool = False
     median_shadow_n: float = 4.0
     median_shadow_a: float = 0.8
     median_log_kernel_size: int = 9
@@ -52,7 +62,7 @@ class PulsationConfig:
     col_slice: slice = field(default_factory=lambda: slice(100, 924))
     one_cycle_fold_method: Literal["mean", "median"] = "median"
     n_cycle: int = N_CYCLES
-    methods: tuple[str, ...] = ("pca", "ica")
+    methods: tuple[str, ...] = ("pca", "ica", "svd")
     phase_methods: tuple[str, ...] = ("peak_locked", "iq")
     # fps written into the lossless one_cycle.mkv (display metadata only).
     output_fps: int = 30

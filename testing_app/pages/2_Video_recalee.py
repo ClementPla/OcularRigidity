@@ -24,6 +24,7 @@ from ocularrigidity.registration.export import (
 
 from _registration_common import (
     select_condition,
+    read_x_params,
     read_median_params,
     load_ascan_params,
     ascan_params_path,
@@ -81,6 +82,10 @@ with col_cfg:
     y_enabled = bool(st.session_state.get("w_y_enabled", True))
     flatten = bool(st.session_state.get("w_flatten", True))
     subpixel = bool(st.session_state.get("w_subpixel", True))
+    x_params = read_x_params(x_method)
+    crop_w_x = float(x_params.get("crop_w_x", 0.75))
+    bp_lo = float(x_params.get("bp_lo", 0.02))
+    bp_hi = float(x_params.get("bp_hi", 0.5))
 
     # Parametres A-scan : CHARGES depuis le fichier enregistre sur la page
     # « Correction A-scan » (bouton « Enregistrer les paramètres de correction
@@ -102,10 +107,12 @@ with col_cfg:
     # Deux configs : la base (sans A-scan) et la variante A-scan (median force ON,
     # avec les parametres A-scan enregistres/charges ci-dessus).
     reg_cfg_base = build_reg_cfg(
-        x_method, y_enabled, flatten, subpixel, False, median_params
+        x_method, y_enabled, flatten, subpixel, False, median_params,
+        crop_w_x=crop_w_x, bp_lo=bp_lo, bp_hi=bp_hi,
     )
     reg_cfg_ascan = build_reg_cfg(
-        x_method, y_enabled, flatten, subpixel, True, median_params
+        x_method, y_enabled, flatten, subpixel, True, median_params,
+        crop_w_x=crop_w_x, bp_lo=bp_lo, bp_hi=bp_hi,
     )
 
     prep = " + ".join(

@@ -29,6 +29,8 @@ from _registration_common import (
     register_y,
     segment_images,
     format_acq_time,
+    crop_bandpass_preview,
+    to_display,
 )
 
 # =========================================================================== #
@@ -85,6 +87,15 @@ with col_params:
             x_params["bp_hi"] = cc2.number_input(
                 "bandpass haut", min_value=0.01, max_value=1.0,
                 step=0.01, format="%.3f", key="w_ff_bp_hi",
+            )
+            x_params["crop_w_x"] = st.number_input(
+                "crop_w_x (fraction centrale)", min_value=0.05, max_value=1.0,
+                step=0.05, format="%.2f", key="w_ff_crop_w_x",
+                help=(
+                    "Fraction centrale de la LARGEUR conservee avant la FFT (la "
+                    "hauteur n'est pas rognee), pour eviter les artefacts de bord "
+                    "(estimate_lateral_shift_fullframe)."
+                ),
             )
     elif x_method == "xcorr":
         x_params["max_shift"] = st.number_input(
@@ -148,7 +159,7 @@ with col_params:
     )
 
     if x_method == "fullframe":
-        crop_w = int(ref_gray.shape[1] * 3 / 4)
+        crop_w = int(ref_gray.shape[1] * x_params["crop_w_x"])
         ds = int(x_params["downsample"])
         optimal_ds = 1 << (crop_w - 1).bit_length()
         st.caption(
@@ -165,7 +176,7 @@ with col_params:
         except Exception as e:
             st.error(f"Recalage vertical impossible : {e}")
             st.stop()
-        reg_overlay = make_overlay(reg_frames[0], reg_frames[1])
+        reg_ref, reg_mov = reg_frames[0], reg_frames[1]
         reg_title = "Recalage X + Y"
         reg_caption = (
             f"dx = {dx:.3f} px  ·  flatten = {flatten}  |  "
@@ -173,12 +184,27 @@ with col_params:
             f"vert : {chosen.oct_file_name} (recalee X+Y)"
         )
     else:
-        reg_overlay = make_overlay(ref_gray, apply_dx(mov_gray, dx))
+        reg_ref, reg_mov = ref_gray, apply_dx(mov_gray, dx)
         reg_title = "Recalage X"
         reg_caption = (
             f"dx = {dx:.3f} px  |  magenta : {best.oct_file_name} (reference)  ·  "
             f"vert : {chosen.oct_file_name} (recalee X)"
         )
+    reg_overlay = make_overlay(reg_ref, reg_mov)
+
+    # Meme paire alignee (X, et Y si active) que reg_overlay, mais rognee en X
+    # (crop_w_x) et filtree passe-bande — memes formules que
+    # estimate_lateral_shift_fullframe — pour visualiser l'effet du crop/bandpass
+    # sur des images DEJA recalees exactement comme reg_overlay.
+    bp_overlay = None
+    if x_method == "fullframe":
+        ref_bp = crop_bandpass_preview(
+            reg_ref, x_params["crop_w_x"], x_params["bp_lo"], x_params["bp_hi"]
+        )
+        mov_bp = crop_bandpass_preview(
+            reg_mov, x_params["crop_w_x"], x_params["bp_lo"], x_params["bp_hi"]
+        )
+        bp_overlay = make_overlay(to_display(ref_bp), to_display(mov_bp))
 
     # ------------------------------------------------------------------- #
     # 6) Parametres d'experience (src/pipeline_config.py) + sauvegarde
@@ -190,7 +216,10 @@ with col_params:
     median_enabled = bool(st.session_state.get("w_median_enabled", False))
     median_params = read_median_params()
     reg_cfg = build_reg_cfg(
-        x_method, y_enabled, flatten, subpixel, median_enabled, median_params
+        x_method, y_enabled, flatten, subpixel, median_enabled, median_params,
+        crop_w_x=float(x_params.get("crop_w_x", 0.75)),
+        bp_lo=float(x_params.get("bp_lo", 0.02)),
+        bp_hi=float(x_params.get("bp_hi", 0.5)),
     )
     experiment = {
         "patient": ctx.patient_dir.name,
@@ -259,3 +288,16 @@ with col_image:
 
     st.subheader(f"{reg_title} — reference (magenta) + image recalee (vert)")
     st.image(reg_overlay, caption=reg_caption, use_container_width=True)
+
+    if bp_overlay is not None:
+        st.subheader(f"{reg_title} (rogne en X + passe-bande) — meme recalage que ci-dessus")
+        st.image(
+            bp_overlay,
+            caption=(
+                f"crop_w_x = {x_params['crop_w_x']:.2f}  ·  bandpass = "
+                f"[{x_params['bp_lo']:.3f}, {x_params['bp_hi']:.3f}]  |  "
+                f"magenta : {best.oct_file_name} (reference)  ·  "
+                f"vert : {chosen.oct_file_name} (recalee, meme alignement)"
+            ),
+            use_container_width=True,
+        )

@@ -112,6 +112,7 @@ def apply_experiment_to_state(loaded: dict, timed: list) -> None:
     st.session_state["w_ff_downsample"] = int(ff.get("downsample") or 512)
     st.session_state["w_ff_bp_lo"] = float(ff.get("bp_lo", 0.02))
     st.session_state["w_ff_bp_hi"] = float(ff.get("bp_hi", 0.5))
+    st.session_state["w_ff_crop_w_x"] = float(ff.get("crop_w_x", 0.75))
 
     xc = xp if method == "xcorr" else {}
     st.session_state["w_xc_max_shift"] = xc.get("max_shift")  # None -> W // 4
@@ -280,6 +281,7 @@ def read_x_params(x_method: str) -> dict:
             "downsample": int(st.session_state.get("w_ff_downsample", 512)),
             "bp_lo": float(st.session_state.get("w_ff_bp_lo", 0.02)),
             "bp_hi": float(st.session_state.get("w_ff_bp_hi", 0.5)),
+            "crop_w_x": float(st.session_state.get("w_ff_crop_w_x", 0.75)),
         }
     if x_method == "xcorr":
         return {
@@ -352,13 +354,18 @@ def apply_ascan_params_to_state(saved: dict) -> None:
 
 
 def build_reg_cfg(x_method: str, y_enabled: bool, flatten: bool, subpixel: bool,
-                  median_enabled: bool, median_params: dict) -> RegistrationConfig:
+                  median_enabled: bool, median_params: dict,
+                  crop_w_x: float = 0.75, bp_lo: float = 0.02,
+                  bp_hi: float = 0.5) -> RegistrationConfig:
     """Assemble une ``RegistrationConfig`` a partir des reglages de l'UI."""
     return RegistrationConfig(
         flatten=bool(flatten and y_enabled),
         horizontal_alignment=(x_method != "aucun"),
         lateral_method="xcorr" if x_method == "xcorr" else "fullframe",
         subpixel=subpixel,
+        crop_w_x=float(crop_w_x),
+        bp_lo=float(bp_lo),
+        bp_hi=float(bp_hi),
         median_registration=bool(median_enabled),
         median_max_vshift=int(median_params.get("max_vshift", 30)),
         median_use_shadow=bool(median_params.get("use_shadow", True)),
@@ -423,6 +430,27 @@ def to_display(img: np.ndarray) -> np.ndarray:
     if hi <= lo:
         hi = lo + 1.0
     return np.clip((x - lo) / (hi - lo) * 255.0, 0, 255).astype(np.uint8)
+
+
+def crop_bandpass_preview(gray: np.ndarray, crop_w_x: float,
+                          bp_lo: float, bp_hi: float) -> np.ndarray:
+    """Rogne au ``crop_w_x`` central en X (largeur seulement, H entiere) puis
+    filtre passe-bande 2D (meme formule radiale que
+    ``estimate_lateral_shift_fullframe``), pour visualiser l'effet du crop/bandpass
+    sur une image (deja alignee, typiquement).
+    """
+    H, W = gray.shape
+    crop_w = int(W * crop_w_x)
+    x0 = (W - crop_w) // 2
+    cropped = gray[:, x0 : x0 + crop_w].astype(np.float32)
+
+    ch, cw = cropped.shape
+    fy = np.fft.fftfreq(ch)[:, None]
+    fx = np.fft.rfftfreq(cw)[None, :]
+    fr = np.sqrt(fy**2 + fx**2)
+    band = (1.0 - np.exp(-((fr / bp_lo) ** 2))) * np.exp(-((fr / bp_hi) ** 2))
+    spectrum = np.fft.rfft2(cropped - cropped.mean())
+    return np.fft.irfft2(spectrum * band, s=(ch, cw))
 
 
 # --------------------------------------------------------------------------- #
@@ -499,6 +527,7 @@ def estimate_dx(method: str, ref: np.ndarray, mov: np.ndarray, params: dict,
             downsample_to=(int(params["downsample"]), int(params["downsample"])),
             max_shift=int(params["max_shift"]),
             max_vshift=int(params["max_vshift"]),
+            crop_w_x=float(params.get("crop_w_x", 0.75)),
             bandpass=(float(params["bp_lo"]), float(params["bp_hi"])),
             device=DEVICE,
             subpixel=bool(subpixel),

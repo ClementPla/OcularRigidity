@@ -120,6 +120,9 @@ def register_masks_by_displacement(
     return_params: bool = False,
     lateral_method: str = "xcorr",
     subpixel: bool = True,
+    crop_w_x: float = 0.75,
+    bp_lo: float = 0.02,
+    bp_hi: float = 0.5,
 ):
     """Register frames/masks by lateral shift + vertical boundary displacement.
 
@@ -131,6 +134,10 @@ def register_masks_by_displacement(
     ``lateral_method`` selects how the lateral shift is estimated:
       - ``"xcorr"``: 1D cross-correlation of vertical-mean profiles (default).
       - ``"fullframe"``: 2D phase correlation of the full frames
+
+    ``crop_w_x``, ``bp_lo``, ``bp_hi`` are only used by ``"fullframe"`` : central
+    fraction of the frame WIDTH kept before the FFT (height is not cropped) and
+    low/high bandpass bounds (cf. ``estimate_lateral_shift_fullframe``).
     """
     if isinstance(raw_masks, np.ndarray):
         raw_masks = torch.from_numpy(raw_masks)
@@ -172,6 +179,8 @@ def register_masks_by_displacement(
             global_dx, conf = estimate_lateral_shift_fullframe(
                 raw_frames,
                 ref=raw_frames[0],  # same anchor as the vertical reference (frame 0)
+                crop_w_x=crop_w_x,
+                bandpass=(bp_lo, bp_hi),
                 batch_size=batch_size,
                 device=device,
                 return_confidence=True,

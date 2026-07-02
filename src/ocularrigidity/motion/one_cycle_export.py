@@ -86,7 +86,8 @@ def _prepared_registrator(video_path: Path, mask_path: Path, device: str,
 def export_one_cycle_video(
     registered_dir,
     *,
-    output_name: str = DEFAULT_ONE_CYCLE_NAME,
+    suffix: str = "",
+    output_name: str | None = None,
     overwrite: bool = False,
     device: str = "cuda",
     verbose: bool = True,
@@ -118,10 +119,14 @@ def export_one_cycle_video(
     Leve sur erreur dure (ex. tous les chunks rejetes faute de frames valides).
     """
     registered_dir = Path(registered_dir)
-    video_path = registered_dir / "registered_video.mp4"
-    mask_path = registered_dir / "mask.npz"
-    ts_path = registered_dir / "timestamp.txt"
-    out_path = registered_dir / output_name
+    # ``suffix`` selectionne la variante de video recalee en entree :
+    # "" -> registered_video.mp4 (sans A-scan) ; "_ascan" -> registered_video_ascan.mp4.
+    # La sortie one-cycle et son JSON de parametres reprennent le meme suffixe.
+    video_path = registered_dir / f"registered_video{suffix}.mp4"
+    mask_path = registered_dir / f"mask{suffix}.npz"
+    ts_path = registered_dir / f"timestamp{suffix}.txt"
+    out_name = output_name or f"one_cycle{suffix}.mp4"
+    out_path = registered_dir / out_name
 
     for p in (video_path, mask_path, ts_path):
         if not p.exists():
@@ -191,7 +196,7 @@ def export_one_cycle_video(
     }
     if extra_meta:
         meta.update(extra_meta)
-    (registered_dir / "one_cycle_params.json").write_text(
+    (registered_dir / f"one_cycle_params{suffix}.json").write_text(
         json.dumps(meta, indent=2, default=str), encoding="utf-8"
     )
 

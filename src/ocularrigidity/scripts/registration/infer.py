@@ -32,6 +32,9 @@ def register_all(cache_dir=None):
                 cache_dir=cache_dir,
                 lateral_method=REGISTRATION.lateral_method,
                 subpixel=REGISTRATION.subpixel,
+                crop_w_x=REGISTRATION.crop_w_x,
+                bp_lo=REGISTRATION.bp_lo,
+                bp_hi=REGISTRATION.bp_hi,
                 batch_size=REGISTRATION.batch_size,
             )
             registrator.compute_registration()
