@@ -19,7 +19,7 @@ import imageio.v2 as imageio
 import numpy as np
 from matplotlib import cm
 from scipy.signal import savgol_filter
-
+import streamlit as st
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import load_mask
 
@@ -87,14 +87,17 @@ def overlay_video(
 # lever — full-res (1536×1024) mp4s are slow to write and heavy to ship.
 
 
-@lru_cache(maxsize=4)
-def read_cube(mkv_path: str) -> np.ndarray:
-    return read_gray(mkv_path)
+@st.cache_data(max_entries=4)
+def read_cube(mkv_path: str, _indices=None) -> np.ndarray:
+    return read_gray(mkv_path, indices=_indices)
 
 
-@lru_cache(maxsize=4)
-def read_masks(npz_path: str) -> np.ndarray:
-    return load_mask(npz_path)
+@st.cache_data(max_entries=4)
+def read_masks(npz_path: str, _indices=None) -> np.ndarray:
+    mask = load_mask(npz_path)
+    if _indices is not None:
+        mask = mask[_indices]
+    return mask
 
 
 def resize_cube(cube: np.ndarray, factor: int, *, nearest: bool = False) -> np.ndarray:

@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn.functional as F
 
 
-def estimate_lateral_shift_xcorr_subpixel(
+def profile_correlation_dx(
     curve: torch.Tensor,
     ref_curve: torch.Tensor,
     max_shift: int = None,
@@ -76,13 +76,13 @@ def estimate_lateral_shift_xcorr_subpixel(
 
 
 @torch.inference_mode()
-def estimate_lateral_shift_fullframe(
+def frame_correlation_dx(
     frames: torch.Tensor,
     ref: torch.Tensor = None,
-    downsample_to: tuple[int, int] = (512, 512),
+    scale_factor=1.0,
+    crop_factor=0.66,
     max_shift: int = 16,
     max_vshift: int = 512,
-    crop_w_x: float = 0.75,
     batch_size: int = 256,
     device: str = "cuda",
     bandpass: tuple[float, float] = (0.02, 0.5),
@@ -92,23 +92,14 @@ def estimate_lateral_shift_fullframe(
     if isinstance(frames, np.ndarray):
         frames = torch.from_numpy(frames)
     T, H, W = frames.shape
-    h, w = downsample_to
-    center = w // 2
 
-    # crop to the central `crop_w_x` fraction of the WIDTH only, to avoid edge
-    # artifacts. `crop_h` is a margin (px) removed from the top and bottom;
-    # kept at 0 (no vertical crop, full B-scan depth kept).
-    crop_h = 0
-    crop_y_start = crop_h
-    crop_w = int(W * crop_w_x)
+    h, w = int(H * scale_factor), int(W * scale_factor)
+    center = w // 2
+    crop_w = int(W * crop_factor)
     crop_x_start = (W - crop_w) // 2
 
-    frames = frames[:, crop_y_start : H - crop_h, crop_x_start : crop_x_start + crop_w]
-    ref = (
-        ref[crop_y_start : H - crop_h, crop_x_start : crop_x_start + crop_w]
-        if ref is not None
-        else None
-    )
+    frames = frames[:, :, crop_x_start : crop_x_start + crop_w]
+    ref = ref[:, crop_x_start : crop_x_start + crop_w] if ref is not None else None
 
     # Hann window kills FFT wrap-around edge artifacts.
     win = (
@@ -139,7 +130,7 @@ def estimate_lateral_shift_fullframe(
         None
     ]
     y_center = h // 2
-    yw = max(1, int(round(max_vshift * h / (H - 2 * crop_h))))
+    yw = max(1, int(round(max_vshift * h / H)))
     y_lo, y_hi = max(0, y_center - yw), min(h, y_center + yw + 1)
 
     dx = torch.empty(T, device=device, dtype=torch.float32)

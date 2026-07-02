@@ -33,11 +33,11 @@ import torch
 from ocularrigidity.data.spectralis import SpectralisStudy
 from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
 from ocularrigidity.segmentation.inference import infer
-from ocularrigidity.registration.horizontal.phase_correlation import (
-    estimate_lateral_shift_fullframe,
-    estimate_lateral_shift_xcorr_subpixel,
+from ocularrigidity.registration.lateral.correlation import (
+    frame_correlation_dx,
+    profile_correlation_dx,
 )
-from ocularrigidity.registration.rigid import register_masks_by_displacement
+from ocularrigidity.registration.rigid import register_videos
 from ocularrigidity.registration.axial import (
     correct_shadow,
     laplacian_of_gaussian,
@@ -67,7 +67,8 @@ def load_oct_series(raw_dir: Path) -> list:
         return []
     study = SpectralisStudy.from_file(xml_files[0])
     return [
-        s for s in study.series
+        s
+        for s in study.series
         if s.oct is not None and s.oct.quality is not None and s.oct_file_name
     ]
 
@@ -112,7 +113,6 @@ def apply_experiment_to_state(loaded: dict, timed: list) -> None:
     st.session_state["w_ff_downsample"] = int(ff.get("downsample") or 512)
     st.session_state["w_ff_bp_lo"] = float(ff.get("bp_lo", 0.02))
     st.session_state["w_ff_bp_hi"] = float(ff.get("bp_hi", 0.5))
-    st.session_state["w_ff_crop_w_x"] = float(ff.get("crop_w_x", 0.75))
 
     xc = xp if method == "xcorr" else {}
     st.session_state["w_xc_max_shift"] = xc.get("max_shift")  # None -> W // 4
@@ -262,10 +262,19 @@ def select_condition(with_time_point: bool = True) -> ConditionContext:
         c2.metric("Qualite (point choisi)", f"{chosen.oct.quality:g}")
 
     return ConditionContext(
-        x=int(x), moment=moment, eye=eye, r=int(r),
-        patient_dir=patient_dir, data_dir=data_dir, raw_dir=raw_dir,
-        series_list=series_list, best=best, best_image_path=best_image_path,
-        timed=timed, chosen=chosen, chosen_image_path=chosen_image_path,
+        x=int(x),
+        moment=moment,
+        eye=eye,
+        r=int(r),
+        patient_dir=patient_dir,
+        data_dir=data_dir,
+        raw_dir=raw_dir,
+        series_list=series_list,
+        best=best,
+        best_image_path=best_image_path,
+        timed=timed,
+        chosen=chosen,
+        chosen_image_path=chosen_image_path,
     )
 
 
@@ -281,7 +290,6 @@ def read_x_params(x_method: str) -> dict:
             "downsample": int(st.session_state.get("w_ff_downsample", 512)),
             "bp_lo": float(st.session_state.get("w_ff_bp_lo", 0.02)),
             "bp_hi": float(st.session_state.get("w_ff_bp_hi", 0.5)),
-            "crop_w_x": float(st.session_state.get("w_ff_crop_w_x", 0.75)),
         }
     if x_method == "xcorr":
         return {
@@ -353,27 +361,23 @@ def apply_ascan_params_to_state(saved: dict) -> None:
         st.session_state["w_median_enabled"] = bool(saved.get("enabled"))
 
 
-def build_reg_cfg(x_method: str, y_enabled: bool, flatten: bool, subpixel: bool,
-                  median_enabled: bool, median_params: dict,
-                  crop_w_x: float = 0.75, bp_lo: float = 0.02,
-                  bp_hi: float = 0.5) -> RegistrationConfig:
+def build_reg_cfg(
+    x_method: str,
+    y_enabled: bool,
+    flatten: bool,
+    subpixel: bool,
+    median_enabled: bool,
+    median_params: dict,
+) -> RegistrationConfig:
     """Assemble une ``RegistrationConfig`` a partir des reglages de l'UI."""
     return RegistrationConfig(
-        flatten=bool(flatten and y_enabled),
-        horizontal_alignment=(x_method != "aucun"),
+        flatten_rpe=bool(flatten and y_enabled),
+        correct_transversal=(x_method != "aucun"),
+        correct_axial=bool(y_enabled),
         lateral_method="xcorr" if x_method == "xcorr" else "fullframe",
         subpixel=subpixel,
-        crop_w_x=float(crop_w_x),
-        bp_lo=float(bp_lo),
-        bp_hi=float(bp_hi),
-        median_registration=bool(median_enabled),
-        median_max_vshift=int(median_params.get("max_vshift", 30)),
-        median_use_shadow=bool(median_params.get("use_shadow", True)),
-        median_use_log=bool(median_params.get("use_log", True)),
-        median_shadow_n=float(median_params.get("shadow_n", 4.0)),
-        median_shadow_a=float(median_params.get("shadow_a", 0.8)),
-        median_log_kernel_size=int(median_params.get("log_kernel_size", 9)),
-        median_log_sigma=float(median_params.get("log_sigma", 3.0)),
+        axial_refinement=bool(median_enabled),
+        max_axial_shift=int(median_params.get("max_vshift", 30)),
     )
 
 
@@ -408,8 +412,13 @@ def apply_dx(gray: np.ndarray, dx: float) -> np.ndarray:
     return scipy.ndimage.shift(gray, (0.0, dx), order=1, mode="constant", cval=0.0)
 
 
-def overlay_mask(gray: np.ndarray, mask: np.ndarray,
-                 color=(255, 0, 0), alpha: float = 0.35, border: int = 2) -> np.ndarray:
+def overlay_mask(
+    gray: np.ndarray,
+    mask: np.ndarray,
+    color=(255, 0, 0),
+    alpha: float = 0.35,
+    border: int = 2,
+) -> np.ndarray:
     """Image grise + masque : remplissage colore transparent + bordure pleine."""
     base = np.clip(gray, 0, 255).astype(np.uint8)
     rgb = np.stack([base, base, base], axis=-1)
@@ -432,32 +441,18 @@ def to_display(img: np.ndarray) -> np.ndarray:
     return np.clip((x - lo) / (hi - lo) * 255.0, 0, 255).astype(np.uint8)
 
 
-def crop_bandpass_preview(gray: np.ndarray, crop_w_x: float,
-                          bp_lo: float, bp_hi: float) -> np.ndarray:
-    """Rogne au ``crop_w_x`` central en X (largeur seulement, H entiere) puis
-    filtre passe-bande 2D (meme formule radiale que
-    ``estimate_lateral_shift_fullframe``), pour visualiser l'effet du crop/bandpass
-    sur une image (deja alignee, typiquement).
-    """
-    H, W = gray.shape
-    crop_w = int(W * crop_w_x)
-    x0 = (W - crop_w) // 2
-    cropped = gray[:, x0 : x0 + crop_w].astype(np.float32)
-
-    ch, cw = cropped.shape
-    fy = np.fft.fftfreq(ch)[:, None]
-    fx = np.fft.rfftfreq(cw)[None, :]
-    fr = np.sqrt(fy**2 + fx**2)
-    band = (1.0 - np.exp(-((fr / bp_lo) ** 2))) * np.exp(-((fr / bp_hi) ** 2))
-    spectrum = np.fft.rfft2(cropped - cropped.mean())
-    return np.fft.irfft2(spectrum * band, s=(ch, cw))
-
-
 # --------------------------------------------------------------------------- #
 # Pretraitement RPE decouple + apercu du recalage par A-scan
 # --------------------------------------------------------------------------- #
-def rpe_enhance(gray: np.ndarray, use_shadow: bool, n: float, a: float,
-                use_log: bool, k: int, sigma: float) -> np.ndarray:
+def rpe_enhance(
+    gray: np.ndarray,
+    use_shadow: bool,
+    n: float,
+    a: float,
+    use_log: bool,
+    k: int,
+    sigma: float,
+) -> np.ndarray:
     """Pretraitement RPE decouple : compensation d'ombres et/ou LoG, ou aucun."""
     x = gray.astype(np.float32)
     if use_shadow:
@@ -486,27 +481,45 @@ def apply_ascan_vshift(gray: np.ndarray, dy: np.ndarray) -> np.ndarray:
     H, W = gray.shape
     ys = torch.arange(H, dtype=torch.float32)
     xs = torch.arange(W, dtype=torch.float32)
-    grid_y = ys.view(H, 1).expand(H, W) + torch.as_tensor(dy, dtype=torch.float32).view(1, W)
+    grid_y = ys.view(H, 1).expand(H, W) + torch.as_tensor(dy, dtype=torch.float32).view(
+        1, W
+    )
     grid_x = xs.view(1, W).expand(H, W)
     norm_y = grid_y / (H - 1) * 2 - 1
     norm_x = grid_x / (W - 1) * 2 - 1
     grid = torch.stack([norm_x, norm_y], dim=-1)[None]
     out = torch.nn.functional.grid_sample(
         torch.from_numpy(gray.astype(np.float32))[None, None],
-        grid, mode="bilinear", padding_mode="zeros", align_corners=True,
+        grid,
+        mode="bilinear",
+        padding_mode="zeros",
+        align_corners=True,
     )
     return out[0, 0].numpy()
 
 
-def estimate_chosen_ascan_dy(ref: np.ndarray, mov: np.ndarray, use_shadow: bool,
-                             n: float, a: float, use_log: bool, k: int, sigma: float,
-                             max_vshift: int, subpixel: bool) -> np.ndarray:
+def estimate_chosen_ascan_dy(
+    ref: np.ndarray,
+    mov: np.ndarray,
+    use_shadow: bool,
+    n: float,
+    a: float,
+    use_log: bool,
+    k: int,
+    sigma: float,
+    max_vshift: int,
+    subpixel: bool,
+) -> np.ndarray:
     """dy par A-scan (W,) alignant ``mov`` sur ``ref`` apres pretraitement (decouple)."""
     ref_pre = rpe_enhance(ref, use_shadow, n, a, use_log, k, sigma)
     mov_pre = rpe_enhance(mov, use_shadow, n, a, use_log, k, sigma)
     dy = estimate_ascan_vshift_to_median(
-        mov_pre[None], ref_pre, max_vshift=int(max_vshift),
-        subpixel=bool(subpixel), batch_size=1, device=DEVICE,
+        mov_pre[None],
+        ref_pre,
+        max_vshift=int(max_vshift),
+        subpixel=bool(subpixel),
+        batch_size=1,
+        device=DEVICE,
     )
     return dy[0].cpu().numpy()
 
@@ -514,20 +527,20 @@ def estimate_chosen_ascan_dy(ref: np.ndarray, mov: np.ndarray, use_shadow: bool,
 # --------------------------------------------------------------------------- #
 # Recalage horizontal (X) et vertical (Y)
 # --------------------------------------------------------------------------- #
-def estimate_dx(method: str, ref: np.ndarray, mov: np.ndarray, params: dict,
-                subpixel: bool) -> float:
+def estimate_dx(
+    method: str, ref: np.ndarray, mov: np.ndarray, params: dict, subpixel: bool
+) -> float:
     """dx lateral (px) alignant ``mov`` sur ``ref`` selon la methode choisie."""
     if method == "aucun":
         return 0.0
     if method == "fullframe":
         frames = torch.from_numpy(np.stack([ref, mov]).astype(np.float32))
-        dx = estimate_lateral_shift_fullframe(
+        dx = frame_correlation_dx(
             frames,
             ref=frames[0],
             downsample_to=(int(params["downsample"]), int(params["downsample"])),
             max_shift=int(params["max_shift"]),
             max_vshift=int(params["max_vshift"]),
-            crop_w_x=float(params.get("crop_w_x", 0.75)),
             bandpass=(float(params["bp_lo"]), float(params["bp_hi"])),
             device=DEVICE,
             subpixel=bool(subpixel),
@@ -537,8 +550,9 @@ def estimate_dx(method: str, ref: np.ndarray, mov: np.ndarray, params: dict,
         curve = torch.from_numpy(vertical_mean_profile(mov)).float()[None]
         ref_curve = torch.from_numpy(vertical_mean_profile(ref)).float()
         ms = params.get("max_shift")
-        dx = estimate_lateral_shift_xcorr_subpixel(
-            curve, ref_curve,
+        dx = profile_correlation_dx(
+            curve,
+            ref_curve,
             max_shift=int(ms) if ms is not None else None,
             drop_edges=int(params["drop_edges"]),
             subpixel=bool(subpixel),
@@ -578,7 +592,9 @@ def segment_images(ref_path, mov_path):
     return np.asarray(masks, dtype=bool)
 
 
-@st.cache_data(show_spinner="Recalage Y (segmentation + register_masks_by_displacement)...")
+@st.cache_data(
+    show_spinner="Recalage Y (segmentation + register_masks_by_displacement)..."
+)
 def register_y(ref_path, mov_path, dx, flatten, subpixel):
     """Recale ``mov`` (deja recalee en x de ``dx``) sur ``ref`` en Y.
 
@@ -593,18 +609,30 @@ def register_y(ref_path, mov_path, dx, flatten, subpixel):
     masks = infer(model, frames, scale_factor=2.0, batch_size=2, device=DEVICE)
     masks = fill_empty_columns(masks)
 
-    _, reg_frames, _ = register_masks_by_displacement(
-        masks, frames,
-        correct_dx=False, flatten_rpe=bool(flatten), batch_size=2,
-        device=DEVICE, verbose=False, return_params=True, subpixel=bool(subpixel),
+    _, reg_frames, _ = register_videos(
+        masks,
+        frames,
+        correct_transversal=False,
+        flatten_rpe=bool(flatten),
+        batch_size=2,
+        device=DEVICE,
+        verbose=False,
+        return_params=True,
+        subpixel=bool(subpixel),
     )
     if isinstance(reg_frames, torch.Tensor):
         reg_frames = reg_frames.cpu().numpy()
     return np.asarray(reg_frames)
 
 
-def base_registration(ctx: ConditionContext, x_method: str, x_params: dict,
-                      y_enabled: bool, flatten: bool, subpixel: bool):
+def base_registration(
+    ctx: ConditionContext,
+    x_method: str,
+    x_params: dict,
+    y_enabled: bool,
+    flatten: bool,
+    subpixel: bool,
+):
     """(base_ref, base_mov, dx) apres le recalage initial X(+Y) de la paire choisie.
 
     Sert de point de depart au recalage par A-scan (« posterieur au recalage

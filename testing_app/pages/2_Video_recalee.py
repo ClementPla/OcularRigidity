@@ -17,7 +17,7 @@ import dataclasses
 
 import streamlit as st
 
-from ocularrigidity.registration.export import (
+from ocularrigidity.scripts.registration.astronauts import (
     export_registered_video,
     DEFAULT_OUTPUT_SUBDIR,
 )
@@ -48,14 +48,23 @@ def _run_export(raw_dir, cfg, suffix, ctx):
     with st.spinner("Recalage de la video complete (segmentation + recalage)..."):
         try:
             result = export_registered_video(
-                raw_dir, cfg, get_seg_model(),
-                device=DEVICE, out_subdir=DEFAULT_OUTPUT_SUBDIR, suffix=suffix,
-                overwrite=True, scale_factor=2.0, seg_batch_size=8, verbose=False,
+                raw_dir,
+                cfg,
+                get_seg_model(),
+                device=DEVICE,
+                out_subdir=DEFAULT_OUTPUT_SUBDIR,
+                suffix=suffix,
+                overwrite=True,
+                scale_factor=2.0,
+                seg_batch_size=8,
+                verbose=False,
                 extra_meta={
                     "source": "pages/2_Video_recalee.py",
                     "variant": "ascan" if suffix else "base",
-                    "patient": ctx.patient_dir.name, "moment": ctx.moment,
-                    "eye": ctx.eye, "replicate": int(ctx.r),
+                    "patient": ctx.patient_dir.name,
+                    "moment": ctx.moment,
+                    "eye": ctx.eye,
+                    "replicate": int(ctx.r),
                 },
             )
         except Exception as e:  # noqa: BLE001
@@ -115,10 +124,19 @@ with col_cfg:
         crop_w_x=crop_w_x, bp_lo=bp_lo, bp_hi=bp_hi,
     )
 
-    prep = " + ".join(
-        [t for t, on in (("compensation", median_params["use_shadow"]),
-                         ("LoG", median_params["use_log"])) if on]
-    ) or "aucun"
+    prep = (
+        " + ".join(
+            [
+                t
+                for t, on in (
+                    ("compensation", median_params["use_shadow"]),
+                    ("LoG", median_params["use_log"]),
+                )
+                if on
+            ]
+        )
+        or "aucun"
+    )
 
     st.header("Parametres de recalage")
     st.caption(
@@ -168,7 +186,11 @@ with col_out:
     def _show(path, title):
         st.subheader(title)
         if path.exists():
-            st.video(read_video_bytes(str(path), path.stat().st_mtime),loop=True,autoplay=True)
+            st.video(
+                read_video_bytes(str(path), path.stat().st_mtime),
+                loop=True,
+                autoplay=True,
+            )
             st.caption(str(path))
         else:
             st.info("Non enregistrée pour cette condition.")

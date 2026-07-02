@@ -1,7 +1,11 @@
 import numpy as np
 
 from ocularrigidity.motion.one_cycle import estimate_cardiac_amplitude
-from ocularrigidity.motion.pulsation import run_cardiac_pipeline
+from ocularrigidity.motion.pulsation import (
+    NCycleConfig,
+    PulseExtractionConfig,
+    run_cardiac_pipeline,
+)
 from ocularrigidity.consts import (
     CHECKPOINT_PATH,
     ROOT_MASKS,
@@ -16,10 +20,11 @@ from pathlib import Path
 from ocularrigidity.data.measurements.dataframe import load_measurements
 from tqdm.auto import tqdm
 import pandas as pd
-from ocularrigidity.motion.results import CardiacPipelineResults
-from ocularrigidity.rigidity.features import compute_deltaY_masks
+from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
+from ocularrigidity.thickness.features import compute_deltaY_masks
+from ocularrigidity.scripts.cohort_analysis.segment_n_cycles import get_model
+from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.inference import infer
-from ocularrigidity.segmentation.trainer.pl_module import ChoroidSegmentationModule
 
 OVERWRITE = False
 
@@ -32,10 +37,14 @@ def compute_one_cycle(
     cache_dir=None,
 ):
     df = load_measurements(include_HR=True)
+
     for index, row in tqdm(df.iterrows(), total=len(df)):
         video = Path(row["MeasureValue"])
         # Convert to unix path
         video = video.as_posix().replace("\\", "/")
+        process_anyway = Path(video) in PROCESS_ANYWAY
+        if process_anyway:
+            print(f"Processing {video} anyway (in videos_to_process)")
         HR = row["HR"]
         if np.isnan(HR) or HR <= 0:
             HR = None
@@ -43,10 +52,10 @@ def compute_one_cycle(
         if not (ROOT_COMPRESSED_VIDEO / video / "cube.mp4").exists():
             continue
         measure_path = root_measures / video / "measure.pkl"
-        if measure_path.exists() and not OVERWRITE:
+        if (measure_path.exists() and not OVERWRITE) and not process_anyway:
             continue
         one_cycle_path = root_one_cycle / video / "one_cycle.mkv"
-        if one_cycle_path.exists() and not OVERWRITE:
+        if (one_cycle_path.exists() and not OVERWRITE) and not process_anyway:
             continue
         try:
             result: CardiacPipelineResults = run_cardiac_pipeline(
@@ -54,24 +63,29 @@ def compute_one_cycle(
                 root_masks=ROOT_MASKS,
                 root_data=ROOT_COMPRESSED_VIDEO,
                 timestamps_path=ROOT_DATA_MNT / video / "timestamp.txt",
+                config=PulseExtractionConfig(
+                    ICA_or_PCA=method,
+                    sigma_col=PULSATION.sigma_col,
+                    expected_bpm=HR,
+                    expected_bpm_band_frac=PULSATION.expected_bpm_band_frac,
+                    col_slice=PULSATION.col_slice,
+                    verbose=True,
+                ),
+                fold_config=NCycleConfig(
+                    n_bins=PULSATION.n_bins,
+                    n_cycle=PULSATION.n_cycle,
+                    fold_method=PULSATION.one_cycle_fold_method,
+                    phase_method=phase_method_for_fold,
+                    verbose=True,
+                ),
                 skip_first_n_frames=REGISTRATION.skip_first_n_frames,
                 drop_last_n_frames=REGISTRATION.drop_last_n_frames,
                 compute_n_cycle_video=True,
-                flatten=REGISTRATION.flatten,
-                horizontal_alignment=REGISTRATION.horizontal_alignment,
+                flatten_rpe=REGISTRATION.flatten_rpe,
+                correct_transversal=REGISTRATION.correct_transversal,
                 lateral_method=REGISTRATION.lateral_method,
                 subpixel=REGISTRATION.subpixel,
                 use_encoded_video=REGISTRATION.use_encoded_video,
-                verbose=True,
-                ICA_or_PCA=method,
-                sigma_col=PULSATION.sigma_col,
-                expected_bpm=HR,
-                expected_bpm_band_frac=PULSATION.expected_bpm_band_frac,
-                n_bins=PULSATION.n_bins,
-                col_slice=PULSATION.col_slice,
-                one_cycle_fold_method=PULSATION.one_cycle_fold_method,
-                n_cycle=PULSATION.n_cycle,
-                phase_method_for_fold=phase_method_for_fold,
                 cache_dir=cache_dir,
             )
         except Exception as e:
@@ -91,7 +105,7 @@ def extract_deltaY_from_one_cycle(
     output_file: Path, input_one_cycle: Path, n_cycles=DELTA_Y.n_cycles
 ):
     df = load_measurements(include_HR=True)
-    model = ChoroidSegmentationModule.load_from_checkpoint(CHECKPOINT_PATH).cuda()
+    model = get_model()
     output_file.parent.mkdir(parents=True, exist_ok=True)
     for index, row in tqdm(df.iterrows(), total=len(df)):
         if not output_file.exists():
@@ -101,7 +115,11 @@ def extract_deltaY_from_one_cycle(
         else:
             df: pd.DataFrame = pd.read_pickle(output_file)
         video = Path(row["MeasureValue"]).as_posix().replace("\\", "/")
-        if not OVERWRITE and video in df["video"].values:
+        if (
+            not OVERWRITE
+            and video in df["video"].values
+            and (Path(video) not in PROCESS_ANYWAY)
+        ):
             continue
         try:
             data = read_gray(input_one_cycle / video / "one_cycle.mkv")
@@ -117,9 +135,6 @@ def extract_deltaY_from_one_cycle(
                 graphcut_kwargs=DELTA_Y.graphcut_kwargs,
             )
             thickness = compute_deltaY_masks(masks)
-            # thickness_smoothed = smooth_boundary_2d(
-            #     thickness, sigma_time=3, sigma_col=5.0
-            # )
             T = thickness.shape[0]
             for cycle in range(n_cycles):
                 current_cycle = thickness[
@@ -158,9 +173,7 @@ if __name__ == "__main__":
             root_one_cycle = (
                 ROOT_CARDIAC_PIPELINE / f"one_cycle_{method}_{phase_method}"
             )
-            root_measures = (
-                ROOT_CARDIAC_PIPELINE / f"measures_{method}_{phase_method}"
-            )
+            root_measures = ROOT_CARDIAC_PIPELINE / f"measures_{method}_{phase_method}"
             compute_one_cycle(
                 root_one_cycle,
                 root_measures,

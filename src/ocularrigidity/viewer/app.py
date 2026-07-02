@@ -36,7 +36,11 @@ import numpy as np
 
 from ocularrigidity.data.compression import cube_to_mp4_fastest, read_gray
 from ocularrigidity.data.io import save_mask
-from ocularrigidity.motion.pulsation import run_cardiac_pipeline
+from ocularrigidity.motion.pulsation import (
+    NCycleConfig,
+    PulseExtractionConfig,
+    run_cardiac_pipeline,
+)
 from ocularrigidity.pipeline_config import PULSATION, REGISTRATION, SEGMENTATION, DELTA_Y
 from ocularrigidity.segmentation.inference import infer
 from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
@@ -138,8 +142,8 @@ def run_pipeline(
     # registration
     skip_first,
     drop_last,
-    flatten,
-    horizontal_alignment,
+    flatten_rpe,
+    correct_transversal,
     lateral_method,
     subpixel,
     reg_batch,
@@ -253,22 +257,28 @@ def run_pipeline(
             root_masks=str(masks_root),
             root_data=str(data_root),
             timestamps_path=str(ts_staged),
+            config=PulseExtractionConfig(
+                sigma_col=float(sigma_col),
+                col_slice=col_slice,
+                expected_bpm=bpm,
+                expected_bpm_band_frac=float(bpm_band_frac),
+                ICA_or_PCA=ica_or_pca,
+                verbose=True,
+            ),
+            fold_config=NCycleConfig(
+                n_bins=int(n_bins),
+                n_cycle=int(n_cycle),
+                fold_method=fold_method,
+                phase_method=phase_method,
+                verbose=True,
+            ),
             skip_first_n_frames=int(skip_first),
             drop_last_n_frames=int(drop_last),
-            flatten=bool(flatten),
-            horizontal_alignment=bool(horizontal_alignment),
+            flatten_rpe=bool(flatten_rpe),
+            correct_transversal=bool(correct_transversal),
             lateral_method=lateral_method,
             subpixel=bool(subpixel),
             use_encoded_video=True,
-            sigma_col=float(sigma_col),
-            col_slice=col_slice,
-            expected_bpm=bpm,
-            expected_bpm_band_frac=float(bpm_band_frac),
-            n_bins=int(n_bins),
-            n_cycle=int(n_cycle),
-            one_cycle_fold_method=fold_method,
-            ICA_or_PCA=ica_or_pca,
-            phase_method_for_fold=phase_method,
             compute_n_cycle_video=True,
             cache_dir=None,
             verbose=True,
@@ -381,8 +391,8 @@ def build_demo() -> gr.Blocks:
                     skip_first = gr.Number(value=REGISTRATION.skip_first_n_frames, precision=0, label="skip_first_n_frames")
                     drop_last = gr.Number(value=REGISTRATION.drop_last_n_frames, precision=0, label="drop_last_n_frames")
                     lateral_method = gr.Dropdown(["fullframe", "xcorr", "both"], value=REGISTRATION.lateral_method, label="lateral_method")
-                    flatten = gr.Checkbox(value=REGISTRATION.flatten, label="flatten")
-                    horizontal_alignment = gr.Checkbox(value=REGISTRATION.horizontal_alignment, label="horizontal_alignment")
+                    flatten_rpe = gr.Checkbox(value=REGISTRATION.flatten_rpe, label="flatten_rpe")
+                    correct_transversal = gr.Checkbox(value=REGISTRATION.correct_transversal, label="correct_transversal")
                     subpixel = gr.Checkbox(value=REGISTRATION.subpixel, label="subpixel")
                     reg_batch = gr.Number(value=REGISTRATION.batch_size, precision=0, label="batch_size")
 
@@ -432,7 +442,7 @@ def build_demo() -> gr.Blocks:
             inputs=[
                 video_path_text, ts_path_text,
                 video_file, timestamps_file, outputs, max_frames,
-                skip_first, drop_last, flatten, horizontal_alignment,
+                skip_first, drop_last, flatten_rpe, correct_transversal,
                 lateral_method, subpixel, reg_batch,
                 ica_or_pca, phase_method, sigma_col, n_bins, n_cycle,
                 fold_method, expected_bpm, bpm_band_frac, col_start, col_end,

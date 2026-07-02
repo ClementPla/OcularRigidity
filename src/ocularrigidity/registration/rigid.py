@@ -1,15 +1,12 @@
 import torch
 import torch.nn.functional as F
-import numpy as np
-from ocularrigidity.registration.horizontal.phase_correlation import (
-    estimate_lateral_shift_fullframe,
-    estimate_lateral_shift_xcorr_subpixel,
+from ocularrigidity.registration.lateral.dx import estimate_lateral_dx, fovea_correction
+
+from ocularrigidity.registration.axial.median_registration import (
+    register_ascans_to_median,
 )
-from ocularrigidity.registration.horizontal.utils import (
-    _interp1d,
-    _median_filter_1d,
-    smooth_translations,
-)
+
+from ocularrigidity.registration.postprocess import filter_bad_ascans_per_bms
 from ocularrigidity.segmentation.postprocess.interfaces import (
     clean_boundaries,
     extract_boundaries_fast,
@@ -17,196 +14,118 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 from tqdm.auto import tqdm
 
 
-@torch.inference_mode()
-def temporal_median(
-    frames,
-    ignore_zeros: bool = True,
-    device: str = "cuda",
-    row_chunk: int = 64,
-) -> torch.Tensor:
-    """Mediane temporelle d'un volume recale ``(T, H, W)`` -> template ``(H, W)``.
-
-    Concue pour operer sur le volume DEJA EN MEMOIRE apres
-    ``register_masks_by_displacement`` (pas de relecture disque). Le calcul reste
-    sur le GPU et est decoupe par blocs de lignes (``row_chunk``) pour borner la
-    memoire — meme esprit que le traitement par lots de ``F.grid_sample`` dans ce
-    module.
-
-    ``ignore_zeros`` (defaut) traite les pixels exactement nuls comme manquants :
-    ce sont les bords introduits par le zero-padding de ``grid_sample`` lors du
-    recalage, qui fausseraient sinon la mediane des colonnes de bord. On calcule
-    alors une ``nanmedian`` par pixel, comme l'``omitnan`` du MATLAB (``average.m``).
-
-    Returns
-    -------
-    torch.Tensor
-        Template median ``(H, W)`` (float32, sur ``device``).
-    """
-    if isinstance(frames, np.ndarray):
-        frames = torch.from_numpy(frames)
-    T, H, W = frames.shape
-    out = torch.empty((H, W), dtype=torch.float32, device=device)
-    for r0 in range(0, H, row_chunk):
-        r1 = min(r0 + row_chunk, H)
-        block = frames[:, r0:r1, :].to(device, torch.float32)  # (T, h, W)
-        if ignore_zeros:
-            block = block.masked_fill(block == 0, float("nan"))
-            med = torch.nanmedian(block, dim=0).values
-            med = torch.nan_to_num(med, nan=0.0)
-        else:
-            med = block.median(dim=0).values
-        out[r0:r1] = med
-        del block
-    return out
-
-
-def robust_temporal_dx(
-    dx: torch.Tensor,
-    conf: torch.Tensor = None,
-    conf_z: float = 1.0,
-    k: float = 2.5,
-    win: int = 55,
-    max_velocity: float = 4.0,
-) -> torch.Tensor:
-    """Reject temporally inconsistent lateral shifts and re-interpolate them.
-    A frame is kept only if it satisfies every enabled criterion:
-
-      - ``conf >= conf_z`` (when ``conf`` is given): drops frames whose
-        correlation peak was too weak to mean anything. Note confidence can only
-        *remove* a frame, never rescue an inconsistent one -- a sharp
-        (high-confidence) peak that locks onto a different lateral feature than
-        its neighbours is exactly the jitter we want to discard, so the temporal
-        tests below take precedence.
-      - ``|dx - rolling_median| <= k * MAD``: the primary consistency test,
-        scaled by the robust median-absolute-deviation. ``k`` is tight by default
-        because real motion does not jump frame-to-frame.
-      - ``|dx - rolling_median| <= max_velocity``: a hard cap (in pixels) on how
-        far a single frame may stray from the local trend. We measure deviation
-        from the rolling median rather than the raw consecutive difference
-        ``|dx[t] - dx[t-1]|`` on purpose: an isolated outlier inflates *two*
-        consecutive differences and would wrongly condemn its innocent
-        neighbour, whereas the median trend stays put.
-
-    Rejected frames are linearly interpolated from the surviving ones.
-    """
-    dx = dx.float()
-    good = torch.ones_like(dx, dtype=torch.bool)
-    if conf is not None:
-        good &= conf >= conf_z
-    med = _median_filter_1d(dx, win)
-    resid = (dx - med).abs()
-    # Primary consistency test: deviation from the local median, robust-scaled.
-    good &= resid <= k * (torch.median(resid) + 1e-6)
-    # Hard velocity cap: reject anything that strays too far from the trend.
-    if max_velocity is not None:
-        good &= resid <= max_velocity
-    if good.all() or good.sum() < 2:
-        return dx
-    idx = torch.arange(dx.numel(), device=dx.device, dtype=torch.float32)
-    interp = _interp1d(idx, idx[good], dx[good])
-    return torch.where(good, dx, interp)
+def _all_bm_boundaries(raw_masks, *, batch_size, device):
+    """Cleaned BM boundary ``(T, W)`` of every frame, on ``device``."""
+    bms = []
+    for start in range(0, len(raw_masks), batch_size):
+        chunk = raw_masks[start : start + batch_size].to(torch.float32).cpu().numpy()
+        bm, _ = clean_boundaries(*extract_boundaries_fast(chunk))
+        bms.append(torch.from_numpy(bm).to(device))
+    return torch.cat(bms, dim=0)
 
 
 @torch.inference_mode()
 @torch.no_grad()
-def register_masks_by_displacement(
+def register_videos(
     raw_masks: torch.Tensor,
     raw_frames: torch.Tensor,
-    correct_dx: bool = True,
+    # --- what to correct ---
+    correct_transversal: bool = True,
+    correct_axial: bool = True,
     flatten_rpe: bool = False,
+    axial_refinement: bool = False,
+    fovea_correction_enabled: bool = True,
+    transversal_bandpass=(0.02, 0.5),
+    axial_bandpass=(0.02, 0.5),
+    # --- transversal (x) parameters ---
+    lateral_method: str = "xcorr",
+    max_lateral_shift: int = 16,
+    smooth_transversal: bool = True,
+    smooth_transversal_sigma: float = 2.0,
+    # --- axial (y) parameters ---
+    max_axial_shift: int = 16,
+    # --- general ---
+    subpixel: bool = True,
+    # --- runtime ---
     batch_size: int = 256,
     device: str = "cuda",
     verbose: bool = True,
     return_params: bool = False,
-    lateral_method: str = "xcorr",
-    subpixel: bool = True,
-    crop_w_x: float = 0.75,
-    bp_lo: float = 0.02,
-    bp_hi: float = 0.5,
+    scale_factor=1.0,
+    crop_factor=0.66,
 ):
-    """Register frames/masks by lateral shift + vertical boundary displacement.
+    """Register a video by lateral (x) shift, then per-column vertical (y) BM alignment.
 
-    Returns ``(registered_masks, registered_frames)``. When ``return_params`` is
-    True, additionally returns a ``params`` dict with the transform that was
-    applied: ``{"dx": (T,) lateral shift, "dy": (T, W) vertical displacement}``
-    (both CPU tensors). ``dx`` is all-zeros when ``correct_dx`` is False.
+    Returns ``(registered_masks, registered_frames)``, plus a ``params`` dict
+    ``{"dx": (T,), "dy": (T, W), "bad_columns": (W,)}`` when ``return_params``.
 
-    ``lateral_method`` selects how the lateral shift is estimated:
-      - ``"xcorr"``: 1D cross-correlation of vertical-mean profiles (default).
-      - ``"fullframe"``: 2D phase correlation of the full frames
+    - ``lateral_method``: ``"xcorr"`` (vertical-mean profiles) or ``"fullframe``
+      (2D phase correlation); ``dx`` is all-zeros when ``correct_transversal`` is False.
+    - ``flatten_rpe``: align the BM to a constant row rather than to the reference
+      frame's BM curve.
+    - ``axial_refinement``: optional second axial pass aligning each A-scan on
+      the volume's temporal median (adds ``"dy_median"`` (T, W) to ``params``).
 
-    ``crop_w_x``, ``bp_lo``, ``bp_hi`` are only used by ``"fullframe"`` : central
-    fraction of the frame WIDTH kept before the FFT (height is not cropped) and
-    low/high bandpass bounds (cf. ``estimate_lateral_shift_fullframe``).
+    Columns whose BM is unreliable (``filter_bad_ascans_per_bms``) are zeroed in
+    both frames and masks, across all frames.
     """
-    if isinstance(raw_masks, np.ndarray):
-        raw_masks = torch.from_numpy(raw_masks)
-    if isinstance(raw_frames, np.ndarray):
-        raw_frames = torch.from_numpy(raw_frames)
+
+    raw_masks = torch.as_tensor(raw_masks)
+    raw_frames = torch.as_tensor(raw_frames)
     T, H, W = raw_masks.shape
-    mask_dtype = raw_masks.dtype
-    frame_dtype = raw_frames.dtype
+    mask_dtype, frame_dtype = raw_masks.dtype, raw_frames.dtype
+
+    # Reference frame: the one whose mask area is closest to the temporal median.
+    mask_counts = raw_masks.sum(dim=(1, 2))
+    ref_idx = (mask_counts - mask_counts.median()).abs().argmin()
+
+    if fovea_correction_enabled:
+        raw_masks, raw_frames = fovea_correction(
+            raw_frames,
+            raw_masks,
+            ref_idx=ref_idx,
+            batch_size=batch_size,
+            device=device,
+            verbose=verbose,
+        )
+    if (not correct_axial) and (not correct_transversal):
+        params = {
+            "dx": torch.zeros(T, dtype=torch.float32),
+            "dy": torch.zeros(T, W, dtype=torch.float32),
+            "bad_columns": torch.zeros(W, dtype=torch.bool),
+        }
+        if return_params:
+            return raw_masks, raw_frames, params
+        return raw_masks, raw_frames
+
+    all_bms = _all_bm_boundaries(raw_masks, batch_size=batch_size, device=device)
+    ref_bm = all_bms[ref_idx]
+
+    # --- Lateral (x) registration: estimated once, decoupled from the y warp ---
+    global_dx = (
+        estimate_lateral_dx(
+            raw_frames,
+            ref_idx,
+            lateral_method,
+            subpixel=subpixel,
+            max_shift=max_lateral_shift,
+            batch_size=batch_size,
+            device=device,
+            smooth_transversal=smooth_transversal,
+            smooth_transversal_sigma=smooth_transversal_sigma,
+            scale_factor=scale_factor,
+            crop_factor=crop_factor,
+            bandpass=transversal_bandpass,
+        )
+        if correct_transversal
+        else None
+    )
+
+    # --- Vertical (y) registration onto the reference BM ----------------------
     ys = torch.arange(H, device=device, dtype=torch.float32)
     xs = torch.arange(W, device=device, dtype=torch.float32)
-    # Vertical-mean profiles are only needed by the "xcorr" lateral method.
-    need_profiles = correct_dx and lateral_method == "xcorr"
-    bms_list = []
-    csi_list = []
-    profile_chunks = []
-    for start in range(0, T, batch_size):
-        end = min(start + batch_size, T)
-        masks_chunk = raw_masks[start:end].to(torch.float32)
-        bm, csi = extract_boundaries_fast(masks_chunk.cpu().numpy())
-        bm, csi = clean_boundaries(bm, csi)
-        bms_list.append(torch.from_numpy(bm).to(device))
-        csi_list.append(torch.from_numpy(csi).to(device))
-
-        if need_profiles:
-            frames_chunk = raw_frames[start:end].to(torch.float32).to(device)
-            padded_frames = F.pad(
-                frames_chunk.unsqueeze(1), (2, 2, 2, 2), mode="replicate"
-            )
-            blurred_frames = F.avg_pool2d(
-                padded_frames, kernel_size=5, stride=1
-            )  # Fast blur alternative
-            profile_chunks.append(blurred_frames.squeeze(1).mean(dim=1))
-
-    all_bms = torch.cat(bms_list, dim=0).to(device)
-    ref_bm = all_bms[0]
-
-    if correct_dx:
-        if lateral_method == "fullframe":
-            global_dx, conf = estimate_lateral_shift_fullframe(
-                raw_frames,
-                ref=raw_frames[0],  # same anchor as the vertical reference (frame 0)
-                crop_w_x=crop_w_x,
-                bandpass=(bp_lo, bp_hi),
-                batch_size=batch_size,
-                device=device,
-                return_confidence=True,
-                subpixel=subpixel,
-            )
-            global_dx = robust_temporal_dx(global_dx, conf=conf)
-        elif lateral_method == "xcorr":
-            profiles = torch.cat(profile_chunks, dim=0).to(device)
-            global_dx = estimate_lateral_shift_xcorr_subpixel(
-                profiles,
-                profiles[0],
-                101,
-                drop_edges=100,
-                subpixel=subpixel,
-            ).to(device)  # T
-            global_dx = robust_temporal_dx(global_dx)
-        else:
-            raise ValueError(f"Unknown lateral_method: {lateral_method!r}")
-        # Real lateral eye motion is low-frequency; a wider Gaussian absorbs the
-        # residual frame-to-frame jitter that survives outlier rejection.
-        global_dx = smooth_translations(global_dx, sigma=4.0)
-        # Pixel-precise request: the estimator may already round, but the temporal
-        # smoothing above re-introduces fractions. Snap the applied lateral shift
-        # back to whole pixels so grid_sample copies source pixels exactly.
-        if not subpixel:
-            global_dx = global_dx.round()
+    # BM level every column is warped onto: a scalar (flatten) or the ref curve.
+    target_bm = torch.nanmean(ref_bm) if flatten_rpe else ref_bm.unsqueeze(0)
 
     registered_masks_chunks = []
     registered_frames_chunks = []
@@ -221,93 +140,92 @@ def register_masks_by_displacement(
         end = min(start + batch_size, T)
         t = end - start
 
-        masks_chunk = raw_masks[start:end].to(torch.float32).to(device).unsqueeze(1)
-        frames_chunk = raw_frames[start:end].to(torch.float32).to(device).unsqueeze(1)
-        data_chunk = torch.cat([masks_chunk, frames_chunk], dim=1)  # t x 2 x H x W
+        masks_chunk = raw_masks[start:end].to(device, torch.float32)
+        frames_chunk = raw_frames[start:end].to(device, torch.float32)
+        data = torch.stack([masks_chunk, frames_chunk], dim=1)  # t x 2 x H x W
 
         grid_y = ys.view(1, H, 1).expand(t, H, W)
         grid_x = xs.view(1, 1, W).expand(t, H, W)
 
-        bm_chunk = all_bms[start:end].to(device)  # t x W
-
-        if correct_dx:
-            # Grab the pre-computed, correctly smoothed shifts for this chunk
-            dx_chunk = global_dx[start:end]
-
-            sample_x = grid_x - dx_chunk.view(t, 1, 1)
-            norm_x = sample_x / (W - 1) * 2 - 1
+        # Lateral (x) shift: warp both channels when correct_transversal.
+        if correct_transversal:
+            dx = global_dx[start:end].view(t, 1, 1)
+            norm_x = (grid_x - dx) / (W - 1) * 2 - 1
             norm_y = grid_y / (H - 1) * 2 - 1
-            grid_x_only = torch.stack([norm_x, norm_y], dim=-1)
-            data_x_aligned = F.grid_sample(
-                data_chunk,
-                grid_x_only,
+            data = F.grid_sample(
+                data,
+                torch.stack([norm_x, norm_y], dim=-1),
                 mode="bilinear",
                 padding_mode="zeros",
                 align_corners=True,
             )
 
-            bm_aligned, csi_aligned = extract_boundaries_fast(
-                data_x_aligned[:, 0].cpu().numpy()
-            )
-            bm_aligned, csi_aligned = clean_boundaries(bm_aligned, csi_aligned)
-            bm_aligned = torch.from_numpy(bm_aligned).to(device)
-            bm_aligned = bm_aligned.to(device)
+        # Per-column vertical displacement onto the target BM level, when correct_axial.
+        if correct_axial:
+            # Re-read the BM from the (possibly x-aligned) mask so the vertical
+            # displacement is measured in the already-shifted frame.
+            if correct_transversal:
+                bm, _ = clean_boundaries(
+                    *extract_boundaries_fast(data[:, 0].cpu().numpy())
+                )
+                bm_aligned = torch.from_numpy(bm).to(device)
+            else:
+                bm_aligned = all_bms[start:end]
+            displacement = torch.nan_to_num(bm_aligned - target_bm, nan=0.0)
+            if not subpixel:
+                displacement = displacement.round()
         else:
-            data_x_aligned = data_chunk
-            bm_aligned = bm_chunk
-        displacement = bm_aligned - ref_bm.unsqueeze(0)  # t x W
-
-        if flatten_rpe:
-            # nanmean (et non mean) : les colonnes de bord sans choroide donnent
-            # une frontiere NaN dans ref_bm ; ``ref_bm.mean()`` renverrait alors
-            # NaN -> displacement ENTIEREMENT NaN -> nan_to_num=0 -> AUCUN recalage
-            # vertical (le flatten ne fait rien). nanmean garde un niveau de flatten
-            # valide a partir des colonnes segmentees ; les colonnes NaN restent
-            # simplement non deplacees (comme en mode non-flatten). Rend robustes
-            # RegisteredVideo et tous les appelants, sans pre-remplissage des masques.
-            displacement = bm_aligned - torch.nanmean(ref_bm)  # t x W
-
-        # Replace NaN to zeros in the displacement
-        displacement = torch.nan_to_num(displacement, nan=0.0)
-        # Pixel-precise request: round the per-column vertical shift too, so the
-        # full applied transform (lateral dx + vertical dy) is integer-valued and
-        # the stored params match what grid_sample actually applies.
-        if not subpixel:
-            displacement = displacement.round()
+            displacement = torch.zeros(t, W, device=device)  # x-only: no y warp
         if return_params:
-            displacement_chunks.append(displacement.detach().cpu())
-        sample_y = grid_y + displacement.view(t, 1, -1)
-        norm_y2 = sample_y / (H - 1) * 2 - 1
-        norm_x2 = grid_x / (W - 1) * 2 - 1
-        grid_y_only = torch.stack([norm_x2, norm_y2], dim=-1)
+            displacement_chunks.append(displacement.cpu())
 
-        reg_data_chunk = F.grid_sample(
-            data_x_aligned,
-            grid_y_only,
+        norm_x = grid_x / (W - 1) * 2 - 1
+        norm_y = (grid_y + displacement.view(t, 1, W)) / (H - 1) * 2 - 1
+        reg = F.grid_sample(
+            data,
+            torch.stack([norm_x, norm_y], dim=-1),
             mode="bilinear",
             padding_mode="zeros",
             align_corners=True,
         )
+        registered_masks_chunks.append(reg[:, 0].to(mask_dtype).cpu())
+        registered_frames_chunks.append(reg[:, 1].to(frame_dtype).cpu())
 
-        registered_masks_chunks.append(reg_data_chunk[:, 0].to(mask_dtype).cpu())
-        registered_frames_chunks.append(reg_data_chunk[:, 1].to(frame_dtype).cpu())
+    registered_masks = torch.cat(registered_masks_chunks, dim=0)
+    registered_frames = torch.cat(registered_frames_chunks, dim=0)
 
-        del masks_chunk, frames_chunk, data_x_aligned
-        del bm_chunk, bm_aligned, displacement
-        if correct_dx:
-            del dx_chunk
-        torch.cuda.empty_cache()
+    params = None
+    if return_params:
+        dx_out = (
+            global_dx.detach().cpu().float()
+            if correct_transversal
+            else torch.zeros(T, dtype=torch.float32)
+        )
+        params = {"dx": dx_out, "dy": torch.cat(displacement_chunks, dim=0)}
 
-    registered_masks_out = torch.cat(registered_masks_chunks, dim=0)
-    registered_frames_out = torch.cat(registered_frames_chunks, dim=0)
+    # Optional second pass: axial A-scan alignment on the temporal median (RPE).
+    if axial_refinement:
+        registered_frames, registered_masks, dy_median = register_ascans_to_median(
+            registered_frames,
+            registered_masks,
+            max_vshift=max_axial_shift,
+            subpixel=subpixel,
+            batch_size=batch_size,
+            device=device,
+            verbose=verbose,
+            bandpass=axial_bandpass,
+        )
+        if params is not None:
+            params["dy_median"] = dy_median
+
+    # Blank A-scan columns whose BM is unreliable, in both frames and masks.
+    bad_cols = filter_bad_ascans_per_bms(registered_masks)
+    if bool(bad_cols.any()):
+        registered_frames[:, :, bad_cols] = 0
+        registered_masks[:, :, bad_cols] = 0
+    if params is not None:
+        params["bad_columns"] = bad_cols
 
     if return_params:
-        if correct_dx:
-            dx_out = global_dx.detach().cpu().to(torch.float32)
-        else:
-            dx_out = torch.zeros(T, dtype=torch.float32)
-        dy_out = torch.cat(displacement_chunks, dim=0)  # T x W
-        params = {"dx": dx_out, "dy": dy_out}
-        return registered_masks_out, registered_frames_out, params
-
-    return registered_masks_out, registered_frames_out
+        return registered_masks, registered_frames, params
+    return registered_masks, registered_frames

@@ -13,7 +13,7 @@ Entree : le dossier ``registered/`` produit par
 DEJA recalee et rognee (skip/drop deja appliques), on la charge telle quelle
 (aucun re-recalage : on renseigne directement les frames/masques recales de
 ``RegisteredVideo``, comme le fait son cache) et on la replie via
-``CardiacCycleExtractor``.
+``MaskPulseExtractor`` + ``NCycleReconstructor``.
 
 Sortie : ``one_cycle.mp4`` (+ ``one_cycle_params.json``) dans le meme dossier.
 """
@@ -29,25 +29,32 @@ import torch
 
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import load_mask
-from ocularrigidity.motion.registered_video import RegisteredVideo
-from ocularrigidity.motion.pulsation import CardiacCycleExtractor
+from ocularrigidity.registration.registration_engine import VideoRegistrator
+from ocularrigidity.motion.pulsation import (
+    MaskPulseExtractor,
+    NCycleConfig,
+    NCycleReconstructor,
+    PulseExtractionConfig,
+)
+from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 from ocularrigidity.segmentation.postprocess.interfaces import (
     clean_boundaries,
     extract_boundaries_fast,
 )
-from ocularrigidity.registration.export import write_gray_mp4
+from ocularrigidity.scripts.registration.astronauts import write_gray_mp4
 
 DEFAULT_ONE_CYCLE_NAME = "one_cycle.mp4"
 
 
-def _prepared_registrator(video_path: Path, mask_path: Path, device: str,
-                          verbose: bool) -> RegisteredVideo:
+def _prepared_registrator(
+    video_path: Path, mask_path: Path, device: str, verbose: bool
+) -> VideoRegistrator:
     """RegisteredVideo dont les frames/masques recales sont pre-charges.
 
     La video est deja recalee : on renseigne directement ``_registered_*`` (comme
     ``RegisteredVideo._load_from_cache``) pour NE PAS re-recaler ni re-echantillonner.
     """
-    frames = read_gray(str(video_path))                 # (T, H, W) uint8
+    frames = read_gray(str(video_path))  # (T, H, W) uint8
     masks = np.asarray(load_mask(mask_path), dtype=bool)  # (T, H, W) bool
     if frames.shape[0] != masks.shape[0]:
         raise ValueError(
@@ -55,14 +62,14 @@ def _prepared_registrator(video_path: Path, mask_path: Path, device: str,
             f"de tailles differentes : {video_path}"
         )
 
-    reg = RegisteredVideo(
+    reg = VideoRegistrator(
         video=Path(video_path).name,
         root_data=Path(video_path).parent,
         root_masks=Path(mask_path).parent,
         skip_first_n_frames=0,
         drop_last_n_frames=0,
-        horizontal_alignment=False,
-        flatten=False,
+        correct_transversal=False,
+        flatten_rpe=False,
         verbose=verbose,
         device=device,
         cache_dir=None,
@@ -130,40 +137,50 @@ def export_one_cycle_video(
 
     for p in (video_path, mask_path, ts_path):
         if not p.exists():
-            return {"status": "skipped", "reason": f"manquant: {p.name}",
-                    "out_dir": registered_dir}
+            return {
+                "status": "skipped",
+                "reason": f"manquant: {p.name}",
+                "out_dir": registered_dir,
+            }
     if out_path.exists() and not overwrite:
-        return {"status": "skipped", "reason": "exists",
-                "video": out_path, "out_dir": registered_dir}
+        return {
+            "status": "skipped",
+            "reason": "exists",
+            "video": out_path,
+            "out_dir": registered_dir,
+        }
 
     reg = _prepared_registrator(video_path, mask_path, device, verbose)
 
     cslice = slice(col_slice[0], col_slice[1]) if col_slice is not None else None
-    extractor = CardiacCycleExtractor(
-        registrator=reg,
-        timestamps_path=str(ts_path),
+    config = PulseExtractionConfig(
         bpm_range=tuple(bpm_range),
         override_bpm=override_bpm,
         expected_bpm=expected_bpm,
         expected_bpm_band_frac=expected_bpm_band_frac,
-        skip_first_n_frames=0,
-        drop_last_n_frames=0,
         sigma_col=sigma_col,
         col_slice=cslice,
         n_separable_components=n_separable_components,
         phase_smoother_cycles=phase_smoother_cycles,
-        verbose=verbose,
         ICA_or_PCA=ICA_or_PCA,
         harmonic_correction=harmonic_correction,
+        verbose=verbose,
     )
+    aligner = VideoTimelineAligner(reg, str(ts_path))
+    extractor = MaskPulseExtractor(reg, aligner, config)
 
-    cycles, _counts = extractor.compute_n_cycle_video(
-        n_bins=n_bins,
-        n_cycle=n_cycle,
-        target_frames_per_bin=target_frames_per_bin,
-        fold_method=one_cycle_fold_method,
-        phase_method=phase_method_for_fold,
+    reconstructor = NCycleReconstructor(
+        extractor,
+        NCycleConfig(
+            n_bins=n_bins,
+            n_cycle=n_cycle,
+            target_frames_per_bin=target_frames_per_bin,
+            fold_method=one_cycle_fold_method,
+            phase_method=phase_method_for_fold,
+            verbose=verbose,
+        ),
     )
+    cycles, _counts = reconstructor.compute()
 
     # cycles est en float32 (moyenne/mediane) et peut contenir des NaN
     # (chunks rejetes) : on nettoie avant l'encodage uint8.
@@ -191,7 +208,7 @@ def export_one_cycle_video(
         "one_cycle_fold_method": one_cycle_fold_method,
         "output_fps": output_fps,
         "n_frames": int(cube.shape[0]),
-        "notes": list(extractor.notes),
+        "notes": list(extractor.notes) + list(reconstructor.notes),
         "created": datetime.now().isoformat(timespec="seconds"),
     }
     if extra_meta:
@@ -200,7 +217,13 @@ def export_one_cycle_video(
         json.dumps(meta, indent=2, default=str), encoding="utf-8"
     )
 
-    return {"status": "ok", "video": out_path, "out_dir": registered_dir,
-            "n_frames": int(cube.shape[0]),
-            "cardiac_bpm": float(extractor.cardiac_bpm),
-            "confidence": extractor.confidence, "n_bins": n_bins, "n_cycle": n_cycle}
+    return {
+        "status": "ok",
+        "video": out_path,
+        "out_dir": registered_dir,
+        "n_frames": int(cube.shape[0]),
+        "cardiac_bpm": float(extractor.cardiac_bpm),
+        "confidence": extractor.confidence,
+        "n_bins": n_bins,
+        "n_cycle": n_cycle,
+    }

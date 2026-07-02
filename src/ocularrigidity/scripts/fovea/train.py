@@ -2,7 +2,10 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
-from ocularrigidity.fovea import FoveaKeypointDataModule, FoveaKeypointModule
+from ocularrigidity.segmentation.fovea import (
+    FoveaKeypointDataModule,
+    FoveaKeypointModule,
+)
 
 seed_everything(42)
 
