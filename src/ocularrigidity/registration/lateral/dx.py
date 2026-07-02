@@ -40,6 +40,7 @@ def estimate_lateral_dx(
     device,
     scale_factor=1.0,
     crop_factor=0.66,
+    bandpass=(0.02, 0.5),
 ):
     """Per-frame lateral shift ``dx`` (T,) aligning each frame onto ``ref_idx``.
 
@@ -60,6 +61,7 @@ def estimate_lateral_dx(
             smooth_transversal_sigma=smooth_transversal_sigma,
             scale_factor=scale_factor,
             crop_factor=crop_factor,
+            bandpass=bandpass,
         )
         dx_xcorr = estimate_lateral_dx(
             raw_frames,
@@ -73,6 +75,7 @@ def estimate_lateral_dx(
             smooth_transversal_sigma=smooth_transversal_sigma,
             scale_factor=scale_factor,
             crop_factor=crop_factor,
+            bandpass=bandpass,
         )
         dx = (dx_fullframe + dx_xcorr) / 2
     elif lateral_method == "fullframe":
@@ -86,6 +89,7 @@ def estimate_lateral_dx(
             max_shift=max_shift,
             scale_factor=scale_factor,
             crop_factor=crop_factor,
+            bandpass=bandpass,
         )
         dx = robust_temporal_dx(dx, conf=conf)
     elif lateral_method == "xcorr":

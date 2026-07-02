@@ -30,7 +30,8 @@ class RegistrationConfig:
         0.66  # fraction of the frame width to keep for lateral registration
     )
     scale_factor: float = 1.0  # downscale factor for lateral registration
-
+    transversal_bandpass: tuple[float, float] = (0.02, 0.5)
+    axial_bandpass: tuple[float, float] = (0.02, 0.5)
     # Axial (y) parameters. ``max_axial_shift`` is the RPE-refinement pass's
     # maximal tested vertical shift (px).
     max_axial_shift: int = 7

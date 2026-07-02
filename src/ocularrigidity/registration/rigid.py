@@ -35,6 +35,8 @@ def register_videos(
     flatten_rpe: bool = False,
     axial_refinement: bool = False,
     fovea_correction_enabled: bool = True,
+    transversal_bandpass=(0.02, 0.5),
+    axial_bandpass=(0.02, 0.5),
     # --- transversal (x) parameters ---
     lateral_method: str = "xcorr",
     max_lateral_shift: int = 16,
@@ -113,6 +115,7 @@ def register_videos(
             smooth_transversal_sigma=smooth_transversal_sigma,
             scale_factor=scale_factor,
             crop_factor=crop_factor,
+            bandpass=transversal_bandpass,
         )
         if correct_transversal
         else None
@@ -210,6 +213,7 @@ def register_videos(
             batch_size=batch_size,
             device=device,
             verbose=verbose,
+            bandpass=axial_bandpass,
         )
         if params is not None:
             params["dy_median"] = dy_median

@@ -49,6 +49,8 @@ class VideoRegistrator:
         smooth_transversal_sigma: float = 2.0,
         crop_factor: float = 0.66,
         scale_factor: float = 1.0,
+        transversal_bandpass=(0.02, 0.5),
+        axial_bandpass=(0.02, 0.5),
         # --- axial (y) parameters ---
         max_axial_shift: int = 30,
         # --- general ---
@@ -91,6 +93,8 @@ class VideoRegistrator:
         self.smooth_transversal_sigma = smooth_transversal_sigma
         self.crop_factor = crop_factor
         self.scale_factor = scale_factor
+        self.transversal_bandpass = transversal_bandpass
+        self.axial_bandpass = axial_bandpass
         self.max_axial_shift = max_axial_shift
 
         # Apply parabolic sub-pixel refinement to the shift peaks. Part of the
@@ -344,6 +348,8 @@ class VideoRegistrator:
             return_params=True,
             crop_factor=self.crop_factor,
             scale_factor=self.scale_factor,
+            transversal_bandpass=self.transversal_bandpass,
+            axial_bandpass=self.axial_bandpass,
         )
 
         self._registered_masks = registered_masks.cpu().numpy() > 0
