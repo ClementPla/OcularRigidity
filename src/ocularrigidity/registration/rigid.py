@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from ocularrigidity.pipeline_config import RegistrationConfig
 from ocularrigidity.registration.lateral.dx import estimate_lateral_dx, fovea_correction
 
 from ocularrigidity.registration.axial.median_registration import (
@@ -24,35 +25,14 @@ def _all_bm_boundaries(raw_masks, *, batch_size, device):
     return torch.cat(bms, dim=0)
 
 
-@torch.inference_mode()
-@torch.no_grad()
 def register_videos(
     raw_masks: torch.Tensor,
     raw_frames: torch.Tensor,
-    # --- what to correct ---
-    correct_transversal: bool = True,
-    correct_axial: bool = True,
-    flatten_rpe: bool = False,
-    axial_refinement: bool = False,
-    fovea_correction_enabled: bool = True,
-    transversal_bandpass=(0.02, 0.5),
-    axial_bandpass=(0.02, 0.5),
-    # --- transversal (x) parameters ---
-    lateral_method: str = "xcorr",
-    max_lateral_shift: int = 16,
-    smooth_transversal: bool = True,
-    smooth_transversal_sigma: float = 2.0,
-    # --- axial (y) parameters ---
-    max_axial_shift: int = 16,
-    # --- general ---
-    subpixel: bool = True,
-    # --- runtime ---
-    batch_size: int = 256,
+    config: RegistrationConfig | None = None,
+    *,
     device: str = "cuda",
     verbose: bool = True,
     return_params: bool = False,
-    scale_factor=1.0,
-    crop_factor=0.66,
 ):
     """Register a video by lateral (x) shift, then per-column vertical (y) BM alignment.
 
@@ -69,163 +49,182 @@ def register_videos(
     Columns whose BM is unreliable (``filter_bad_ascans_per_bms``) are zeroed in
     both frames and masks, across all frames.
     """
+    with torch.inference_mode(), torch.no_grad():
+        if config is None:
+            config = RegistrationConfig()
+        # Unpack once here so the body (and the call sites) stay config-driven.
+        correct_transversal = config.correct_transversal
+        correct_axial = config.correct_axial
+        flatten_rpe = config.flatten_rpe
+        axial_refinement = config.axial_refinement
+        fovea_correction_enabled = config.fovea_correction_enabled
+        transversal_bandpass = config.transversal_bandpass
+        axial_bandpass = config.axial_bandpass
+        lateral_method = config.lateral_method
+        max_lateral_shift = config.max_lateral_shift
+        smooth_transversal = config.smooth_transversal
+        smooth_transversal_sigma = config.smooth_transversal_sigma
+        max_axial_shift = config.max_axial_shift
+        subpixel = config.subpixel
+        scale_factor = config.scale_factor
+        crop_factor = config.crop_factor
+        batch_size = config.batch_size
 
-    raw_masks = torch.as_tensor(raw_masks)
-    raw_frames = torch.as_tensor(raw_frames)
-    T, H, W = raw_masks.shape
-    mask_dtype, frame_dtype = raw_masks.dtype, raw_frames.dtype
+        raw_masks = torch.as_tensor(raw_masks)
+        raw_frames = torch.as_tensor(raw_frames)
+        T, H, W = raw_masks.shape
+        mask_dtype, frame_dtype = raw_masks.dtype, raw_frames.dtype
 
-    # Reference frame: the one whose mask area is closest to the temporal median.
-    mask_counts = raw_masks.sum(dim=(1, 2))
-    ref_idx = (mask_counts - mask_counts.median()).abs().argmin()
+        # Reference frame: the one whose mask area is closest to the temporal median.
+        mask_counts = raw_masks.sum(dim=(1, 2))
+        ref_idx = (mask_counts - mask_counts.median()).abs().argmin()
 
-    if fovea_correction_enabled:
-        raw_masks, raw_frames = fovea_correction(
-            raw_frames,
-            raw_masks,
-            ref_idx=ref_idx,
-            batch_size=batch_size,
-            device=device,
-            verbose=verbose,
+        if fovea_correction_enabled:
+            raw_masks, raw_frames = fovea_correction(
+                raw_frames,
+                raw_masks,
+                ref_idx=ref_idx,
+                batch_size=batch_size,
+                device=device,
+                verbose=verbose,
+            )
+        if (not correct_axial) and (not correct_transversal):
+            params = {
+                "dx": torch.zeros(T, dtype=torch.float32),
+                "dy": torch.zeros(T, W, dtype=torch.float32),
+                "bad_columns": torch.zeros(W, dtype=torch.bool),
+            }
+            if return_params:
+                return raw_masks, raw_frames, params
+            return raw_masks, raw_frames
+        all_bms = _all_bm_boundaries(raw_masks, batch_size=batch_size, device=device)
+        ref_bm = all_bms[ref_idx]
+
+        # --- Lateral (x) registration: estimated once, decoupled from the y warp ---
+        global_dx = (
+            estimate_lateral_dx(
+                raw_frames,
+                ref_idx,
+                lateral_method,
+                subpixel=subpixel,
+                max_shift=max_lateral_shift,
+                batch_size=batch_size,
+                device=device,
+                smooth_transversal=smooth_transversal,
+                smooth_transversal_sigma=smooth_transversal_sigma,
+                scale_factor=scale_factor,
+                crop_factor=crop_factor,
+                bandpass=transversal_bandpass,
+            )
+            if correct_transversal
+            else None
         )
-    if (not correct_axial) and (not correct_transversal):
-        params = {
-            "dx": torch.zeros(T, dtype=torch.float32),
-            "dy": torch.zeros(T, W, dtype=torch.float32),
-            "bad_columns": torch.zeros(W, dtype=torch.bool),
-        }
-        if return_params:
-            return raw_masks, raw_frames, params
-        return raw_masks, raw_frames
 
-    all_bms = _all_bm_boundaries(raw_masks, batch_size=batch_size, device=device)
-    ref_bm = all_bms[ref_idx]
+        # --- Vertical (y) registration onto the reference BM ----------------------
+        ys = torch.arange(H, device=device, dtype=torch.float32)
+        xs = torch.arange(W, device=device, dtype=torch.float32)
+        # BM level every column is warped onto: a scalar (flatten) or the ref curve.
+        target_bm = torch.nanmean(ref_bm) if flatten_rpe else ref_bm.unsqueeze(0)
 
-    # --- Lateral (x) registration: estimated once, decoupled from the y warp ---
-    global_dx = (
-        estimate_lateral_dx(
-            raw_frames,
-            ref_idx,
-            lateral_method,
-            subpixel=subpixel,
-            max_shift=max_lateral_shift,
-            batch_size=batch_size,
-            device=device,
-            smooth_transversal=smooth_transversal,
-            smooth_transversal_sigma=smooth_transversal_sigma,
-            scale_factor=scale_factor,
-            crop_factor=crop_factor,
-            bandpass=transversal_bandpass,
-        )
-        if correct_transversal
-        else None
-    )
+        registered_masks_chunks = []
+        registered_frames_chunks = []
+        displacement_chunks = []
 
-    # --- Vertical (y) registration onto the reference BM ----------------------
-    ys = torch.arange(H, device=device, dtype=torch.float32)
-    xs = torch.arange(W, device=device, dtype=torch.float32)
-    # BM level every column is warped onto: a scalar (flatten) or the ref curve.
-    target_bm = torch.nanmean(ref_bm) if flatten_rpe else ref_bm.unsqueeze(0)
+        for start in tqdm(
+            range(0, T, batch_size),
+            desc="Registering frames",
+            disable=not verbose,
+            leave=False,
+        ):
+            end = min(start + batch_size, T)
+            t = end - start
 
-    registered_masks_chunks = []
-    registered_frames_chunks = []
-    displacement_chunks = []
+            masks_chunk = raw_masks[start:end].to(device, torch.float32)
+            frames_chunk = raw_frames[start:end].to(device, torch.float32)
+            data = torch.stack([masks_chunk, frames_chunk], dim=1)  # t x 2 x H x W
 
-    for start in tqdm(
-        range(0, T, batch_size),
-        desc="Registering frames",
-        disable=not verbose,
-        leave=False,
-    ):
-        end = min(start + batch_size, T)
-        t = end - start
+            grid_y = ys.view(1, H, 1).expand(t, H, W)
+            grid_x = xs.view(1, 1, W).expand(t, H, W)
 
-        masks_chunk = raw_masks[start:end].to(device, torch.float32)
-        frames_chunk = raw_frames[start:end].to(device, torch.float32)
-        data = torch.stack([masks_chunk, frames_chunk], dim=1)  # t x 2 x H x W
+            # Lateral (x) shift: warp both channels when correct_transversal.
+            if correct_transversal:
+                dx = global_dx[start:end].view(t, 1, 1)
+                norm_x = (grid_x - dx) / (W - 1) * 2 - 1
+                norm_y = grid_y / (H - 1) * 2 - 1
+                data = F.grid_sample(
+                    data,
+                    torch.stack([norm_x, norm_y], dim=-1),
+                    mode="bilinear",
+                    padding_mode="zeros",
+                    align_corners=True,
+                )
 
-        grid_y = ys.view(1, H, 1).expand(t, H, W)
-        grid_x = xs.view(1, 1, W).expand(t, H, W)
+            # Per-column vertical displacement onto the target BM level, when correct_axial.
+            if correct_axial:
+                # Re-read the BM from the (possibly x-aligned) mask so the vertical
+                # displacement is measured in the already-shifted frame.
+                if correct_transversal:
+                    bm, _ = clean_boundaries(
+                        *extract_boundaries_fast(data[:, 0].cpu().numpy())
+                    )
+                    bm_aligned = torch.from_numpy(bm).to(device)
+                else:
+                    bm_aligned = all_bms[start:end]
+                displacement = torch.nan_to_num(bm_aligned - target_bm, nan=0.0)
+                if not subpixel:
+                    displacement = displacement.round()
+            else:
+                displacement = torch.zeros(t, W, device=device)  # x-only: no y warp
+            if return_params:
+                displacement_chunks.append(displacement.cpu())
 
-        # Lateral (x) shift: warp both channels when correct_transversal.
-        if correct_transversal:
-            dx = global_dx[start:end].view(t, 1, 1)
-            norm_x = (grid_x - dx) / (W - 1) * 2 - 1
-            norm_y = grid_y / (H - 1) * 2 - 1
-            data = F.grid_sample(
+            norm_x = grid_x / (W - 1) * 2 - 1
+            norm_y = (grid_y + displacement.view(t, 1, W)) / (H - 1) * 2 - 1
+            reg = F.grid_sample(
                 data,
                 torch.stack([norm_x, norm_y], dim=-1),
                 mode="bilinear",
                 padding_mode="zeros",
                 align_corners=True,
             )
+            registered_masks_chunks.append(reg[:, 0].to(mask_dtype).cpu())
+            registered_frames_chunks.append(reg[:, 1].to(frame_dtype).cpu())
 
-        # Per-column vertical displacement onto the target BM level, when correct_axial.
-        if correct_axial:
-            # Re-read the BM from the (possibly x-aligned) mask so the vertical
-            # displacement is measured in the already-shifted frame.
-            if correct_transversal:
-                bm, _ = clean_boundaries(
-                    *extract_boundaries_fast(data[:, 0].cpu().numpy())
-                )
-                bm_aligned = torch.from_numpy(bm).to(device)
-            else:
-                bm_aligned = all_bms[start:end]
-            displacement = torch.nan_to_num(bm_aligned - target_bm, nan=0.0)
-            if not subpixel:
-                displacement = displacement.round()
-        else:
-            displacement = torch.zeros(t, W, device=device)  # x-only: no y warp
+        registered_masks = torch.cat(registered_masks_chunks, dim=0)
+        registered_frames = torch.cat(registered_frames_chunks, dim=0)
+
+        params = None
         if return_params:
-            displacement_chunks.append(displacement.cpu())
+            dx_out = (
+                global_dx.detach().cpu().float()
+                if correct_transversal
+                else torch.zeros(T, dtype=torch.float32)
+            )
+            params = {"dx": dx_out, "dy": torch.cat(displacement_chunks, dim=0)}
 
-        norm_x = grid_x / (W - 1) * 2 - 1
-        norm_y = (grid_y + displacement.view(t, 1, W)) / (H - 1) * 2 - 1
-        reg = F.grid_sample(
-            data,
-            torch.stack([norm_x, norm_y], dim=-1),
-            mode="bilinear",
-            padding_mode="zeros",
-            align_corners=True,
-        )
-        registered_masks_chunks.append(reg[:, 0].to(mask_dtype).cpu())
-        registered_frames_chunks.append(reg[:, 1].to(frame_dtype).cpu())
+        # Optional second pass: axial A-scan alignment on the temporal median (RPE).
+        if axial_refinement:
+            registered_frames, registered_masks, dy_median = register_ascans_to_median(
+                registered_frames,
+                registered_masks,
+                max_vshift=max_axial_shift,
+                subpixel=subpixel,
+                batch_size=batch_size,
+                device=device,
+                verbose=verbose,
+                bandpass=axial_bandpass,
+            )
+            if params is not None:
+                params["dy_median"] = dy_median
 
-    registered_masks = torch.cat(registered_masks_chunks, dim=0)
-    registered_frames = torch.cat(registered_frames_chunks, dim=0)
-
-    params = None
-    if return_params:
-        dx_out = (
-            global_dx.detach().cpu().float()
-            if correct_transversal
-            else torch.zeros(T, dtype=torch.float32)
-        )
-        params = {"dx": dx_out, "dy": torch.cat(displacement_chunks, dim=0)}
-
-    # Optional second pass: axial A-scan alignment on the temporal median (RPE).
-    if axial_refinement:
-        registered_frames, registered_masks, dy_median = register_ascans_to_median(
-            registered_frames,
-            registered_masks,
-            max_vshift=max_axial_shift,
-            subpixel=subpixel,
-            batch_size=batch_size,
-            device=device,
-            verbose=verbose,
-            bandpass=axial_bandpass,
-        )
+        # Blank A-scan columns whose BM is unreliable, in both frames and masks.
+        bad_cols = filter_bad_ascans_per_bms(registered_masks)
+        if bool(bad_cols.any()):
+            registered_frames[:, :, bad_cols] = 0
+            registered_masks[:, :, bad_cols] = 0
         if params is not None:
-            params["dy_median"] = dy_median
+            params["bad_columns"] = bad_cols
 
-    # Blank A-scan columns whose BM is unreliable, in both frames and masks.
-    bad_cols = filter_bad_ascans_per_bms(registered_masks)
-    if bool(bad_cols.any()):
-        registered_frames[:, :, bad_cols] = 0
-        registered_masks[:, :, bad_cols] = 0
-    if params is not None:
-        params["bad_columns"] = bad_cols
-
-    if return_params:
-        return registered_masks, registered_frames, params
-    return registered_masks, registered_frames
+        if return_params:
+            return registered_masks, registered_frames, params
+        return registered_masks, registered_frames

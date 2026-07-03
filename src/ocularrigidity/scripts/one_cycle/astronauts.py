@@ -30,6 +30,7 @@ import torch
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.registration.registration_engine import VideoRegistrator
+from ocularrigidity.pipeline_config import RegistrationConfig
 from ocularrigidity.motion.pulsation import (
     MaskPulseExtractor,
     NCycleConfig,
@@ -66,10 +67,12 @@ def _prepared_registrator(
         video=Path(video_path).name,
         root_data=Path(video_path).parent,
         root_masks=Path(mask_path).parent,
-        skip_first_n_frames=0,
-        drop_last_n_frames=0,
-        correct_transversal=False,
-        flatten_rpe=False,
+        config=RegistrationConfig(
+            skip_first_n_frames=0,
+            drop_last_n_frames=0,
+            correct_transversal=False,
+            flatten_rpe=False,
+        ),
         verbose=verbose,
         device=device,
         cache_dir=None,

@@ -10,6 +10,7 @@ from ocularrigidity.viewer.streamlit_explorer._common import (
     require_selection,
 )
 from ocularrigidity.registration.rigid import register_videos
+from ocularrigidity.pipeline_config import RegistrationConfig
 
 st.set_page_config(page_title="Registration", layout="wide")
 
@@ -132,17 +133,19 @@ def registration(
     registered_masks, registered_cube = register_videos(
         _masks_data,
         _frames_data,
-        correct_transversal=correct_transversal,
-        correct_axial=correct_axial,
-        flatten_rpe=flatten_rpe,
-        lateral_method=lateral_method,
-        axial_refinement=axial_refinement,
-        max_axial_shift=max_vshift,
-        smooth_transversal=smooth_transversal,
-        smooth_transversal_sigma=smooth_transversal_sigma,
-        max_lateral_shift=max_lateral_shift,
-        subpixel=subpixel,
-        fovea_correction_enabled=fovea_correction_enabled,
+        RegistrationConfig(
+            correct_transversal=correct_transversal,
+            correct_axial=correct_axial,
+            flatten_rpe=flatten_rpe,
+            lateral_method=lateral_method,
+            axial_refinement=axial_refinement,
+            max_axial_shift=max_vshift,
+            smooth_transversal=smooth_transversal,
+            smooth_transversal_sigma=smooth_transversal_sigma,
+            max_lateral_shift=max_lateral_shift,
+            subpixel=subpixel,
+            fovea_correction_enabled=fovea_correction_enabled,
+        ),
     )
     return registered_masks, registered_cube
 

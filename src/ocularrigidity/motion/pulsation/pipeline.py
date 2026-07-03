@@ -8,15 +8,20 @@ Wires the collaborators together:
 and packages the outcome as a :class:`CardiacPipelineResults`.
 """
 
-from pathlib import Path
-from typing import Optional
+from __future__ import annotations
 
-from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+
 from ocularrigidity.motion.pulsation.config import NCycleConfig, PulseExtractionConfig
 from ocularrigidity.motion.pulsation.mask_pulse_extractor import MaskPulseExtractor
 from ocularrigidity.motion.pulsation.n_cycle_reconstructor import NCycleReconstructor
 from ocularrigidity.motion.video_timeline_aligner import TimeUnits, VideoTimelineAligner
+from ocularrigidity.pipeline_config import RegistrationConfig
 from ocularrigidity.registration.registration_engine import VideoRegistrator
+
+if TYPE_CHECKING:
+    from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
 def run_cardiac_pipeline(
@@ -27,15 +32,8 @@ def run_cardiac_pipeline(
     timestamps_path: str,
     config: Optional[PulseExtractionConfig] = None,
     fold_config: Optional[NCycleConfig] = None,
-    # --- Registration -----------------------------------------------------
-    skip_first_n_frames: int = 3,
-    drop_last_n_frames: int = 0,
-    flatten_rpe: bool = True,
-    correct_transversal: bool = True,
-    use_encoded_video: bool = True,
+    registration_config: Optional[RegistrationConfig] = None,
     cache_dir: Optional[Path] = None,
-    lateral_method: str = "xcorr",
-    subpixel: bool = True,
     units_in_timestamps: TimeUnits = TimeUnits.MICROSECONDS,
     # --- Orchestration ----------------------------------------------------
     compute_n_cycle_video: bool = False,
@@ -43,12 +41,17 @@ def run_cardiac_pipeline(
 ) -> CardiacPipelineResults:
     """Run the mask-based cardiac pipeline and return the packaged results.
 
-    ``config`` bundles the extraction knobs and ``fold_config`` the folding
-    knobs (both default to their dataclass defaults). ``cache_dir`` is forwarded
-    to :class:`VideoRegistrator`: registration is deterministic across
-    ICA/PCA and phase methods, so caching lets repeated runs of the same video
-    reuse the registered frames/masks instead of recomputing them.
+    ``config`` bundles the extraction knobs, ``fold_config`` the folding knobs
+    and ``registration_config`` the registration knobs (all default to their
+    dataclass defaults). ``cache_dir`` is forwarded to :class:`VideoRegistrator`:
+    registration is deterministic across ICA/PCA and phase methods, so caching
+    lets repeated runs of the same video reuse the registered frames/masks
+    instead of recomputing them.
     """
+    # Imported lazily to avoid a circular import: pipeline_results imports the
+    # pulsation package (for its config types), which imports this module.
+    from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
+
     if config is None:
         config = PulseExtractionConfig(verbose=verbose)
 
@@ -56,15 +59,9 @@ def run_cardiac_pipeline(
         video=video_relpath,
         root_data=Path(root_data),
         root_masks=Path(root_masks),
-        skip_first_n_frames=skip_first_n_frames,
-        drop_last_n_frames=drop_last_n_frames,
-        flatten_rpe=flatten_rpe,
-        correct_transversal=correct_transversal,
+        config=registration_config,
         verbose=verbose,
-        use_encoded_video=use_encoded_video,
         cache_dir=cache_dir,
-        lateral_method=lateral_method,
-        subpixel=subpixel,
     )
     aligner = VideoTimelineAligner(
         registrator, timestamps_path, units_in_timestamps=units_in_timestamps

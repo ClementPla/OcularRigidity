@@ -2,8 +2,10 @@
 
 import numpy as np
 from pathlib import Path
-from typing import Literal
+from typing import Optional
 import torch
+
+from ocularrigidity.pipeline_config import RegistrationConfig
 
 from ocularrigidity.data.compression import (
     cube_to_mp4_fastest,
@@ -32,32 +34,10 @@ class VideoRegistrator:
         video: Path,
         root_masks: Path,
         root_data: Path,
-        # --- frame selection / loading ---
-        skip_first_n_frames: int = 3,
-        drop_last_n_frames: int = 0,
-        use_encoded_video: bool = True,
-        # --- what to correct ---
-        correct_transversal: bool = True,
-        correct_axial: bool = True,
-        flatten_rpe: bool = False,
-        axial_refinement: bool = False,
-        fovea_correction_enabled: bool = True,
-        # --- transversal (x) parameters ---
-        lateral_method: Literal["xcorr", "fullframe", "both"] = "xcorr",
-        max_lateral_shift: int = 16,
-        smooth_transversal: bool = True,
-        smooth_transversal_sigma: float = 2.0,
-        crop_factor: float = 0.66,
-        scale_factor: float = 1.0,
-        transversal_bandpass=(0.02, 0.5),
-        axial_bandpass=(0.02, 0.5),
-        # --- axial (y) parameters ---
-        max_axial_shift: int = 30,
-        # --- general ---
-        subpixel: bool = True,
-        # --- runtime / cache ---
+        config: Optional[RegistrationConfig] = None,
+        *,
+        # --- runtime / cache (per-invocation, not algorithmic) ---
         device: str = "cuda",
-        batch_size: int = 128,
         cache_dir: Path = None,
         overwrite_cache: bool = False,
         verbose: bool = True,
@@ -66,40 +46,11 @@ class VideoRegistrator:
         self.root_masks = root_masks
         self.root_data = root_data
 
-        self.skip_first_n_frames = skip_first_n_frames
-        self.drop_last_n_frames = drop_last_n_frames
-        self.use_encoded_video = use_encoded_video
-
-        # ``correct_transversal`` -> ``register_videos(correct_transversal=...)``
-        # (lateral x shift); ``correct_axial`` toggles the per-column vertical BM
-        # alignment; ``flatten_rpe`` aligns the BM to a constant row. See
-        # rigid.register_videos.
-        self.correct_transversal = correct_transversal
-        self.correct_axial = correct_axial
-        self.flatten_rpe = flatten_rpe
-        # Second axial pass (RPE) aligning each A-scan onto the volume's temporal
-        # median. ``max_axial_shift`` is its maximal tested vertical shift (px).
-        self.axial_refinement = axial_refinement
-        # Fovea-pit correction applied before registration (register_videos).
-        self.fovea_correction_enabled = fovea_correction_enabled
-
-        # Lateral (x) shift estimator: "xcorr" (profile cross-correlation) or
-        # "fullframe" (2D phase correlation). Part of the cache key below.
-        self.lateral_method = lateral_method
-        # Lateral search half-window (px) and optional temporal smoothing of the
-        # estimated dx (register_videos: smooth_transversal / _sigma).
-        self.max_lateral_shift = max_lateral_shift
-        self.smooth_transversal = smooth_transversal
-        self.smooth_transversal_sigma = smooth_transversal_sigma
-        self.crop_factor = crop_factor
-        self.scale_factor = scale_factor
-        self.transversal_bandpass = transversal_bandpass
-        self.axial_bandpass = axial_bandpass
-        self.max_axial_shift = max_axial_shift
-
-        # Apply parabolic sub-pixel refinement to the shift peaks. Part of the
-        # cache key so integer- and sub-pixel-registered results don't mix.
-        self.subpixel = subpixel
+        # All algorithmic + frame-selection parameters live in ``config`` (see
+        # rigid.register_videos for how each is used). Downstream collaborators
+        # read individual values via the convenience properties below
+        # (``skip_first_n_frames``, ``flatten_rpe``, …) or ``self.config``.
+        self.config = config if config is not None else RegistrationConfig()
 
         self.verbose = verbose
 
@@ -117,8 +68,26 @@ class VideoRegistrator:
         self._registered_lines = None
         self._transform = None
         self._device = device
-        self._batch_size = batch_size
         self._overwrite_cache = overwrite_cache
+
+    # Convenience read-only views onto the config, for collaborators (the
+    # timeline aligner, pipeline results) that key off frame selection and the
+    # correction flags.
+    @property
+    def skip_first_n_frames(self) -> int:
+        return self.config.skip_first_n_frames
+
+    @property
+    def drop_last_n_frames(self) -> int:
+        return self.config.drop_last_n_frames
+
+    @property
+    def flatten_rpe(self) -> bool:
+        return self.config.flatten_rpe
+
+    @property
+    def correct_transversal(self) -> bool:
+        return self.config.correct_transversal
 
     def save_cache(self, path):
         np.savez(
@@ -150,20 +119,25 @@ class VideoRegistrator:
 
     def _cache_meta(self) -> dict:
         """Registration parameters the cache is keyed on (validated on load)."""
+        c = self.config
         return dict(
-            skip_first_n_frames=self.skip_first_n_frames,
-            drop_last_n_frames=self.drop_last_n_frames,
-            correct_transversal=int(self.correct_transversal),
-            correct_axial=int(self.correct_axial),
-            flatten_rpe=int(self.flatten_rpe),
-            fovea_correction_enabled=int(self.fovea_correction_enabled),
-            lateral_method=self.lateral_method,
-            max_lateral_shift=int(self.max_lateral_shift),
-            smooth_transversal=int(self.smooth_transversal),
-            smooth_transversal_sigma=float(self.smooth_transversal_sigma),
-            axial_refinement=int(self.axial_refinement),
-            max_axial_shift=int(self.max_axial_shift),
-            subpixel=int(self.subpixel),
+            skip_first_n_frames=c.skip_first_n_frames,
+            drop_last_n_frames=c.drop_last_n_frames,
+            correct_transversal=int(c.correct_transversal),
+            correct_axial=int(c.correct_axial),
+            flatten_rpe=int(c.flatten_rpe),
+            fovea_correction_enabled=int(c.fovea_correction_enabled),
+            lateral_method=c.lateral_method,
+            max_lateral_shift=int(c.max_lateral_shift),
+            smooth_transversal=int(c.smooth_transversal),
+            smooth_transversal_sigma=float(c.smooth_transversal_sigma),
+            axial_refinement=int(c.axial_refinement),
+            max_axial_shift=int(c.max_axial_shift),
+            subpixel=int(c.subpixel),
+            crop_factor=float(c.crop_factor),
+            scale_factor=float(c.scale_factor),
+            transversal_bandpass=str(c.transversal_bandpass),
+            axial_bandpass=str(c.axial_bandpass),
         )
 
     def _load_from_cache(self) -> bool:
@@ -174,10 +148,11 @@ class VideoRegistrator:
         try:
             data = np.load(paths["transform"])
             # Stale cache if it was produced with different registration params.
-            # Compare as strings so int and string keys (e.g. lateral_method) work,
-            # and a missing key (older cache) raises -> treated as a miss below.
+            # Compare as strings so int and string keys (e.g. lateral_method) work.
+            # A key absent from an older cache is not compared, so caches written
+            # before newer keys (crop/scale/bandpass) were added stay valid.
             for k, v in self._cache_meta().items():
-                if str(data[k]) != str(v):
+                if k in data and str(data[k]) != str(v):
                     return False
             frames = read_gray(paths["frames"])
             masks = load_mask(paths["masks"])
@@ -234,7 +209,7 @@ class VideoRegistrator:
     @property
     def raw_frames(self):
         if self._raw_frames is None:
-            if self.use_encoded_video:
+            if self.config.use_encoded_video:
                 if (self.root_data / self.video).is_file():
                     try:
                         frames = mp4_to_cube(self.root_data / self.video)
@@ -250,7 +225,7 @@ class VideoRegistrator:
             else:
                 frames = load_cube(self.root_data / self.video)
             self._raw_frames = frames[self._frame_slice]
-            if not self.use_encoded_video:
+            if not self.config.use_encoded_video:
                 # load_cube returns (N, W, H); align to the masks' (H, W)
                 # orientation so registration sees a consistent frame/mask grid.
                 mask_hw = self.raw_masks.shape[1:]
@@ -331,25 +306,10 @@ class VideoRegistrator:
         registered_masks, registered_frames, params = register_videos(
             registered_masks,
             registered_frames,
-            correct_transversal=self.correct_transversal,
-            correct_axial=self.correct_axial,
-            flatten_rpe=self.flatten_rpe,
-            axial_refinement=self.axial_refinement,
-            fovea_correction_enabled=self.fovea_correction_enabled,
-            lateral_method=self.lateral_method,
-            max_lateral_shift=self.max_lateral_shift,
-            smooth_transversal=self.smooth_transversal,
-            smooth_transversal_sigma=self.smooth_transversal_sigma,
-            max_axial_shift=self.max_axial_shift,
-            subpixel=self.subpixel,
-            batch_size=self._batch_size,
+            self.config,
             device=self._device,
             verbose=self.verbose,
             return_params=True,
-            crop_factor=self.crop_factor,
-            scale_factor=self.scale_factor,
-            transversal_bandpass=self.transversal_bandpass,
-            axial_bandpass=self.axial_bandpass,
         )
 
         self._registered_masks = registered_masks.cpu().numpy() > 0

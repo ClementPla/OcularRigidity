@@ -8,17 +8,16 @@ N_CYCLES = 3
 AXIAL_PIXEL_SIZE_MM = 1.95e-3  # mm per pixel, axial scale of the OCT
 
 
-@dataclass(frozen=True)
+@dataclass()
 class RegistrationConfig:
     skip_first_n_frames: int = 20
     drop_last_n_frames: int = 10
     use_encoded_video: bool = True
-
     # What to correct.
     correct_transversal: bool = False
     correct_axial: bool = True
     flatten_rpe: bool = False
-    axial_refinement: bool = True
+    axial_refinement: bool = False
     fovea_correction_enabled: bool = True
 
     # Transversal (x) parameters.

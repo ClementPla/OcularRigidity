@@ -7,7 +7,6 @@ from ocularrigidity.motion.pulsation import (
     run_cardiac_pipeline,
 )
 from ocularrigidity.consts import (
-    CHECKPOINT_PATH,
     ROOT_MASKS,
     ROOT_DATA_MNT,
     ROOT_COMPRESSED_VIDEO,
@@ -78,14 +77,8 @@ def compute_one_cycle(
                     phase_method=phase_method_for_fold,
                     verbose=True,
                 ),
-                skip_first_n_frames=REGISTRATION.skip_first_n_frames,
-                drop_last_n_frames=REGISTRATION.drop_last_n_frames,
+                registration_config=REGISTRATION,
                 compute_n_cycle_video=True,
-                flatten_rpe=REGISTRATION.flatten_rpe,
-                correct_transversal=REGISTRATION.correct_transversal,
-                lateral_method=REGISTRATION.lateral_method,
-                subpixel=REGISTRATION.subpixel,
-                use_encoded_video=REGISTRATION.use_encoded_video,
                 cache_dir=cache_dir,
             )
         except Exception as e:

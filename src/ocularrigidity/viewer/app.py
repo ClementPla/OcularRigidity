@@ -25,6 +25,7 @@ Launch with::
 
 from __future__ import annotations
 
+import dataclasses
 import tempfile
 import traceback
 from functools import lru_cache
@@ -272,13 +273,17 @@ def run_pipeline(
                 phase_method=phase_method,
                 verbose=True,
             ),
-            skip_first_n_frames=int(skip_first),
-            drop_last_n_frames=int(drop_last),
-            flatten_rpe=bool(flatten_rpe),
-            correct_transversal=bool(correct_transversal),
-            lateral_method=lateral_method,
-            subpixel=bool(subpixel),
-            use_encoded_video=True,
+            registration_config=dataclasses.replace(
+                REGISTRATION,
+                skip_first_n_frames=int(skip_first),
+                drop_last_n_frames=int(drop_last),
+                flatten_rpe=bool(flatten_rpe),
+                correct_transversal=bool(correct_transversal),
+                lateral_method=lateral_method,
+                subpixel=bool(subpixel),
+                use_encoded_video=True,
+                batch_size=int(reg_batch),
+            ),
             compute_n_cycle_video=True,
             cache_dir=None,
             verbose=True,

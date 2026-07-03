@@ -130,7 +130,7 @@ def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose
 
     for start in tqdm(
         range(0, T, batch_size),
-        desc="Registering frames",
+        desc="Aligning foveas",
         disable=not verbose,
         leave=False,
     ):
