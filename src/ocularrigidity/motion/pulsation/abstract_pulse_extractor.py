@@ -86,6 +86,8 @@ class AbstractPulseExtractor(ABC):
         self._good_uniform_pl = None
         self._phase_per_frame_pl = None
         self._good_per_frame_pl = None
+        self._amplitude_uniform = None
+        self._amplitude_per_frame = None
 
         self.notes: list[str] = []
 
@@ -503,11 +505,13 @@ class AbstractPulseExtractor(ABC):
         Q_lp = np.where(good, Q_num / safe_den, 0.0)
 
         env_phase = np.arctan2(Q_lp, I_lp)
+        amplitude_uniform = np.sqrt(I_lp**2 + Q_lp**2)
         phase_total = 2 * np.pi * f0 * t + env_phase
         phase_uniform = np.mod(phase_total, 2 * np.pi)
 
         self._phase_uniform = phase_uniform
         self._good_uniform = good
+        self._amplitude_uniform = amplitude_uniform
 
         good_idx = np.where(good)[0]
         if len(good_idx) == 0:
@@ -520,6 +524,7 @@ class AbstractPulseExtractor(ABC):
         zr = np.interp(self.timestamps_seconds, t[good_idx], z_unit.real)
         zi = np.interp(self.timestamps_seconds, t[good_idx], z_unit.imag)
         self._phase_per_frame = (np.angle(zr + 1j * zi) / (2 * np.pi)) % 1.0
+        self._amplitude_per_frame = np.interp(self.timestamps_seconds, t[good_idx], amplitude_uniform)
 
         good_float = np.interp(self.timestamps_seconds, t, good.astype(float))
         self._good_per_frame = good_float > 0.5

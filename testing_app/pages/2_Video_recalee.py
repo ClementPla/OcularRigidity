@@ -1,14 +1,13 @@
 """Page : generation de la/les video(s) recalee(s) de toute la condition + apercu.
 
-Recale TOUTES les images de la condition (ordre des horodatages du XML) avec les
-parametres regles sur les pages precedentes (« Recalage initial » + « Correction
-A-scan »), repris depuis ``st.session_state``, et enregistre la sortie dans
-``RawImages/registered/``.
+Recale TOUTES les images de la condition (ordre des horodatages du XML) avec la
+``RegistrationConfig`` reglee sur la page « Recalage » (partagee via
+``st.session_state`` — source de verite = ``pipeline_config.py``), et enregistre
+la sortie dans ``RawImages/registered/``.
 
 Deux variantes, enregistrees sous des noms distincts (elles ne s'ecrasent pas) :
-  - SANS correction A-scan : ``registered_video.mp4`` ;
-  - AVEC correction A-scan  : ``registered_video_ascan.mp4`` (recalage de chaque
-    A-scan sur la mediane, avec les parametres reglés dans l'app).
+  - SANS correction A-scan : ``registered_video.mp4`` (``axial_refinement=False``) ;
+  - AVEC correction A-scan  : ``registered_video_ascan.mp4`` (``axial_refinement=True``).
 
 Les deux vidéos sont affichées côte à côte si elles existent.
 """
@@ -24,11 +23,7 @@ from ocularrigidity.scripts.registration.astronauts import (
 
 from _registration_common import (
     select_condition,
-    read_x_params,
-    read_median_params,
-    load_ascan_params,
-    ascan_params_path,
-    build_reg_cfg,
+    registration_config_from_state,
     get_seg_model,
     read_video_bytes,
     DEVICE,
@@ -85,96 +80,52 @@ with col_cfg:
     raw_dir = ctx.raw_dir
 
     # ------------------------------------------------------------------- #
-    # 2) Parametres repris des pages precedentes (session_state)
+    # 2) RegistrationConfig courante (reglee sur la page « Recalage »).
     # ------------------------------------------------------------------- #
-    x_method = st.session_state.get("w_x_method", "fullframe")
-    y_enabled = bool(st.session_state.get("w_y_enabled", True))
-    flatten = bool(st.session_state.get("w_flatten", True))
-    subpixel = bool(st.session_state.get("w_subpixel", True))
-    x_params = read_x_params(x_method)
-    crop_w_x = float(x_params.get("crop_w_x", 0.75))
-    bp_lo = float(x_params.get("bp_lo", 0.02))
-    bp_hi = float(x_params.get("bp_hi", 0.5))
-
-    # Parametres A-scan : CHARGES depuis le fichier enregistre sur la page
-    # « Correction A-scan » (bouton « Enregistrer les paramètres de correction
-    # A-scan »). Fallback sur la session si rien n'est encore enregistre.
-    saved_ascan = load_ascan_params(ctx.data_dir)
-    if saved_ascan:
-        median_params = saved_ascan
-        st.success(
-            f"Paramètres A-scan chargés depuis {ascan_params_path(ctx.data_dir).name} "
-            f"(enregistré {saved_ascan.get('saved', '?')})."
-        )
-    else:
-        median_params = read_median_params()
-        st.warning(
-            "Aucun paramètre A-scan enregistré pour cette condition — valeurs de "
-            "session utilisées. Enregistrez-les sur « Correction A-scan »."
-        )
-
-    # Deux configs : la base (sans A-scan) et la variante A-scan (median force ON,
-    # avec les parametres A-scan enregistres/charges ci-dessus).
-    reg_cfg_base = build_reg_cfg(
-        x_method, y_enabled, flatten, subpixel, False, median_params,
-        crop_w_x=crop_w_x, bp_lo=bp_lo, bp_hi=bp_hi,
-    )
-    reg_cfg_ascan = build_reg_cfg(
-        x_method, y_enabled, flatten, subpixel, True, median_params,
-        crop_w_x=crop_w_x, bp_lo=bp_lo, bp_hi=bp_hi,
-    )
-
-    prep = (
-        " + ".join(
-            [
-                t
-                for t, on in (
-                    ("compensation", median_params["use_shadow"]),
-                    ("LoG", median_params["use_log"]),
-                )
-                if on
-            ]
-        )
-        or "aucun"
-    )
+    cfg = registration_config_from_state()
+    # Deux configs derivees : la base (sans A-scan) et la variante A-scan
+    # (axial_refinement force ON) — independamment du reglage courant, pour
+    # toujours pouvoir generer/comparer les deux.
+    cfg_base = dataclasses.replace(cfg, axial_refinement=False)
+    cfg_ascan = dataclasses.replace(cfg, axial_refinement=True)
 
     st.header("Parametres de recalage")
     st.caption(
-        "Repris de « Recalage initial » et « Correction A-scan » (partagés via la "
-        "session ; modifiez-les sur ces pages)."
+        "Repris de la page « Recalage » (partagés via la session ; modifiez-les "
+        "sur cette page)."
     )
     st.write(
-        f"- Horizontal (X) : **{x_method}**\n"
-        f"- Vertical (Y) : **{'oui' if y_enabled else 'non'}"
-        f"{' (flatten)' if (y_enabled and flatten) else ''}**\n"
-        f"- Sous-pixel : **{'oui' if subpixel else 'non'}**\n"
-        f"- Correction A-scan : max_vshift = **{median_params['max_vshift']} px** · "
-        f"prétraitement = **{prep}**"
+        f"- Horizontal (X) : **{cfg.lateral_method if cfg.correct_transversal else 'desactive'}**\n"
+        f"- Vertical (Y) : **{'oui' if cfg.correct_axial else 'non'}"
+        f"{' (flatten)' if (cfg.correct_axial and cfg.flatten_rpe) else ''}**\n"
+        f"- Sous-pixel : **{'oui' if cfg.subpixel else 'non'}**\n"
+        f"- Correction A-scan : max_axial_shift = **{cfg.max_axial_shift} px** · "
+        f"axial_bandpass = **{cfg.axial_bandpass}**"
     )
     with st.expander("RegistrationConfig (base / A-scan)"):
         st.caption("Sans A-scan :")
-        st.json(dataclasses.asdict(reg_cfg_base), expanded=False)
+        st.json(dataclasses.asdict(cfg_base), expanded=False)
         st.caption("Avec A-scan :")
-        st.json(dataclasses.asdict(reg_cfg_ascan), expanded=False)
+        st.json(dataclasses.asdict(cfg_ascan), expanded=False)
 
     # ------------------------------------------------------------------- #
     # 3) Generation : deux boutons (sans / avec correction A-scan)
     # ------------------------------------------------------------------- #
     st.header("Génération")
     st.caption(
-        f"Le skip/drop de la config ({reg_cfg_base.skip_first_n_frames}/"
-        f"{reg_cfg_base.drop_last_n_frames}) est appliqué. Sorties dans "
+        f"Le skip/drop de la config ({cfg.skip_first_n_frames}/"
+        f"{cfg.drop_last_n_frames}) est appliqué. Sorties dans "
         f"`{raw_dir.name}/registered/`."
     )
     b1, b2 = st.columns(2)
     with b1:
         st.markdown(f"**Sans A-scan** → `{BASE_VIDEO}`")
         if st.button("Enregistrer (sans A-scan)"):
-            _run_export(raw_dir, reg_cfg_base, "", ctx)
+            _run_export(raw_dir, cfg_base, "", ctx)
     with b2:
         st.markdown(f"**Avec A-scan** → `{ASCAN_VIDEO}`")
         if st.button("Enregistrer (A-scan)"):
-            _run_export(raw_dir, reg_cfg_ascan, ASCAN_SUFFIX, ctx)
+            _run_export(raw_dir, cfg_ascan, ASCAN_SUFFIX, ctx)
 
 # --------------------------------------------------------------------------- #
 # Apercu : les deux videos recalees enregistrees (si presentes).

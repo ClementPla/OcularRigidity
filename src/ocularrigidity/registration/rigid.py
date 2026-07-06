@@ -219,12 +219,12 @@ def register_videos(
             params["dy_median"] = dy_median
 
     # Blank A-scan columns whose BM is unreliable, in both frames and masks.
-    bad_cols = filter_bad_ascans_per_bms(registered_masks)
-    if bool(bad_cols.any()):
-        registered_frames[:, :, bad_cols] = 0
-        registered_masks[:, :, bad_cols] = 0
-    if params is not None:
-        params["bad_columns"] = bad_cols
+    # bad_cols = filter_bad_ascans_per_bms(registered_masks)
+    # if bool(bad_cols.any()):
+    #     registered_frames[:, :, bad_cols] = 0
+    #     registered_masks[:, :, bad_cols] = 0
+    # if params is not None:
+    #     params["bad_columns"] = bad_cols
 
     if return_params:
         return registered_masks, registered_frames, params

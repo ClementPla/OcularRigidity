@@ -10,9 +10,9 @@ AXIAL_PIXEL_SIZE_MM = 1.95e-3  # mm per pixel, axial scale of the OCT
 
 @dataclass(frozen=True)
 class RegistrationConfig:
-    skip_first_n_frames: int = 20
-    drop_last_n_frames: int = 10
-    use_encoded_video: bool = True
+    skip_first_n_frames: int = 0
+    drop_last_n_frames: int = 0
+    use_encoded_video: bool = False
 
     # What to correct.
     correct_transversal: bool = False
@@ -23,22 +23,22 @@ class RegistrationConfig:
 
     # Transversal (x) parameters.
     lateral_method: Literal["xcorr", "fullframe", "both"] = "fullframe"
-    max_lateral_shift: int = 16
+    max_lateral_shift: int = 2
     smooth_transversal: bool = False
-    smooth_transversal_sigma: float = 2.0
+    smooth_transversal_sigma: float = 0.1
     crop_factor: float = (
-        0.66  # fraction of the frame width to keep for lateral registration
+        0.05  # fraction of the frame width to keep for lateral registration
     )
-    scale_factor: float = 1.0  # downscale factor for lateral registration
-    transversal_bandpass: tuple[float, float] = (0.02, 0.5)
-    axial_bandpass: tuple[float, float] = (0.02, 0.5)
+    scale_factor: float = 0.1  # downscale factor for lateral registration
+    transversal_bandpass: tuple[float, float] = (0.03, 0.3)
+    axial_bandpass: tuple[float, float] = (0.03, 0.2)
     # Axial (y) parameters. ``max_axial_shift`` is the RPE-refinement pass's
     # maximal tested vertical shift (px).
-    max_axial_shift: int = 7
+    max_axial_shift: int = 2
 
     # General.
-    subpixel: bool = True
-    batch_size: int = 256
+    subpixel: bool = False
+    batch_size: int = 1
 
 
 @dataclass(frozen=True)
