@@ -558,6 +558,18 @@ class AbstractPulseExtractor(ABC):
         if self._good_per_frame is None:
             self._compute_phase()
         return self._good_per_frame
+    
+    @property
+    def amplitude_uniform(self):
+        if self._amplitude_uniform is None:
+            self._compute_phase()
+        return self._amplitude_uniform
+    
+    @property
+    def amplitude_per_frame(self):
+        if self._amplitude_per_frame is None:
+            self._compute_phase()
+        return self._amplitude_per_frame
 
     # ------------------------------------------------------------------
     # Peak-locked phase
