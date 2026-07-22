@@ -86,7 +86,7 @@ class PulsationConfig:
     )
 
     # --- Sweep axes: one run per combination (pulsation/infer.py) ---------
-    methods: tuple[str, ...] = ("pca", "ica")
+    methods: tuple[str, ...] = ("pca", "ica", "svd")
     phase_methods: tuple[str, ...] = ("peak_locked", "iq")
     # fps written into the lossless one_cycle.mkv (display metadata only).
     output_fps: int = 30

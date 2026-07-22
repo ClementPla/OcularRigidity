@@ -1,10 +1,11 @@
 from typing import Literal, Optional
 from sklearn.decomposition import PCA, FastICA
+from sklearn.utils.extmath import randomized_svd
 
 
 def project_into_separable_components(
     signal,
-    method: Literal["pca", "ica"],
+    method: Literal["pca", "ica", "svd"],
     n_components: Optional[int] = None,
     normalize: bool = True,
     random_state: int = 1234,
@@ -14,11 +15,11 @@ def project_into_separable_components(
     fun="cube",
 ):
     """
-    Projects a 2D signal (TxW) into separable components using PCA or ICA.
+    Projects a 2D signal (TxW) into separable components using PCA, ICA or SVD.
 
     Args:
         signal (np.ndarray): TxW array of values to project.
-        method (Literal["pca", "ica"]): Method to use for projection. Either "pca" or "ica".
+        method (Literal["pca", "ica", "svd"]): Method to use for projection.
         n_components (Optional[int]): Number of components to keep. If None, all components are kept.
 
     Returns:
@@ -43,7 +44,13 @@ def project_into_separable_components(
         )
         projected_signal = model.fit_transform(signal)
         mixings = model.mixing_
-
+    elif method == "svd":
+        # Truncated SVD: randomized_svd solves directly for the top k singular
+        # triplets instead of computing the full economy SVD and slicing it.
+        k = n_components if n_components is not None else min(signal.shape)
+        U, S, Vt = randomized_svd(signal, n_components=k, random_state=random_state)
+        projected_signal = U * S
+        mixings = Vt.T
     else:
         raise ValueError(f"Unknown method: {method}")
 

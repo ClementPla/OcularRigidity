@@ -104,7 +104,7 @@ with col_cfg:
     )
     method = st.selectbox(
         "Decomposition",
-        ["ICA", "PCA"],
+        ["ICA", "PCA", "SVD"],
         index=0,
         help="Separation des composantes temporelles avant scoring Lomb-Scargle.",
     )
