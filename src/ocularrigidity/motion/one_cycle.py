@@ -106,6 +106,35 @@ def amplify_one_cycle(cycle, amplification_factor=3.0, n_components=3):
     return np.clip(reconstructed, 0, 255).astype(np.uint8)
 
 
+def correct_shadow_cycle(cycle, n=4.0, a=1.0, clip_percentile=99.5):
+    """A-scan shadow compensation applied across a whole folded cycle.
+
+    Thin wrapper around :func:`ocularrigidity.registration.axial.shadow.correct_shadow`
+    that runs the OCT shadow removal on every B-scan of a folded cycle at once
+    and renormalizes the (arbitrarily scaled, long-tailed) output back to
+    ``uint8`` so the result can be viewed or encoded (e.g. ``cube_to_mp4_fastest``).
+
+    Args:
+        cycle (np.ndarray): ``(T, H, W)`` stack of B-scans; A-scans run along the
+            axial axis ``H``.
+        n, a (float): shadow-compensation exponent / denominator scale, forwarded
+            to ``correct_shadow`` (``n=4`` enhances the RPE, per the MATLAB pipeline).
+        clip_percentile (float): upper percentile used for the global 0-255
+            normalization. Global (not per-frame) so intensities stay comparable
+            across bins and no temporal flicker is introduced.
+
+    Returns:
+        np.ndarray: ``uint8`` stack, same shape as ``cycle``.
+    """
+    from ocularrigidity.registration.axial.shadow import correct_shadow
+
+    corrected = correct_shadow(np.asarray(cycle, dtype=np.float32), n=n, a=a)
+    hi = np.percentile(corrected, clip_percentile)
+    if hi <= 0:
+        hi = float(corrected.max()) or 1.0
+    return (np.clip(corrected / hi, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+
 def _auto_n_bins(
     n_good_frames: int,
     fs: float,

@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.registration.lateral.dx import estimate_lateral_dx, fovea_correction
 
 from ocularrigidity.registration.axial.median_registration import (

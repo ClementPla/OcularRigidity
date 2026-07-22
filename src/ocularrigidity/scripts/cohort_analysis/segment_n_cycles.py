@@ -9,6 +9,8 @@ from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.inference import infer
 from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
 
+OVERWRITE = True
+
 
 @lru_cache(maxsize=1)
 def get_model():
@@ -20,7 +22,13 @@ def segment_videos(video_path: Path) -> Path:
     """Segment videos into individual cycles."""
     data = read_gray(video_path)
     model = get_model()
-    mask = infer(model, data, batch_size=SEGMENTATION.batch_size, device="cuda:0")
+    mask = infer(
+        model,
+        data,
+        batch_size=SEGMENTATION.batch_size,
+        device="cuda:0",
+        use_graphcut=False,
+    )
     return mask
 
 
@@ -38,7 +46,11 @@ def process_cohort(input_dir, output_dir):
         relative_path = video_path.relative_to(input_dir)
         pbar.set_postfix_str(f"Processing {relative_path.parent}")
         output_path = output_dir / relative_path.parent / "segmented_cycles.npz"
-        if output_path.exists() and (Path(relative_path.parent) not in PROCESS_ANYWAY):
+        if (
+            output_path.exists()
+            and (Path(relative_path.parent) not in PROCESS_ANYWAY)
+            and not OVERWRITE
+        ):
             continue
         mask = segment_videos(video_path)
         save_mask(mask, output_path)

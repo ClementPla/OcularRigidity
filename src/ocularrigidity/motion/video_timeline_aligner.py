@@ -3,11 +3,12 @@
 This is deliberately signal-agnostic. It knows *when* frames were captured, not
 *what* is in them. The mask/frame-domain notion of a "bad frame" is injected by
 the extractor via :meth:`gap_mask`, so the aligner can be shared by any
-``AbstractPulseExtractor``.
+``PulseExtractor``.
 """
 
 from enum import Enum
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -26,11 +27,13 @@ class VideoTimelineAligner:
     def __init__(
         self,
         registered_video: VideoRegistrator,
-        timestamps_path: Path,
+        timestamps: Union[Path, str, pd.Series, np.ndarray, list],
         units_in_timestamps: TimeUnits = TimeUnits.MICROSECONDS,
     ):
+        """``timestamps`` may be a path to a headerless single-column CSV of
+        timestamps, or the timestamps themselves as a sequence/Series/array."""
         self.registered_video = registered_video
-        self.timestamps_path = timestamps_path
+        self.timestamps = timestamps
         self.units_in_timestamps = units_in_timestamps
 
         self._timestamps_seconds = None
@@ -47,13 +50,14 @@ class VideoTimelineAligner:
     @property
     def timestamps_seconds(self):
         if self._timestamps_seconds is None:
-            ts_df = (
-                pd.read_csv(self.timestamps_path, header=None, names=["timestamp"])
-                .sort_values("timestamp")
-                .reset_index(drop=True)
-            )
-            ts_df = ts_df[self._frame_slice]
-            ts = ts_df["timestamp"].to_numpy()
+            if isinstance(self.timestamps, (str, Path)):
+                ts_series = pd.read_csv(
+                    self.timestamps, header=None, names=["timestamp"]
+                )["timestamp"]
+            else:
+                ts_series = pd.Series(np.asarray(self.timestamps).ravel())
+            ts_series = ts_series.sort_values().reset_index(drop=True)
+            ts = ts_series[self._frame_slice].to_numpy()
             if self.units_in_timestamps == TimeUnits.MICROSECONDS:
                 self._timestamps_seconds = (ts - ts[0]) / 1e6
             elif self.units_in_timestamps == TimeUnits.MILLISECONDS:

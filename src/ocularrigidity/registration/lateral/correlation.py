@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+DEBUG = False
+
 
 def profile_correlation_dx(
     curve: torch.Tensor,
@@ -198,7 +200,7 @@ def frame_correlation_dx(
         conf[start:end] = (y0_sm - win_vals.mean(dim=1)) / (win_vals.std(dim=1) + 1e-8)
 
         dx[start:end] = (center - peak_sub) * (crop_w / w)
-        if start == 0:
+        if start == 0 and DEBUG:
             index = 10
             # Bokeh rather than plotly/ipympl: it embeds via BokehJS (no ipywidgets
             # model, so no "model not found" in VSCode), renders on canvas (fast),

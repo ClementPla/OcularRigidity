@@ -31,7 +31,7 @@ from ocularrigidity.consts import (
     ROOT_REGISTERED_CACHE,
 )
 from ocularrigidity.registration.registration_engine import VideoRegistrator
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.segmentation.postprocess.interfaces import (
     extract_boundaries_gpu,
     rebuild_mask,

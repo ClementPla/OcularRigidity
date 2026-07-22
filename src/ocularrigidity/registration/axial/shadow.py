@@ -94,7 +94,7 @@ def correct_shadow(
 
     # L : compense sur I**n (la sortie utilisee pour la RPE).
     x_n = x.pow(n)
-    denom_L = a * _cumtrapz_from_bottom(x_n, axial_dim)
+    denom_L = a * _cumtrapz_from_bottom(x, axial_dim).pow(n)
     L = torch.where(denom_L != 0, x_n / denom_L, torch.zeros_like(x_n))
 
     if not return_all:
@@ -102,7 +102,7 @@ def correct_shadow(
 
     # J : compense sur I ; K = J**n. Fournis pour fidelite au MATLAB.
     denom_J = a * _cumtrapz_from_bottom(x, axial_dim)
-    J = x / denom_J
+    J = torch.where(denom_J != 0, x / denom_J, torch.zeros_like(x))
     K = J.pow(n)
     if is_numpy:
         return J.numpy(), K.numpy(), L.numpy()

@@ -10,7 +10,7 @@ from ocularrigidity.viewer.streamlit_explorer._common import (
     require_selection,
 )
 from ocularrigidity.registration.rigid import register_videos
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 
 st.set_page_config(page_title="Registration", layout="wide")
 

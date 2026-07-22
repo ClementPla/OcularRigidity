@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 import torch
 
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 
 from ocularrigidity.data.compression import (
     cube_to_mp4_fastest,
@@ -32,29 +32,42 @@ class VideoRegistrator:
     def __init__(
         self,
         video: Path,
-        root_masks: Path,
-        root_data: Path,
+        root_masks: Optional[Path] = None,
+        root_data: Optional[Path] = None,
         config: Optional[RegistrationConfig] = None,
         *,
+        # --- in-memory inputs (bypass path loading) ---
+        frames: Optional[np.ndarray] = None,
+        masks: Optional[np.ndarray] = None,
         # --- runtime / cache (per-invocation, not algorithmic) ---
         device: str = "cuda",
         cache_dir: Path = None,
         overwrite_cache: bool = False,
         verbose: bool = True,
+        cq_cache: int = 18,
     ):
+        """``video`` is the video identifier/name, used for cache and mask paths.
+
+        Frames and masks are normally loaded from ``root_data``/``root_masks``
+        using that name. Alternatively, pass ``frames`` and/or ``masks`` as
+        numpy arrays to feed them directly, in which case the corresponding
+        ``root_*`` argument is not required. ``video`` should still be provided
+        as a name so caching and identification keep working.
+        """
         self.video = video
         self.root_masks = root_masks
         self.root_data = root_data
 
-        # All algorithmic + frame-selection parameters live in ``config`` (see
-        # rigid.register_videos for how each is used). Downstream collaborators
-        # read individual values via the convenience properties below
-        # (``skip_first_n_frames``, ``flatten_rpe``, …) or ``self.config``.
         self.config = config if config is not None else RegistrationConfig()
 
         self.verbose = verbose
 
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+
+        # In-memory inputs supplied directly (bypass path loading). Stored
+        # untrimmed; the frame slice is applied lazily like the loaded arrays.
+        self._provided_frames = frames
+        self._provided_masks = masks
 
         self._raw_frames = None
         self._raw_masks = None
@@ -69,6 +82,7 @@ class VideoRegistrator:
         self._transform = None
         self._device = device
         self._overwrite_cache = overwrite_cache
+        self._cq_cache = cq_cache
 
     # Convenience read-only views onto the config, for collaborators (the
     # timeline aligner, pipeline results) that key off frame selection and the
@@ -104,7 +118,7 @@ class VideoRegistrator:
         Mirrors the logic in ``raw_masks``: if ``video`` points to a file, its
         parent directory is the id; otherwise ``video`` itself.
         """
-        if (self.root_data / self.video).is_file():
+        if self.root_data is not None and (self.root_data / self.video).is_file():
             return self.video.parent
         return self.video
 
@@ -177,11 +191,8 @@ class VideoRegistrator:
         paths = self._cache_paths()
         for p in paths.values():
             p.parent.mkdir(parents=True, exist_ok=True)
-
-        # The registration input is already lossy (compressed cube.mp4 at cq=18,
-        # see scripts/compress.py), so a fast HEVC re-encode is sufficient here.
         cube_to_mp4_fastest(
-            self._registered_frames, str(paths["frames"]), cq=18, fps=200
+            self._registered_frames, str(paths["frames"]), cq=self._cq_cache, fps=60
         )
         save_mask(self._registered_masks, paths["masks"])
 
@@ -209,6 +220,13 @@ class VideoRegistrator:
     @property
     def raw_frames(self):
         if self._raw_frames is None:
+            if self._provided_frames is not None:
+                self._raw_frames = np.asarray(self._provided_frames)[self._frame_slice]
+                return self._raw_frames
+            if self.root_data is None:
+                raise ValueError(
+                    "No `frames` array and no `root_data` to load frames from."
+                )
             if self.config.use_encoded_video:
                 if (self.root_data / self.video).is_file():
                     try:
@@ -236,8 +254,15 @@ class VideoRegistrator:
     @property
     def raw_masks(self):
         if self._raw_masks is None:
+            if self._provided_masks is not None:
+                self._raw_masks = np.asarray(self._provided_masks)[self._frame_slice]
+                return self._raw_masks
+            if self.root_masks is None:
+                raise ValueError(
+                    "No `masks` array and no `root_masks` to load masks from."
+                )
             # If self.video points to a file, take its parent directory as the video id for mask loading
-            if (self.root_data / self.video).is_file():
+            if self.root_data is not None and (self.root_data / self.video).is_file():
                 video_id = self.video.parent
             else:
                 video_id = self.video

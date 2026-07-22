@@ -39,7 +39,7 @@ from ocularrigidity.data.spectralis import SpectralisStudy
 from ocularrigidity.data.io import save_mask
 from ocularrigidity.segmentation.inference import infer
 from ocularrigidity.registration.registration_engine import VideoRegistrator
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 
 # Importer registered_video -> compression.py force IMAGEIO_FFMPEG_EXE vers un
 # chemin Linux code en dur ; on le neutralise (on appelle ffmpeg directement).

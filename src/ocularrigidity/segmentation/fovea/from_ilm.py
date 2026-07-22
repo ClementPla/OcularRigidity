@@ -5,7 +5,7 @@ import pandas as pd
 from scipy.signal import butter, filtfilt
 import torch
 
-from ocularrigidity.pipeline_config import AXIAL_PIXEL_SIZE_MM
+from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
 from ocularrigidity.segmentation.postprocess.blob import (
     keep_largest_connected_component,
 )

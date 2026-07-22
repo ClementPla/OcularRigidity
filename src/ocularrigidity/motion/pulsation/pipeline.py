@@ -13,11 +13,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from ocularrigidity.motion.pulsation.config import NCycleConfig, PulseExtractionConfig
-from ocularrigidity.motion.pulsation.mask_pulse_extractor import MaskPulseExtractor
-from ocularrigidity.motion.pulsation.n_cycle_reconstructor import NCycleReconstructor
+from ocularrigidity.motion.pulsation.legacy import (
+    MaskPulseExtractor,
+    PulseExtractionConfig,
+)
+from ocularrigidity.motion.pulsation.n_cycle_reconstructor import (
+    NCycleConfig,
+    NCycleReconstructor,
+)
 from ocularrigidity.motion.video_timeline_aligner import TimeUnits, VideoTimelineAligner
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.registration.registration_engine import VideoRegistrator
 
 if TYPE_CHECKING:

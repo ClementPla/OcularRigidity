@@ -13,7 +13,7 @@ Entree : le dossier ``registered/`` produit par
 DEJA recalee et rognee (skip/drop deja appliques), on la charge telle quelle
 (aucun re-recalage : on renseigne directement les frames/masques recales de
 ``RegisteredVideo``, comme le fait son cache) et on la replie via
-``MaskPulseExtractor`` + ``NCycleReconstructor``.
+``PulseExtractor`` + ``NCycleReconstructor``.
 
 Sortie : ``one_cycle.mp4`` (+ ``one_cycle_params.json``) dans le meme dossier.
 """
@@ -30,12 +30,22 @@ import torch
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.registration.registration_engine import VideoRegistrator
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.motion.pulsation import (
-    MaskPulseExtractor,
+    CardiacBand,
+    DecompositionConfig,
+    DecomposedTraceSource,
+    IQDemodPhaseEstimator,
+    IQPhaseConfig,
+    LombScargleConfig,
+    LombScargleRateEstimator,
+    MaskThicknessTraceSource,
+    MaskTraceConfig,
     NCycleConfig,
     NCycleReconstructor,
-    PulseExtractionConfig,
+    PeakLockedPhaseEstimator,
+    PulseExtractor,
+    SelectBestComponent,
 )
 from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 from ocularrigidity.segmentation.postprocess.interfaces import (
@@ -151,21 +161,59 @@ def export_one_cycle_video(
     reg = _prepared_registrator(video_path, mask_path, device, verbose)
 
     cslice = slice(col_slice[0], col_slice[1]) if col_slice is not None else None
-    config = PulseExtractionConfig(
+    aligner = VideoTimelineAligner(reg, str(ts_path))
+
+    # Un seul ``band``, partage par le filtre passe-bande des traces et la
+    # recherche frequentielle : les desynchroniser est la seule erreur facile.
+    band = CardiacBand(
         bpm_range=tuple(bpm_range),
-        override_bpm=override_bpm,
         expected_bpm=expected_bpm,
         expected_bpm_band_frac=expected_bpm_band_frac,
-        sigma_col=sigma_col,
-        col_slice=cslice,
-        n_separable_components=n_separable_components,
-        phase_smoother_cycles=phase_smoother_cycles,
-        ICA_or_PCA=ICA_or_PCA,
-        harmonic_correction=harmonic_correction,
-        verbose=verbose,
     )
-    aligner = VideoTimelineAligner(reg, str(ts_path))
-    extractor = MaskPulseExtractor(reg, aligner, config)
+
+    # Le choix de la phase est desormais le choix d'un composant, pas une
+    # chaine passee au repliement : un ``PulseExtractor`` *est* une methode.
+    if phase_method_for_fold == "peak_locked":
+        phase_estimator = PeakLockedPhaseEstimator(
+            aggregator=SelectBestComponent(), band=band
+        )
+    elif phase_method_for_fold == "iq":
+        phase_estimator = IQDemodPhaseEstimator(
+            IQPhaseConfig(smoother_cycles=phase_smoother_cycles),
+            aggregator=SelectBestComponent(),
+        )
+    else:
+        raise ValueError(
+            f"phase_method_for_fold inconnu: {phase_method_for_fold!r} "
+            "(attendu 'peak_locked' ou 'iq')."
+        )
+
+    extractor = PulseExtractor(
+        trace_source=DecomposedTraceSource(
+            MaskThicknessTraceSource(
+                reg,
+                aligner,
+                MaskTraceConfig(
+                    band=band,
+                    sigma_col=sigma_col,
+                    col_slice=cslice,
+                    verbose=verbose,
+                ),
+            ),
+            DecompositionConfig(
+                method=ICA_or_PCA, n_components=n_separable_components
+            ),
+        ),
+        rate_estimator=LombScargleRateEstimator(
+            LombScargleConfig(
+                band=band,
+                harmonic_correction=harmonic_correction,
+                verbose=verbose,
+            ),
+            override_bpm=override_bpm,
+        ),
+        phase_estimator=phase_estimator,
+    )
 
     reconstructor = NCycleReconstructor(
         extractor,
@@ -174,7 +222,6 @@ def export_one_cycle_video(
             n_cycle=n_cycle,
             target_frames_per_bin=target_frames_per_bin,
             fold_method=one_cycle_fold_method,
-            phase_method=phase_method_for_fold,
             verbose=verbose,
         ),
     )

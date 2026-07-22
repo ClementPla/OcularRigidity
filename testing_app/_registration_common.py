@@ -43,7 +43,7 @@ from ocularrigidity.registration.axial import (
     laplacian_of_gaussian,
     estimate_ascan_vshift_to_median,
 )
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 
 from sansori_nav import (
     PATH_GENERAL,

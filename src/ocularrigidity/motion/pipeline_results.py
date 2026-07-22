@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 
-from ocularrigidity.motion.pulsation.config import NCycleConfig, PulseExtractionConfig
+from ocularrigidity.motion.pulsation import NCycleConfig, PulseExtractionConfig
 
 if TYPE_CHECKING:
     from ocularrigidity.motion.pulsation import (
-        AbstractPulseExtractor,
+        MaskPulseExtractor,
         NCycleReconstructor,
     )
 
@@ -75,7 +75,7 @@ class CardiacPipelineResults:
     @classmethod
     def from_objects(
         cls,
-        extractor: "AbstractPulseExtractor",
+        extractor: "MaskPulseExtractor",
         reconstructor: "Optional[NCycleReconstructor]" = None,
     ) -> "CardiacPipelineResults":
         ex = extractor

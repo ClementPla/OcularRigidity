@@ -1,59 +1,121 @@
-from dataclasses import dataclass, field
-from typing import Literal
+"""Study-level configuration: what settings *this* cohort is processed with.
+
+The distinction against the per-component configs (``RegistrationConfig``,
+``PulseExtractionConfig``, ``NCycleConfig``, …) is deliberate:
+
+- A **component** config is the argument list of one class. It lives next to
+  that class, and its defaults say what the algorithm does by default.
+- A **study** config is what this pipeline decided to run. It lives here, is
+  frozen, and is exposed as a singleton the batch scripts import.
+
+Study configs therefore *hold* component configs rather than mirroring their
+fields — a mirrored field is a default that can silently drift away from the
+one the library actually uses. What legitimately belongs here on its own is
+whatever the components know nothing about: cross-stage invariants
+(``N_CYCLES``), rig calibration (``AXIAL_PIXEL_SIZE_MM``), sweep axes and
+output-file metadata.
+"""
+
+from dataclasses import dataclass, field, replace
+from typing import Literal, Optional
+
+from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
+from ocularrigidity.motion.pulsation import NCycleConfig, PulseExtractionConfig
+from ocularrigidity.registration.config import RegistrationConfig
 
 # Number of cardiac cycles that are folded, segmented and measured. Shared by
 # the pulsation fold, the per-cycle deltaY fit and the deltaA tracking — they
 # must agree, so they all derive from this single value.
 N_CYCLES = 3
-AXIAL_PIXEL_SIZE_MM = 1.95e-3  # mm per pixel, axial scale of the OCT
 
+# ``AXIAL_PIXEL_SIZE_MM`` is re-exported from consts.py, where library code can
+# reach it without importing this (study-level) module.
 
-@dataclass()
-class RegistrationConfig:
-    skip_first_n_frames: int = 20
-    drop_last_n_frames: int = 10
-    use_encoded_video: bool = True
-    # What to correct.
-    correct_transversal: bool = False
-    correct_axial: bool = True
-    flatten_rpe: bool = False
-    axial_refinement: bool = False
-    fovea_correction_enabled: bool = True
-
-    # Transversal (x) parameters.
-    lateral_method: Literal["xcorr", "fullframe", "both"] = "fullframe"
-    max_lateral_shift: int = 16
-    smooth_transversal: bool = False
-    smooth_transversal_sigma: float = 2.0
-    crop_factor: float = (
-        0.66  # fraction of the frame width to keep for lateral registration
-    )
-    scale_factor: float = 1.0  # downscale factor for lateral registration
-    transversal_bandpass: tuple[float, float] = (0.02, 0.5)
-    axial_bandpass: tuple[float, float] = (0.02, 0.5)
-    # Axial (y) parameters. ``max_axial_shift`` is the RPE-refinement pass's
-    # maximal tested vertical shift (px).
-    max_axial_shift: int = 7
-
-    # General.
-    subpixel: bool = True
-    batch_size: int = 256
+__all__ = [
+    "N_CYCLES",
+    "AXIAL_PIXEL_SIZE_MM",
+    "RegistrationConfig",
+    "PulsationConfig",
+    "DeltaYConfig",
+    "SegmentationConfig",
+    "DeltaAConfig",
+    "FriedenwaldConfig",
+    "MisregistrationConfig",
+    "REGISTRATION",
+    "PULSATION",
+    "DELTA_Y",
+    "SEGMENTATION",
+    "DELTA_A",
+    "FRIEDENWALD",
+    "MISREGISTRATION",
+]
 
 
 @dataclass(frozen=True)
 class PulsationConfig:
-    """Cardiac-cycle extraction + folding (pulsation/infer.py)."""
+    """Cardiac-cycle extraction + folding (pulsation/infer.py).
 
-    sigma_col: float = 5.0
-    expected_bpm_band_frac: float = 0.3
-    n_bins: int = 30
-    col_slice: slice = field(default_factory=lambda: slice(100, 924))
-    one_cycle_fold_method: Literal["mean", "median"] = "median"
-    n_cycle: int = N_CYCLES
+    ``extraction`` and ``fold`` are the component configs handed straight to
+    :func:`run_cardiac_pipeline`; use :meth:`for_video` to stamp in the
+    per-video and per-sweep values. The remaining fields are the ones no
+    component owns: which variants to sweep, and the output video's fps.
+
+    ``extraction`` is the flat :class:`PulseExtractionConfig` because that is
+    what the pipeline entry point still takes. When ``run_cardiac_pipeline``
+    moves off the legacy ``MaskPulseExtractor`` facade, this field becomes the
+    per-stage configs (``MaskTraceConfig``, ``DecompositionConfig``, …) and
+    nothing else here has to change.
+    """
+
+    # Values equal to the library defaults are still spelled out: a study
+    # config should pin what it ran, so a later change to a library default
+    # cannot silently change this cohort's settings.
+    extraction: PulseExtractionConfig = field(
+        default_factory=lambda: PulseExtractionConfig(
+            sigma_col=5.0,
+            expected_bpm_band_frac=0.3,
+            col_slice=slice(100, 924),
+        )
+    )
+    fold: NCycleConfig = field(
+        default_factory=lambda: NCycleConfig(
+            n_bins=30,
+            n_cycle=N_CYCLES,
+            fold_method="median",
+        )
+    )
+
+    # --- Sweep axes: one run per combination (pulsation/infer.py) ---------
     methods: tuple[str, ...] = ("pca", "ica")
     phase_methods: tuple[str, ...] = ("peak_locked", "iq")
     # fps written into the lossless one_cycle.mkv (display metadata only).
     output_fps: int = 30
+
+    def for_video(
+        self,
+        *,
+        method: Optional[str] = None,
+        phase_method: Optional[str] = None,
+        expected_bpm: Optional[float] = None,
+        verbose: bool = True,
+    ) -> tuple[PulseExtractionConfig, NCycleConfig]:
+        """The study settings, specialised for one video / one sweep point.
+
+        ``expected_bpm`` is the measured heart rate, which is per-video and so
+        cannot live in a cohort-wide config.
+        """
+        extraction = replace(
+            self.extraction,
+            expected_bpm=expected_bpm,
+            verbose=verbose,
+            **({"ICA_or_PCA": method} if method is not None else {}),
+        )
+        fold = replace(
+            self.fold,
+            verbose=verbose,
+            **({"phase_method": phase_method} if phase_method is not None else {}),
+        )
+        return extraction, fold
 
 
 @dataclass(frozen=True)
