@@ -75,9 +75,17 @@ def infer(
                 mode="bilinear",
                 align_corners=False,
             )
+        # Pad if necessary to ensure divisible by 32 for UNet downsampling.
+        h, w = chunk.shape[2], chunk.shape[3]
+        pad_h = (32 - h % 32) % 32
+        pad_w = (32 - w % 32) % 32
+        if pad_h > 0 or pad_w > 0:
+            chunk = torch.nn.functional.pad(chunk, (0, pad_w, 0, pad_h), mode="reflect")
         with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=use_amp):
             out = module(chunk)
-
+        # Remove padding if added.
+        if pad_h > 0 or pad_w > 0:
+            out = out[:, :, :h, :w]
         if scale_factor != 1.0:
             out = torch.nn.functional.interpolate(
                 out,

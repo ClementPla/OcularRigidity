@@ -35,6 +35,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from typing import Optional
 
+import numpy as np
+import cv2
+
 
 # --------------------------------------------------------------------------- #
 # Low-level reading helpers
@@ -277,7 +280,9 @@ class SpectralisStudy:
         out: list[Optional[datetime]] = []
         for s in self.series:
             if self.study_date is not None and s.acquisition_time is not None:
-                out.append(datetime.combine(self.study_date, s.acquisition_time.to_time()))
+                out.append(
+                    datetime.combine(self.study_date, s.acquisition_time.to_time())
+                )
             else:
                 out.append(None)
         return out
@@ -332,7 +337,9 @@ def _parse_image(img_el: ET.Element, kind: str) -> Image:
         scale_x=_float(ctx, "ScaleX"),
         scale_y=_float(ctx, "ScaleY"),
         # tag name varies across HEYEX versions -> try the common spellings
-        num_average=_int(ctx, "NumAve") or _int(ctx, "NumAverage") or _int(ctx, "NumImages"),
+        num_average=_int(ctx, "NumAve")
+        or _int(ctx, "NumAverage")
+        or _int(ctx, "NumImages"),
         quality=_float(ctx, "ImageQuality") or _float(ctx, "Quality"),
         start_xy=_coord(_first(ctx, "Start")),
         end_xy=_coord(_first(ctx, "End")),
@@ -445,3 +452,30 @@ def analyze(path) -> SpectralisStudy:
     on the returned :class:`SpectralisStudy` (``.patient`` and ``.series``).
     """
     return SpectralisStudy.from_file(path)
+
+
+def load_video(path):
+    """
+    Returns a np.ndarray and the timestamps associated.
+    """
+    xml_file = list(path.glob("*.xml"))
+    if not xml_file:
+        raise ValueError(f"No XML file found in {path}")
+    xml_file = xml_file[0]
+    study = analyze(xml_file)
+    df = study.to_dataframe()
+    oct_width = df["oct_width"].iloc[0]
+    oct_height = df["oct_height"].iloc[0]
+    N = len(df)
+    oct_files = df["oct_file"].to_list()
+    video = np.zeros((N, oct_height, oct_width), dtype=np.uint8)
+    for i, f in enumerate(oct_files):
+        img_path = path / f
+        if not img_path.exists():
+            raise ValueError(f"File {img_path} does not exist")
+        img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise ValueError(f"Failed to read image {img_path}")
+        video[i] = img
+    timestamps = df["time"]
+    return video, timestamps, df

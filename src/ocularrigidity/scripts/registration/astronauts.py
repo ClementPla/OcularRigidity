@@ -39,7 +39,7 @@ from ocularrigidity.data.spectralis import SpectralisStudy
 from ocularrigidity.data.io import save_mask
 from ocularrigidity.segmentation.inference import infer
 from ocularrigidity.registration.registration_engine import VideoRegistrator
-from ocularrigidity.pipeline_config import RegistrationConfig
+from ocularrigidity.registration.config import RegistrationConfig
 
 # Importer registered_video -> compression.py force IMAGEIO_FFMPEG_EXE vers un
 # chemin Linux code en dur ; on le neutralise (on appelle ffmpeg directement).
@@ -291,22 +291,13 @@ def export_registered_video(
         video=Path(out_subdir),
         root_data=raw_dir,
         root_masks=raw_dir,
-        skip_first_n_frames=0,
-        drop_last_n_frames=0,
-        correct_transversal=cfg.correct_transversal,
-        correct_axial=cfg.correct_axial,
-        flatten_rpe=cfg.flatten_rpe,
-        axial_refinement=cfg.axial_refinement,
-        fovea_correction_enabled=cfg.fovea_correction_enabled,
-        lateral_method=cfg.lateral_method,
-        max_lateral_shift=cfg.max_lateral_shift,
-        smooth_transversal=cfg.smooth_transversal,
-        smooth_transversal_sigma=cfg.smooth_transversal_sigma,
-        max_axial_shift=cfg.max_axial_shift,
-        subpixel=cfg.subpixel,
+        # Frames/masks are supplied pre-trimmed below, so skip/drop must be 0
+        # here to avoid re-trimming; every other knob comes from ``cfg``.
+        config=dataclasses.replace(
+            cfg, skip_first_n_frames=0, drop_last_n_frames=0
+        ),
         verbose=verbose,
         device=device,
-        batch_size=cfg.batch_size,
         cache_dir=None,
     )
     registrator._raw_frames = cube

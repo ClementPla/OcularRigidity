@@ -1,13 +1,8 @@
 import numpy as np
 
 from ocularrigidity.motion.one_cycle import estimate_cardiac_amplitude
-from ocularrigidity.motion.pulsation import (
-    NCycleConfig,
-    PulseExtractionConfig,
-    run_cardiac_pipeline,
-)
+from ocularrigidity.motion.pulsation import run_cardiac_pipeline
 from ocularrigidity.consts import (
-    CHECKPOINT_PATH,
     ROOT_MASKS,
     ROOT_DATA_MNT,
     ROOT_COMPRESSED_VIDEO,
@@ -57,35 +52,21 @@ def compute_one_cycle(
         one_cycle_path = root_one_cycle / video / "one_cycle.mkv"
         if (one_cycle_path.exists() and not OVERWRITE) and not process_anyway:
             continue
+        extraction_config, fold_config = PULSATION.for_video(
+            method=method,
+            phase_method=phase_method_for_fold,
+            expected_bpm=HR,
+        )
         try:
             result: CardiacPipelineResults = run_cardiac_pipeline(
                 video_relpath=video,
                 root_masks=ROOT_MASKS,
                 root_data=ROOT_COMPRESSED_VIDEO,
                 timestamps_path=ROOT_DATA_MNT / video / "timestamp.txt",
-                config=PulseExtractionConfig(
-                    ICA_or_PCA=method,
-                    sigma_col=PULSATION.sigma_col,
-                    expected_bpm=HR,
-                    expected_bpm_band_frac=PULSATION.expected_bpm_band_frac,
-                    col_slice=PULSATION.col_slice,
-                    verbose=True,
-                ),
-                fold_config=NCycleConfig(
-                    n_bins=PULSATION.n_bins,
-                    n_cycle=PULSATION.n_cycle,
-                    fold_method=PULSATION.one_cycle_fold_method,
-                    phase_method=phase_method_for_fold,
-                    verbose=True,
-                ),
-                skip_first_n_frames=REGISTRATION.skip_first_n_frames,
-                drop_last_n_frames=REGISTRATION.drop_last_n_frames,
+                config=extraction_config,
+                fold_config=fold_config,
+                registration_config=REGISTRATION,
                 compute_n_cycle_video=True,
-                flatten_rpe=REGISTRATION.flatten_rpe,
-                correct_transversal=REGISTRATION.correct_transversal,
-                lateral_method=REGISTRATION.lateral_method,
-                subpixel=REGISTRATION.subpixel,
-                use_encoded_video=REGISTRATION.use_encoded_video,
                 cache_dir=cache_dir,
             )
         except Exception as e:

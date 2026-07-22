@@ -117,14 +117,14 @@ with col_cfg:
     c1, c2 = st.columns(2)
     n_bins = c1.number_input(
         "n_bins (frames / cycle)",
-        value=int(PULSATION.n_bins),
+        value=int(PULSATION.fold.n_bins),
         min_value=2,
         step=1,
         help="Nombre de casiers de phase = nombre de frames du cycle reconstruit.",
     )
     n_cycle = c2.number_input(
         "n_cycle (cycles moyennes)",
-        value=int(PULSATION.n_cycle),
+        value=int(PULSATION.fold.n_cycle),
         min_value=1,
         step=1,
         help="Nombre de cycles (tranches temporelles) moyennes et concatenes.",
@@ -133,7 +133,7 @@ with col_cfg:
     fold_method = c3.selectbox(
         "Repliement (fold)",
         ["median", "mean"],
-        index=0 if PULSATION.one_cycle_fold_method == "median" else 1,
+        index=0 if PULSATION.fold.fold_method == "median" else 1,
     )
     output_fps = c4.number_input(
         "fps de sortie",
@@ -146,20 +146,20 @@ with col_cfg:
     with st.expander("Parametres avances"):
         sigma_col = st.number_input(
             "sigma_col (lissage spatial)",
-            value=float(PULSATION.sigma_col),
+            value=float(PULSATION.extraction.sigma_col),
             min_value=0.0,
             step=0.5,
         )
         cs1, cs2 = st.columns(2)
         col_lo = cs1.number_input(
             "col_slice debut",
-            value=int(PULSATION.col_slice.start),
+            value=int(PULSATION.extraction.col_slice.start),
             min_value=0,
             step=1,
         )
         col_hi = cs2.number_input(
             "col_slice fin",
-            value=int(PULSATION.col_slice.stop),
+            value=int(PULSATION.extraction.col_slice.stop),
             min_value=1,
             step=1,
         )
@@ -171,7 +171,7 @@ with col_cfg:
         )
         band_frac = st.number_input(
             "expected_bpm_band_frac",
-            value=float(PULSATION.expected_bpm_band_frac),
+            value=float(PULSATION.extraction.expected_bpm_band_frac),
             min_value=0.0,
             max_value=1.0,
             step=0.05,

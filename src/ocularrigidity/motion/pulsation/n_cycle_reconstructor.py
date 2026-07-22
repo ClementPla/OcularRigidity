@@ -1,12 +1,13 @@
 """N-cycle reconstruction: fold registered frames into averaged cardiac cycles.
 
 Deliberately decoupled from rate/phase estimation. It consumes any
-``AbstractPulseExtractor`` (mask- or frame-based) for phase, cardiac frequency
+``PulseExtractor`` for phase, cardiac frequency
 and registered frames, and owns its own folding results — it does not write
 back onto the extractor.
 """
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 import numpy as np
 
@@ -15,16 +16,25 @@ from ocularrigidity.motion.one_cycle import (
     fold_video_numba_mean,
     fold_video_numba_median,
 )
-from ocularrigidity.motion.pulsation.abstract_pulse_extractor import (
-    AbstractPulseExtractor,
-)
-from ocularrigidity.motion.pulsation.config import NCycleConfig
+from ocularrigidity.motion.pulsation.extractor import PulseExtractor
+
+
+@dataclass
+class NCycleConfig:
+    n_cycle: int = 1
+    n_bins: Optional[int] = None
+    target_frames_per_bin: int = 25
+    fold_method: str = "mean"
+    # Only honoured by the legacy ``MaskPulseExtractor``, which exposes both
+    # phases at once; a composed ``PulseExtractor`` already is one phase method.
+    phase_method: Literal["iq", "peak_locked"] = "peak_locked"
+    verbose: bool = True
 
 
 class NCycleReconstructor:
     def __init__(
         self,
-        extractor: AbstractPulseExtractor,
+        extractor: PulseExtractor,
         config: Optional[NCycleConfig] = None,
     ):
         self.extractor = extractor
@@ -37,8 +47,16 @@ class NCycleReconstructor:
         self.notes: list[str] = []
 
     def _default_phase(self):
+        """Phase to fold by.
+
+        A composed ``PulseExtractor`` already *is* one phase method, so its
+        ``phase_per_frame`` is the answer. ``config.phase_method`` only applies
+        to the legacy ``MaskPulseExtractor``, which exposes both phases at once.
+        """
         ex = self.extractor
-        if self.config.phase_method == "peak_locked":
+        if self.config.phase_method == "peak_locked" and hasattr(
+            ex, "phase_per_frame_peak_locked"
+        ):
             return ex.phase_per_frame_peak_locked, ex.good_per_frame_peak_locked
         return ex.phase_per_frame, ex.good_per_frame
 

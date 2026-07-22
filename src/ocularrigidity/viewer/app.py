@@ -25,6 +25,7 @@ Launch with::
 
 from __future__ import annotations
 
+import dataclasses
 import tempfile
 import traceback
 from functools import lru_cache
@@ -272,13 +273,17 @@ def run_pipeline(
                 phase_method=phase_method,
                 verbose=True,
             ),
-            skip_first_n_frames=int(skip_first),
-            drop_last_n_frames=int(drop_last),
-            flatten_rpe=bool(flatten_rpe),
-            correct_transversal=bool(correct_transversal),
-            lateral_method=lateral_method,
-            subpixel=bool(subpixel),
-            use_encoded_video=True,
+            registration_config=dataclasses.replace(
+                REGISTRATION,
+                skip_first_n_frames=int(skip_first),
+                drop_last_n_frames=int(drop_last),
+                flatten_rpe=bool(flatten_rpe),
+                correct_transversal=bool(correct_transversal),
+                lateral_method=lateral_method,
+                subpixel=bool(subpixel),
+                use_encoded_video=True,
+                batch_size=int(reg_batch),
+            ),
             compute_n_cycle_video=True,
             cache_dir=None,
             verbose=True,
@@ -399,14 +404,14 @@ def build_demo() -> gr.Blocks:
                 with gr.Accordion("Cardiac / pulsation", open=False):
                     ica_or_pca = gr.Dropdown(["pca", "ica"], value=PULSATION.methods[0], label="ICA_or_PCA")
                     phase_method = gr.Dropdown(["peak_locked", "iq"], value=PULSATION.phase_methods[0], label="phase_method_for_fold")
-                    fold_method = gr.Dropdown(["median", "mean"], value=PULSATION.one_cycle_fold_method, label="one_cycle_fold_method")
-                    n_cycle = gr.Number(value=PULSATION.n_cycle, precision=0, label="n_cycle")
-                    n_bins = gr.Number(value=PULSATION.n_bins, precision=0, label="n_bins")
-                    sigma_col = gr.Number(value=PULSATION.sigma_col, label="sigma_col")
+                    fold_method = gr.Dropdown(["median", "mean"], value=PULSATION.fold.fold_method, label="one_cycle_fold_method")
+                    n_cycle = gr.Number(value=PULSATION.fold.n_cycle, precision=0, label="n_cycle")
+                    n_bins = gr.Number(value=PULSATION.fold.n_bins, precision=0, label="n_bins")
+                    sigma_col = gr.Number(value=PULSATION.extraction.sigma_col, label="sigma_col")
                     expected_bpm = gr.Number(value=0, label="expected_bpm (HR; 0 = auto)")
-                    bpm_band_frac = gr.Number(value=PULSATION.expected_bpm_band_frac, label="expected_bpm_band_frac")
-                    col_start = gr.Number(value=PULSATION.col_slice.start, precision=0, label="col_slice start")
-                    col_end = gr.Number(value=PULSATION.col_slice.stop, precision=0, label="col_slice stop (0 = none)")
+                    bpm_band_frac = gr.Number(value=PULSATION.extraction.expected_bpm_band_frac, label="expected_bpm_band_frac")
+                    col_start = gr.Number(value=PULSATION.extraction.col_slice.start, precision=0, label="col_slice start")
+                    col_end = gr.Number(value=PULSATION.extraction.col_slice.stop, precision=0, label="col_slice stop (0 = none)")
 
                 with gr.Accordion("Segmentation", open=False):
                     seg_batch = gr.Number(value=SEGMENTATION.batch_size, precision=0, label="batch_size")

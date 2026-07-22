@@ -36,3 +36,10 @@ CHECKPOINT_PATH = Path(
 )
 
 OUTPUT_FOLDER = Path("/media/clement/HD/Santiago/OcularRigidity/outputs/compressed")
+
+
+# --- Rig calibration ---------------------------------------------------
+# Axial scale of the OCT, mm per pixel. Physical property of the acquisition
+# device, not a study decision — lives here (a leaf module) so library code can
+# use it without importing the study-level ``pipeline_config``.
+AXIAL_PIXEL_SIZE_MM = 1.95e-3

@@ -31,6 +31,7 @@ from ocularrigidity.consts import (
     ROOT_REGISTERED_CACHE,
 )
 from ocularrigidity.registration.registration_engine import VideoRegistrator
+from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.segmentation.postprocess.interfaces import (
     extract_boundaries_gpu,
     rebuild_mask,
@@ -577,11 +578,13 @@ class App:
                 video=Path(rel),
                 root_masks=Path(self.output_root).expanduser(),
                 root_data=root_data,
-                skip_first_n_frames=10,
-                drop_last_n_frames=10,
-                flatten_rpe=False,
-                correct_transversal=True,
-                use_encoded_video=self.use_compressed,
+                config=RegistrationConfig(
+                    skip_first_n_frames=10,
+                    drop_last_n_frames=10,
+                    flatten_rpe=False,
+                    correct_transversal=True,
+                    use_encoded_video=self.use_compressed,
+                ),
                 cache_dir=cache_dir,
                 verbose=False,
             )

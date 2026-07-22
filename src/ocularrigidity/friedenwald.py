@@ -1,20 +1,3 @@
-"""Friedenwald ocular-rigidity model.
-
-Turns the per-cycle choroidal area change produced by
-``scripts/cohort_analysis/extract_deltaA.py`` (``deltaA_per_cycle``, px²) into a
-pulsatile choroidal volume change (µL) under a spherical-shell approximation,
-then into the Friedenwald rigidity coefficient K.
-
-Pipeline glue::
-
-    deltaA_per_cycle (px², per frame)  -- cycle_amplitude -->  ΔA (px², per cycle)
-    ΔA (px²) + AxialLength             -- deltaA_to_deltaV_uL -->  ΔV (µL)
-    ΔV (µL) + IOP + OPA                -- friedenwald_K -->        K
-
-All rig-specific calibration lives in :class:`~ocularrigidity.pipeline_config.FriedenwaldConfig`
-(singleton ``FRIEDENWALD``); pass a custom ``cfg`` to override.
-"""
-
 import numpy as np
 
 from ocularrigidity.pipeline_config import FRIEDENWALD, FriedenwaldConfig

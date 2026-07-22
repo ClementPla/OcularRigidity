@@ -28,17 +28,21 @@ def spatio_temporal_filter(
         validity_mask (Optional[np.ndarray], optional): TxW boolean array indicating which pixels are valid (True) or invalid (False). If provided, the filter will ignore invalid pixels. Defaults to None.
     """
 
-    num = gaussian_filter1d(signal, sigma=spatial_sigma, axis=1, mode="nearest")
-    den = gaussian_filter1d(
+    validity = (
         validity_mask.astype(float)
         if validity_mask is not None
-        else np.ones_like(signal),
-        sigma=spatial_sigma,
-        axis=1,
-        mode="nearest",
+        else np.ones_like(signal)
     )
-    with np.errstate(divide="ignore", invalid="ignore"):
-        spatial = np.where(den > 0.1, num / den, np.nan)
+    if spatial_sigma <= 0:
+        # No spatial smoothing: keep each column as-is, only dropping the ones
+        # with too little valid data. Normalized convolution would rescale by
+        # the validity here, which is meaningless for a delta kernel.
+        spatial = np.where(validity > 0.1, signal, np.nan)
+    else:
+        num = gaussian_filter1d(signal, sigma=spatial_sigma, axis=1, mode="nearest")
+        den = gaussian_filter1d(validity, sigma=spatial_sigma, axis=1, mode="nearest")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            spatial = np.where(den > 0.1, num / den, np.nan)
 
     nan_mask = np.isnan(spatial)
     filled = spatial.copy()
