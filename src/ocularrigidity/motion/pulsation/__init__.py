@@ -46,12 +46,15 @@ from ocularrigidity.motion.pulsation.phase import (
     IQDemodPhaseEstimator,
     IQPhaseConfig,
     MeanTrace,
+    OptimizedSpectralCombination,
     PeakLockConfig,
     PeakLockedPhaseEstimator,
     PhaseTrack,
     PowerWeightedMean,
     SelectBestComponent,
     SingleTrace,
+    SpectralCombinationConfig,
+    SpectralCombinationResult,
 )
 from ocularrigidity.motion.pulsation.pipeline import run_cardiac_pipeline
 from ocularrigidity.motion.pulsation.rate import (
@@ -69,6 +72,8 @@ from ocularrigidity.motion.pulsation.traces import (
     DecomposedTraceSource,
     MaskThicknessTraceSource,
     MaskTraceConfig,
+    PixelTraceSource,
+    PixelTraceConfig,
     Traces,
     UniformTraceConfig,
 )
@@ -91,6 +96,8 @@ __all__ = [
     "UniformTraceConfig",
     "MaskThicknessTraceSource",
     "MaskTraceConfig",
+    "PixelTraceSource",
+    "PixelTraceConfig",
     "DecomposedTraceSource",
     "DecompositionConfig",
     "Traces",
@@ -116,6 +123,9 @@ __all__ = [
     "SingleTrace",
     "MeanTrace",
     "PowerWeightedMean",
+    "OptimizedSpectralCombination",
+    "SpectralCombinationConfig",
+    "SpectralCombinationResult",
     # Legacy
     "MaskPulseExtractor",
     "PulseExtractionConfig",

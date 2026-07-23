@@ -26,6 +26,11 @@ class DecompositionConfig:
     whiten: str = "unit-variance"
     tol: float = 0.001
     fun: str = "cube"
+    # Whether to mean-center each column before decomposing (passed through to
+    # ``project_into_separable_components``). Centering is what makes PCA/ICA
+    # meaningful, but a caller studying raw amplitude (e.g. SVD on untouched
+    # pixel traces) may want it off.
+    normalize: bool = True
 
 
 class DecomposedTraceSource(AbstractTraceSource):
@@ -76,6 +81,7 @@ class DecomposedTraceSource(AbstractTraceSource):
             signal_in,
             method=method,
             n_components=cfg.n_components,
+            normalize=cfg.normalize,
             random_state=cfg.random_state,
             max_iter=cfg.max_iter,
             whiten=cfg.whiten,

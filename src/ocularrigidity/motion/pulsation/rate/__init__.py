@@ -13,6 +13,7 @@ from ocularrigidity.motion.pulsation.rate.fixed import FixedRateEstimator
 from ocularrigidity.motion.pulsation.rate.lomb_scargle import (
     LombScargleConfig,
     LombScargleRateEstimator,
+    lomb_scargle_power,
 )
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "AbstractRateEstimator",
     "LombScargleRateEstimator",
     "LombScargleConfig",
+    "lomb_scargle_power",
     "FixedRateEstimator",
 ]

@@ -9,9 +9,12 @@ estimator (or a new aggregator, in ``aggregation.py``) and export it below.
 from ocularrigidity.motion.pulsation.phase.aggregation import (
     AbstractTraceAggregator,
     MeanTrace,
+    OptimizedSpectralCombination,
     PowerWeightedMean,
     SelectBestComponent,
     SingleTrace,
+    SpectralCombinationConfig,
+    SpectralCombinationResult,
 )
 from ocularrigidity.motion.pulsation.phase.base import (
     AbstractPhaseEstimator,
@@ -48,4 +51,7 @@ __all__ = [
     "SingleTrace",
     "MeanTrace",
     "PowerWeightedMean",
+    "OptimizedSpectralCombination",
+    "SpectralCombinationConfig",
+    "SpectralCombinationResult",
 ]

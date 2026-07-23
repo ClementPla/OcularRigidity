@@ -14,6 +14,17 @@ from ocularrigidity.motion.pulsation.rate.base import (
 from ocularrigidity.motion.pulsation.traces import Traces
 
 
+def lomb_scargle_power(t: np.ndarray, y: np.ndarray, freqs: np.ndarray) -> np.ndarray:
+    """Lomb-Scargle power of a single trace on a given frequency grid.
+
+    Factored out so callers that need a periodogram on an arbitrary
+    combination of traces (e.g. an optimizer's objective, evaluated once per
+    iteration) share the same normalization as :meth:`LombScargleRateEstimator.score`
+    instead of re-deriving it.
+    """
+    return LombScargle(t, y, normalization="standard").power(freqs)
+
+
 @dataclass
 class LombScargleConfig:
     band: CardiacBand = field(default_factory=CardiacBand)
