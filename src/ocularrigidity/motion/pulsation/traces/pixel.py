@@ -40,6 +40,7 @@ class PixelTraceConfig(UniformTraceConfig):
     # spatial smoothing that makes sense for per-A-scan traces (mask.py) is
     # off by default here.
     sigma_col: float = 0.0
+    normalize_intensity: bool = True
 
 
 class PixelTraceSource(AbstractUniformTraceSource):
@@ -198,3 +199,6 @@ class PixelTraceSource(AbstractUniformTraceSource):
         super().reset()
         self._base_roi = None
         self._scale_of_trace = None
+
+    def filtered_signal(self) -> np.ndarray:
+        return self.raw_signal()
