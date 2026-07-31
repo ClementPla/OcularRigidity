@@ -108,13 +108,13 @@ OVERWRITE = False
 
 # --- Prior physiologique (bande cardiaque) ---
 BPM_RANGE = (30.0, 180.0)
-BAND_FRAC = (0.1)  # 1 - Fraction de la bande cardiaque attendue
+BAND_FRAC = (0.5)  # 1 - Fraction de la bande cardiaque attendue
 
 # --- 1) Traces pixel, multiresolution (defauts de PixelTraceConfig, rendus
 # explicites ici pour pouvoir les ajuster sans aller dans le package) ---
-COL_FRAC = (1 / 3, 2 / 3)
-ROW_FRAC = (0.0, 1 / 3)
-BLOCK_SIZES = (1, 2, 3, 4, 5)
+COL_FRAC = (1 / 4, 3 / 4)
+ROW_FRAC = (0.0, 1.0)
+BLOCK_SIZES = (1, 2, 3)
 
 # --- 2) SVD, sans passe-bande (structurel, cf. DecomposedTraceSource) ni
 # normalisation des donnees ---
@@ -127,7 +127,7 @@ SPECTRAL_COMBINATION_CONFIG = SpectralCombinationConfig(max_candidates=N_SVD_COM
 HILBERT_CONFIG = HilbertPhaseConfig()  # pas de lissage additionnel par defaut
 
 # --- Repliement one-cycle ---
-N_BINS = 30
+N_BINS = 10
 N_CYCLE = 3
 TARGET_FRAMES_PER_BIN = 25
 FOLD_METHOD = "median"
@@ -312,9 +312,9 @@ def process_condition(path_condi: Path) -> dict | None:
 
     out_dir = variant_root / OUTPUT_SUBDIR / astro / moment / condition
     out_video = out_dir / "one_cycle.mp4"
-    if out_video.exists() and not OVERWRITE:
-        print(f"  [skip] deja traite : {out_video}")
-        return None
+    #if out_video.exists() and not OVERWRITE:
+        #print(f"  [skip] deja traite : {out_video}")
+        #return None
 
     raw_dir = find_raw_dir(path_condi)
     if raw_dir is None:

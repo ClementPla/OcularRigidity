@@ -29,12 +29,12 @@ class PixelTraceConfig(UniformTraceConfig):
     # that column's own row extent within the ROI: (0.0, 1/3) keeps only the
     # top/innermost third of the choroid band at each A-scan (row 0 = top of
     # frame). Set either to None to skip that restriction.
-    col_frac: Optional[tuple[float, float]] = (1 / 3, 2 / 3)
-    row_frac: Optional[tuple[float, float]] = (0.0, 1 / 3)
+    col_frac: Optional[tuple[float, float]] = (1 / 4, 3 / 4)
+    row_frac: Optional[tuple[float, float]] = (0.0, 1.0)
     # Spatial median-pooling scales, in pixels. 1 keeps the raw per-pixel
     # traces; each b > 1 adds one trace per non-overlapping b x b block,
     # imitating a multi-resolution pyramid ahead of the SVD/ICA step.
-    block_sizes: tuple[int, ...] = (1, 2, 3, 4, 5)
+    block_sizes: tuple[int, ...] = (1, 3, 5)
     # Flattening a 2-D pixel ROI collapses spatial adjacency, and traces at
     # different block sizes sit side by side in the same axis besides — so the
     # spatial smoothing that makes sense for per-A-scan traces (mask.py) is
@@ -160,6 +160,10 @@ class PixelTraceSource(AbstractUniformTraceSource):
         ``(T, N_total)``."""
         frames = self.registered_video.registered_frames
         base_roi = self.base_roi
+        cfg: PixelTraceConfig = self.config
+
+        if cfg.normalize_intensity:
+            frames = frames / np.nanmean(frames, axis=(1, 2), keepdims=True)
 
         columns = []
         scale_of_trace = []
@@ -200,5 +204,13 @@ class PixelTraceSource(AbstractUniformTraceSource):
         self._base_roi = None
         self._scale_of_trace = None
 
+    def normalized_signal(self) -> None:
+        """Normalize each trace to zero mean, unit variance, in-place."""
+        if not self.config.normalize_intensity:
+            return
+        sig = self.raw_signal()
+        sig = sig / np.nanmean(sig, axis=1, keepdims=True)
+        return sig
+
     def filtered_signal(self) -> np.ndarray:
-        return self.raw_signal()
+       return self.raw_signal()
