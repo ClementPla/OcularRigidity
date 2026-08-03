@@ -1,4 +1,4 @@
-"""Per-case table of ΔA, ΔCT and Friedenwald K for the selected method."""
+"""Per-case table of ΔA, ΔCT, minCT and Friedenwald K for the selected method."""
 
 import streamlit as st
 
@@ -10,10 +10,10 @@ from ocularrigidity.viewer.streamlit_explorer._common import (
 
 st.set_page_config(page_title="Cases", layout="wide")
 
-root, suffix, iop = require_selection()
-df = cached_case_table(root, suffix, iop)
+sel = require_selection()
+df = cached_case_table(sel)
 
-st.title(f"Cases — {C.pretty_method(suffix)}")
+st.title(f"Cases — {sel.method_label} · {sel.cohort_label}")
 
 # --- filters -----------------------------------------------------------------
 f1, f2, f3 = st.columns([1, 1, 2])
@@ -24,7 +24,7 @@ search = f3.text_input("Filter by case_id / patient (substring)", "")
 
 view = df.copy()
 if only_k:
-    view = view[view["K_thickness"].notna()]
+    view = view[view["K"].notna()]
 if sel_eyes:
     view = view[view["Eye"].isin(sel_eyes)]
 if search.strip():
@@ -38,11 +38,20 @@ st.caption(f"{len(view)} / {len(df)} cases")
 
 # Per-column number formatting.
 fmt = {
-    "deltaA": "%.0f", "minimal_area": "%.0f",
-    "deltaCT": "%.2f", "deltaCT_estimated": "%.2f",
-    "IOP": "%.1f", "OPA": "%.1f", "AxialLength": "%.2f",
-    "dV_uL_area": "%.3f", "dV_uL_thickness": "%.3f",
-    "K_area": "%.4f", "K_thickness": "%.4f",
+    "deltaA": "%.0f",
+    "minimal_area": "%.0f",
+    "deltaCT": "%.2f",
+    "deltaCT_estimated": "%.2f",
+    "minCT": "%.1f",
+    "RelativeGrowth": "%.4f",
+    "IOP": "%.1f",
+    "OPA": "%.1f",
+    "AxialLength": "%.2f",
+    "HR": "%.0f",
+    "dV_uL_area": "%.3f",
+    "dV_uL": "%.3f",
+    "K_area": "%.4f",
+    "K": "%.4f",
 }
 col_config = {
     c: st.column_config.NumberColumn(c, format=fmt[c]) for c in fmt if c in view.columns
@@ -55,7 +64,7 @@ st.dataframe(
 st.download_button(
     "Download CSV",
     view.to_csv(index=False).encode(),
-    file_name=f"cases_{suffix}.csv",
+    file_name=f"cases_{sel.suffix}.csv",
     mime="text/csv",
 )
 

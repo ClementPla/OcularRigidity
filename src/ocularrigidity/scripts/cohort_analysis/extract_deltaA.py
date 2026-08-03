@@ -12,18 +12,23 @@ from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.closing_structures import trim_choroid
 import pickle
 from tqdm.auto import tqdm
+import numpy as np
 
 
 def extract_displacement(
-    video_path: Path,
-    mask_path: Path,
+    video_path: Path = None,
+    mask_path: Path = None,
+    video: np.ndarray = None,
+    mask: np.ndarray = None,
     N_cycles: int = DELTA_A.n_cycles,
     method=DELTA_A.method,
     smooth_window: int = DELTA_A.smooth_window,
     lk_window: int = DELTA_A.lk_window,
 ):
-    video = read_gray(video_path)
-    mask = load_mask(mask_path)
+    if video is None:
+        video = read_gray(video_path)
+    if mask is None:
+        mask = load_mask(mask_path)
 
     trimmed_masks = trim_choroid(
         mask,
@@ -91,4 +96,5 @@ if __name__ == "__main__":
             with open(result_filepath, "wb") as f:
                 pickle.dump(results, f)
         except Exception as e:
-            print(f"Error processing {segmented_dir}: {e}")
+            print(f"Error processing {segmented_dir}: {type(e).__name__}: {e}")
+            continue

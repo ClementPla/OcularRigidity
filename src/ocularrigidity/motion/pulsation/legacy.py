@@ -5,7 +5,8 @@
 that assembles the historical recipe from the flat
 :class:`PulseExtractionConfig`:
 
-    MaskThicknessTraceSource → DecomposedTraceSource(ICA)
+    MaskThicknessTraceSource → BandPassFilterTraceSource
+                             → DecomposedTraceSource(ICA)
                              → LombScargleRateEstimator
                              → IQDemod / PeakLocked phase
 
@@ -36,6 +37,8 @@ from ocularrigidity.motion.pulsation.rate import (
     LombScargleRateEstimator,
 )
 from ocularrigidity.motion.pulsation.traces import (
+    BandPassFilterTraceConfig,
+    BandPassFilterTraceSource,
     DecompositionConfig,
     DecomposedTraceSource,
     MaskThicknessTraceSource,
@@ -106,15 +109,29 @@ class PulseExtractionConfig:
 
     def split(
         self,
-    ) -> tuple[MaskTraceConfig, DecompositionConfig, LombScargleConfig, IQPhaseConfig]:
-        """Explode this bundle into the per-component configs."""
+    ) -> tuple[
+        MaskTraceConfig,
+        BandPassFilterTraceConfig,
+        DecompositionConfig,
+        LombScargleConfig,
+        IQPhaseConfig,
+    ]:
+        """Explode this bundle into the per-component configs.
+
+        ``band`` and ``sigma_col`` go to the bandpass stage: they used to be
+        fields of ``MaskTraceConfig``, back when the uniform source filtered its
+        own output. They now belong to :class:`BandPassFilterTraceSource`.
+        """
         band = self.band
         return (
             MaskTraceConfig(
+                verbose=self.verbose,
+                col_slice=self.col_slice,
+            ),
+            BandPassFilterTraceConfig(
                 band=band,
                 sigma_col=self.sigma_col,
                 verbose=self.verbose,
-                col_slice=self.col_slice,
             ),
             DecompositionConfig(
                 method=self.ICA_or_PCA,
@@ -145,14 +162,16 @@ class MaskPulseExtractor(PulseExtractor):
         config: Optional[PulseExtractionConfig] = None,
     ):
         self.config = config or PulseExtractionConfig()
-        trace_cfg, decomp_cfg, ls_cfg, iq_cfg = self.config.split()
+        trace_cfg, filter_cfg, decomp_cfg, ls_cfg, iq_cfg = self.config.split()
 
-        source = DecomposedTraceSource(
-            MaskThicknessTraceSource(
-                registered_video, video_timeline_aligner, trace_cfg
-            ),
-            decomp_cfg,
+        # Held by name rather than reached through ``trace_source.source.source``:
+        # the legacy surface below reads from specific stages, and walking the
+        # chain positionally breaks the moment a stage is inserted.
+        self._mask_source = MaskThicknessTraceSource(
+            registered_video, video_timeline_aligner, trace_cfg
         )
+        self._filter_source = BandPassFilterTraceSource(self._mask_source, filter_cfg)
+        source = DecomposedTraceSource(self._filter_source, decomp_cfg)
         super().__init__(
             trace_source=source,
             phase_estimator=IQDemodPhaseEstimator(
@@ -194,10 +213,6 @@ class MaskPulseExtractor(PulseExtractor):
         return self.config.band.effective_bpm_range
 
     @property
-    def _mask_source(self) -> MaskThicknessTraceSource:
-        return self.trace_source.source
-
-    @property
     def signal(self) -> np.ndarray:
         return self._mask_source.signal
 
@@ -215,7 +230,8 @@ class MaskPulseExtractor(PulseExtractor):
 
     @property
     def filtered_signal(self):
-        return self._mask_source.filtered_signal
+        """The bandpassed thickness map, now owned by the filter stage."""
+        return self._filter_source.filtered_signal
 
     @property
     def component_kept_mask(self):

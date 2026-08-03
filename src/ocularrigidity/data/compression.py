@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import os
 from tqdm.auto import tqdm
@@ -15,17 +17,26 @@ import imageio
 
 def cube_to_mp4(cube: np.ndarray, out_path: str, crf: int = 23, fps: int = 30):
     """
-    Compress (n, H, W) uint8 cube to H.265 MP4.
+    Compress (n, H, W) grayscale or (n, H, W, 3) RGB uint8 cube to H.265 MP4.
 
     crf: 0 (lossless) to 51 (terrible). 18-23 is visually near-lossless.
          For OCT display, 23-28 is usually fine.
     """
+    is_color = cube.ndim == 4
     writer = imageio.get_writer(
         out_path,
         fps=fps,
         codec="libx265",
         quality=None,
-        ffmpeg_params=["-crf", str(crf), "-preset", "medium", "-pix_fmt", "yuv420p"],
+        macro_block_size=2,
+        ffmpeg_params=[
+            "-crf",
+            str(crf),
+            "-preset",
+            "medium",
+            "-pix_fmt",
+            "yuv444p" if is_color else "yuv420p",
+        ],
     )
     for frame in cube:
         writer.append_data(frame)
@@ -76,14 +87,18 @@ def cube_to_mp4_fastest(
     ffmpeg="/home/clement/miniforge-pypy3/envs/dl/bin/ffmpeg",
 ):
     cube = np.ascontiguousarray(cube, dtype=np.uint8)
-    T, H, W = cube.shape
+    is_color = cube.ndim == 4 and cube.shape[3] == 3
+    if is_color:
+        T, H, W, C = cube.shape
+    else:
+        T, H, W = cube.shape
     cmd = [
         ffmpeg,
         "-y",
         "-f",
         "rawvideo",
         "-pix_fmt",
-        "gray",
+        "gray" if not is_color else "rgb24",
         "-s",
         f"{W}x{H}",
         "-r",
@@ -169,6 +184,57 @@ def cube_to_mkv_lossless(
         raise RuntimeError("ffmpeg failed")
 
 
+def mkv_to_cube(
+    path,
+    T=None,
+    H=None,
+    W=None,
+    ffmpeg="/home/clement/miniforge-pypy3/envs/dl/bin/ffmpeg",
+):
+    """Decode an FFV1/MKV lossless cube to a TxHxW uint8 numpy cube.
+
+    Counterpart to `cube_to_mkv_lossless`. FFV1 is a CPU-only codec, so there
+    is no GPU path here; the speed comes from the raw pipe + `readinto`
+    (no per-frame Python copy) plus `-threads 0` for multi-core slice decode.
+
+    If T/H/W are None, probes the file with ffprobe first.
+    """
+    if T is None or H is None or W is None:
+        T, H, W = _probe(path, ffmpeg)
+
+    cmd = [
+        ffmpeg,
+        "-loglevel",
+        "warning",
+        "-threads",
+        "0",
+        "-i",
+        path,
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "gray",
+        "-an",
+        "pipe:1",
+    ]
+
+    cube = np.empty((T, H, W), dtype=np.uint8)
+    buf = memoryview(cube).cast("B")
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=0)
+    n, total = 0, buf.nbytes
+    while n < total:
+        got = p.stdout.readinto(buf[n:])
+        if not got:
+            break
+        n += got
+    p.stdout.close()
+    rc = p.wait()
+    if rc != 0 or n != total:
+        raise RuntimeError(f"ffmpeg failed: rc={rc}, read {n}/{total} bytes")
+    return cube
+
+
 def read_gray(path, indices=None):
     path = str(path)
     vr = VideoReader(path, ctx=cpu(0))
@@ -196,50 +262,20 @@ def read_luma(path, indices):
     return np.stack([out[i] for i in indices])
 
 
-def mp4_to_cube(
-    path,
-    T=None,
-    H=None,
-    W=None,
-    ffmpeg="/home/clement/miniforge-pypy3/envs/dl/bin/ffmpeg",
-    use_gpu=True,
-):
-    """Decode HEVC mp4 to a TxHxW uint8 numpy cube.
+def mp4_to_cube(path: str | Path) -> np.ndarray:
+    """Decode HEVC mp4 to a TxHxW uint8 numpy cube using native C FFmpeg bindings.
 
-    If T/H/W are None, probes the file with ffprobe first.
+    Fast, thread-safe, and zero subprocess overhead.
     """
-    if T is None or H is None or W is None:
-        T, H, W = _probe(path, ffmpeg)
+    container = av.open(str(path))
+    stream = container.streams.video[0]
+    stream.thread_type = "AUTO"  # Enables multi-threaded decoding in C
 
-    cmd = [ffmpeg, "-loglevel", "warning"]
-    if use_gpu:
-        cmd += ["-hwaccel", "cuda"]
-    cmd += [
-        "-i",
-        path,
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "gray",
-        "-an",
-        "pipe:1",
-    ]
+    # Extract grayscale frames directly into numpy arrays
+    frames = [frame.to_ndarray(format="gray") for frame in container.decode(stream)]
+    container.close()
 
-    cube = np.empty((T, H, W), dtype=np.uint8)
-    buf = memoryview(cube).cast("B")
-
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=0)
-    n, total = 0, buf.nbytes
-    while n < total:
-        got = p.stdout.readinto(buf[n:])
-        if not got:
-            break
-        n += got
-    p.stdout.close()
-    rc = p.wait()
-    if rc != 0 or n != total:
-        raise RuntimeError(f"ffmpeg failed: rc={rc}, read {n}/{total} bytes")
-    return cube
+    return np.stack(frames, axis=0)  # Shape: (T, H, W) uint8
 
 
 def _probe(path, ffmpeg):

@@ -15,8 +15,6 @@ Swap any one of the three without touching the others. ``rate_estimator=None``
 is a valid configuration for phase estimators that recover the rate themselves.
 """
 
-from typing import Optional
-
 import numpy as np
 
 from ocularrigidity.motion.pulsation.phase import (
@@ -32,10 +30,13 @@ from ocularrigidity.motion.pulsation.rate import (
     LombScargleRateEstimator,
     RateEstimate,
 )
+from ocularrigidity.motion.pulsation.band import CardiacBand
 from ocularrigidity.motion.pulsation.traces import (
     AbstractTraceSource,
-    DecompositionConfig,
+    BandPassFilterTraceConfig,
+    BandPassFilterTraceSource,
     DecomposedTraceSource,
+    DecompositionConfig,
     MaskThicknessTraceSource,
     MaskTraceConfig,
     Traces,
@@ -47,7 +48,7 @@ class PulseExtractor:
         self,
         trace_source: AbstractTraceSource,
         phase_estimator: AbstractPhaseEstimator,
-        rate_estimator: Optional[AbstractRateEstimator] = None,
+        rate_estimator: AbstractRateEstimator | None = None,
         registered_video=None,
         aligner=None,
     ):
@@ -62,9 +63,9 @@ class PulseExtractor:
         )
         self.aligner = aligner or self._find(trace_source, "aligner")
 
-        self._rate: Optional[RateEstimate] = None
-        self._phase: Optional[PhaseTrack] = None
-        self._freq_override: Optional[float] = None
+        self._rate: RateEstimate | None = None
+        self._phase: PhaseTrack | None = None
+        self._freq_override: float | None = None
 
     @staticmethod
     def _find(source, attr):
@@ -85,7 +86,7 @@ class PulseExtractor:
         return self.trace_source.traces
 
     @property
-    def rate(self) -> Optional[RateEstimate]:
+    def rate(self) -> RateEstimate | None:
         """The rate estimate, or None when the rate stage was bypassed."""
         if self.rate_estimator is None:
             return None
@@ -214,27 +215,33 @@ class PulseExtractor:
         registered_video,
         aligner,
         *,
-        trace_config: Optional[MaskTraceConfig] = None,
-        decomposition: Optional[DecompositionConfig] = None,
-        rate_config: Optional[LombScargleConfig] = None,
-        phase_estimator: Optional[AbstractPhaseEstimator] = None,
-        aggregator: Optional[AbstractTraceAggregator] = None,
-        override_bpm: Optional[float] = None,
+        trace_config: MaskTraceConfig | None = None,
+        filter_config: BandPassFilterTraceConfig | None = None,
+        decomposition: DecompositionConfig | None = None,
+        rate_config: LombScargleConfig | None = None,
+        phase_estimator: AbstractPhaseEstimator | None = None,
+        aggregator: AbstractTraceAggregator | None = None,
+        override_bpm: float | None = None,
     ) -> "PulseExtractor":
-        """The historical pipeline: thickness → ICA → Lomb-Scargle → phase.
+        """The historical pipeline: thickness → bandpass → ICA → Lomb-Scargle → phase.
 
         ``decomposition=None`` skips the ICA/PCA step and works directly on the
         per-A-scan thickness traces (in which case pair it with a ``MeanTrace``
         aggregator, since there is no "best component" to select).
+        ``filter_config=None`` skips the bandpass, feeding raw thickness on.
         """
         trace_config = trace_config or MaskTraceConfig()
         source: AbstractTraceSource = MaskThicknessTraceSource(
             registered_video, aligner, trace_config
         )
+        if filter_config is not None:
+            source = BandPassFilterTraceSource(source, filter_config)
         if decomposition is not None:
             source = DecomposedTraceSource(source, decomposition)
 
-        rate_config = rate_config or LombScargleConfig(band=trace_config.band)
+        # The band lives on the filter config now, not on the trace config.
+        band = filter_config.band if filter_config is not None else CardiacBand()
+        rate_config = rate_config or LombScargleConfig(band=band)
         rate_estimator = LombScargleRateEstimator(
             rate_config, override_bpm=override_bpm
         )

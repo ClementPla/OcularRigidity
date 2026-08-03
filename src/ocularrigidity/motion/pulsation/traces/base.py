@@ -1,26 +1,10 @@
-"""Trace sources: everything that turns a video into candidate 1-D traces.
-
-A :class:`AbstractTraceSource` promises one thing — a ``(T_kept, K)`` bundle of
-candidate temporal traces on the uniform time grid, plus the masks needed to put
-them back on the original frame timeline. *What* the traces are is up to the
-implementation.
-
-**Adding a source:** if you have a per-frame ``(T, W)`` map, subclass
-:class:`AbstractUniformTraceSource` and implement ``raw_signal`` — resampling,
-gap marking and the cardiac bandpass are done for you (see ``mask.py``). If you
-transform another source's traces, subclass :class:`AbstractTraceSource` and
-implement ``compute`` (see ``decomposition.py``).
-"""
-
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 from scipy.interpolate import interp1d
 
-from ocularrigidity.motion.filters._1d import spatio_temporal_filter
-from ocularrigidity.motion.pulsation.band import CardiacBand
 from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 
 
@@ -28,8 +12,6 @@ from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 class UniformTraceConfig:
     """Resampling + filtering shared by every ``AbstractUniformTraceSource``."""
 
-    band: CardiacBand = field(default_factory=CardiacBand)
-    sigma_col: float = 5.0
     verbose: bool = True
 
 
@@ -48,8 +30,8 @@ class Traces:
     kept_mask: np.ndarray  # (T_uniform,) bool
     gap_mask: np.ndarray  # (T_uniform,) bool
     timestamps_seconds: np.ndarray  # (T_frames,) original frame times
-    mixing: Optional[np.ndarray] = None  # (W, K) spatial pattern, if meaningful
-    source_map: Optional[np.ndarray] = None  # (T_uniform, W) signal traces came from
+    mixing: np.ndarray | None = None  # (W, K) spatial pattern, if meaningful
+    source_map: np.ndarray | None = None  # (T_uniform, W) signal traces came from
 
     @property
     def time(self) -> np.ndarray:
@@ -91,7 +73,7 @@ class AbstractTraceSource(ABC):
     """
 
     def __init__(self):
-        self._traces: Optional[Traces] = None
+        self._traces: Traces | None = None
         self.notes: list[str] = []
 
     @abstractmethod
@@ -121,7 +103,7 @@ class AbstractUniformTraceSource(AbstractTraceSource):
     def __init__(
         self,
         aligner: VideoTimelineAligner,
-        config: Optional[UniformTraceConfig] = None,
+        config: UniformTraceConfig | None = None,
     ):
         super().__init__()
         self.aligner = aligner
@@ -131,7 +113,6 @@ class AbstractUniformTraceSource(AbstractTraceSource):
         self._gap_mask = None
         self._interpolated_signal = None
         self._interpolated_validity = None
-        self._filtered_signal = None
 
     # -- subclass hooks -------------------------------------------------
     @abstractmethod
@@ -214,42 +195,17 @@ class AbstractUniformTraceSource(AbstractTraceSource):
             self._interpolated_validity = out
         return self._interpolated_validity
 
-    @property
-    def filtered_signal(self):
-        """Spatially smoothed (NaN-aware) and temporally bandpassed signal map."""
-        if self._filtered_signal is not None:
-            return self._filtered_signal
-
-        nyq = 0.5 * self.fs
-        lo_bpm, hi_bpm = self.config.band.effective_bpm_range
-        low = (lo_bpm / 60.0) / nyq
-        high = min((hi_bpm / 60.0) / nyq, 0.99)
-        not_gap = (~self.gap_mask).astype(np.float32)[:, None]
-        data_masked = np.nan_to_num(self.interpolated_signal, nan=0.0) * not_gap
-        valid_masked = self.interpolated_validity * not_gap
-        filtered = spatio_temporal_filter(
-            data_masked,
-            spatial_sigma=self.config.sigma_col,
-            temporal_low_freq=low,
-            temporal_high_freq=high,
-            fs=self.fs,
-            validity_mask=valid_masked,
-        )
-        filtered[self.gap_mask] = np.nan
-        self._filtered_signal = filtered
-        return self._filtered_signal
-
     def compute(self) -> Traces:
-        filtered = self.filtered_signal
-        kept = ~np.isnan(filtered).any(axis=1)
+        signal = self.interpolated_signal
+        kept = ~np.isnan(signal).any(axis=1)
         return Traces(
-            values=filtered[kept],
+            values=signal[kept],
             uniform_time=self.uniform_time,
             kept_mask=kept,
             gap_mask=self.gap_mask,
             timestamps_seconds=self.timestamps_seconds,
             mixing=None,
-            source_map=filtered,
+            source_map=signal,
         )
 
     def reset(self) -> None:

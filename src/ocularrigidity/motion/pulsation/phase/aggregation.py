@@ -35,9 +35,6 @@ class AbstractTraceAggregator(ABC):
 
 class SelectBestComponent(AbstractTraceAggregator):
     """Keep only the trace the rate estimator judged most cardiac.
-
-    This is what the original pipeline did. Requires a rate estimate that
-    ranks traces (``best_index``).
     """
 
     def aggregate(self, traces: Traces, rate: Optional[RateEstimate]) -> np.ndarray:

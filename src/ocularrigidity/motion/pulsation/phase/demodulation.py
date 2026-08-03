@@ -14,6 +14,7 @@ from ocularrigidity.motion.pulsation.phase.base import AbstractPhaseEstimator
 class IQPhaseConfig:
     smoother_cycles: float = 2.0
     density_threshold: float = 0.5
+    freq_tolerance: float = 0.2
 
 
 class IQDemodPhaseEstimator(AbstractPhaseEstimator):
@@ -29,8 +30,8 @@ class IQDemodPhaseEstimator(AbstractPhaseEstimator):
 
     def __init__(
         self,
-        config: Optional[IQPhaseConfig] = None,
-        aggregator: Optional[AbstractTraceAggregator] = None,
+        config: IQPhaseConfig | None = None,
+        aggregator: AbstractTraceAggregator | None = None,
         per_trace: bool = False,
     ):
         super().__init__(aggregator, per_trace)
@@ -63,4 +64,11 @@ class IQDemodPhaseEstimator(AbstractPhaseEstimator):
 
         env_phase = np.arctan2(Q_lp, I_lp)
         phase = np.mod(2 * np.pi * f0 * t + env_phase, 2 * np.pi)
+
+        # Estimate the instantaneous frequency from the unwrapped phase
+        unwrapped_phase = np.unwrap(phase)
+        inst_freq = np.gradient(unwrapped_phase, dt) / (2 * np.pi)
+        # Remove from good the points where the instantaneous frequency is not within a reasonable range of the expected frequency
+        freq_tolerance = cfg.freq_tolerance * f0  # 20% tolerance
+        good = good & (np.abs(inst_freq - f0) < freq_tolerance)
         return phase, good

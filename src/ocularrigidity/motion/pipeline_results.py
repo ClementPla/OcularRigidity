@@ -13,7 +13,25 @@ if TYPE_CHECKING:
     from ocularrigidity.motion.pulsation import (
         MaskPulseExtractor,
         NCycleReconstructor,
+        PulseExtractor,
     )
+
+
+def _find_stage(source, attr: str):
+    """Walk a wrapped trace-source chain for the stage carrying ``attr``.
+
+    The composed chain nests sources (``Decomposed(Coherent(BandPass(Mask)))``),
+    and the results object needs values that live on specific links of it.
+    Walking by capability rather than by position keeps this working when a
+    stage is inserted or dropped.
+    """
+    seen = set()
+    while source is not None and id(source) not in seen:
+        seen.add(id(source))
+        if hasattr(source, attr):
+            return source
+        source = getattr(source, "source", None)
+    return None
 
 
 @dataclass
@@ -66,6 +84,10 @@ class CardiacPipelineResults:
     # against results too.
     @property
     def expected_bpm(self):
+        """The HR the band was anchored on, whichever chain produced this."""
+        if isinstance(self.config, dict):  # composed chain: per-stage configs
+            rate = self.config.get("rate")
+            return rate.band.expected_bpm if rate is not None else None
         return self.config.expected_bpm
 
     @property
@@ -112,6 +134,88 @@ class CardiacPipelineResults:
             good_uniform_peak_locked=ex.good_uniform_peak_locked,
             phase_per_frame_peak_locked=ex.phase_per_frame_peak_locked,
             good_per_frame_peak_locked=ex.good_per_frame_peak_locked,
+            confidence=ex.confidence,
+            notes=notes,
+            cycles=rec.cycles if rec is not None else None,
+            counts=rec.counts if rec is not None else None,
+            n_bins=rec.n_bins if rec is not None else None,
+            n_cycle=rec.n_cycle if rec is not None else None,
+        )
+
+    @classmethod
+    def from_composed(
+        cls,
+        extractor: "PulseExtractor",
+        reconstructor: "Optional[NCycleReconstructor]" = None,
+        *,
+        stage_configs: Optional[dict] = None,
+    ) -> "CardiacPipelineResults":
+        """Package a composed :class:`PulseExtractor` (the test.ipynb chain).
+
+        The legacy :meth:`from_objects` reads a surface only
+        ``MaskPulseExtractor`` has. A composed extractor exposes the same
+        results through its stages instead, so they are collected here.
+
+        ``config`` holds the per-stage config dict rather than a
+        ``PulseExtractionConfig`` — that is the provenance for this chain.
+        The peak-locked fields have no counterpart (the composed extractor *is*
+        one phase method) and are filled with NaN / False, which is what the
+        legacy runs wrote whenever peak locking failed to lock.
+        """
+        ex = extractor
+        rec = reconstructor
+        reg = ex.registered_video
+
+        filter_stage = _find_stage(ex.trace_source, "filtered_signal")
+        uniform_stage = _find_stage(ex.trace_source, "interpolated_signal")
+        rate = ex.rate
+
+        n_uniform = len(ex.uniform_time)
+        n_frames = len(ex.timestamps_seconds)
+        nan_uniform = np.full(n_uniform, np.nan)
+        nan_frames = np.full(n_frames, np.nan)
+
+        notes = list(ex.notes) + (list(rec.notes) if rec is not None else [])
+        return cls(
+            video=reg.video,
+            config=stage_configs,
+            fold_config=rec.config if rec is not None else None,
+            skip_first_n_frames=reg.skip_first_n_frames,
+            drop_last_n_frames=reg.drop_last_n_frames,
+            flatten_rpe=reg.flatten_rpe,
+            correct_transversal=reg.correct_transversal,
+            bpm_range=(
+                stage_configs["rate"].band.effective_bpm_range
+                if stage_configs and "rate" in stage_configs
+                else (np.nan, np.nan)
+            ),
+            override_cardiac_freq=ex._freq_override,
+            registered_boundaries=reg.registered_lines,
+            timestamps_seconds=ex.timestamps_seconds,
+            uniform_time=ex.uniform_time,
+            gap_mask=ex.gap_mask,
+            signal=uniform_stage.signal if uniform_stage is not None else None,
+            interpolated_signal=(
+                uniform_stage.interpolated_signal if uniform_stage is not None else None
+            ),
+            filtered_signal=(
+                filter_stage.filtered_signal if filter_stage is not None else None
+            ),
+            separable_components=ex.traces.values,
+            ica_mixing=ex.traces.mixing,
+            lomb_scargle_results=(
+                rate.diagnostics if rate is not None else {}
+            ),
+            best_component_idx=rate.best_index if rate is not None else None,
+            cardiac_freq=ex.cardiac_freq,
+            phase_uniform=ex.phase_uniform,
+            good_uniform=ex.good_uniform,
+            phase_per_frame=ex.phase_per_frame,
+            good_per_frame=ex.good_per_frame,
+            phase_uniform_peak_locked=nan_uniform,
+            good_uniform_peak_locked=np.zeros(n_uniform, dtype=bool),
+            phase_per_frame_peak_locked=nan_frames,
+            good_per_frame_peak_locked=np.zeros(n_frames, dtype=bool),
             confidence=ex.confidence,
             notes=notes,
             cycles=rec.cycles if rec is not None else None,

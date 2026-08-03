@@ -41,7 +41,7 @@ def load_measurements(
     include_HR: bool = False,
     include_axial_length: bool = False,
     which_study: Optional[Study] = None,
-    iop_instrument: str = "Pascal IOP",   # 'Pascal IOP' (diastolic) matches Pascal OPA
+    iop_instrument: str = "Pascal IOP",  # 'Pascal IOP' (diastolic) matches Pascal OPA
     verbose: bool = False,
 ) -> pd.DataFrame:
     with sqlite3.connect(MEASUREMENTS_PATH) as con:
@@ -55,7 +55,7 @@ def load_measurements(
 
     # Clean the main video dataframe
     df = df[~df["MeasureValue"].str.startswith("\\\\Usereve")]
-    df["MeasureValue"] = df["MeasureValue"].str.replace("\\\\", "/", regex=False)
+    df["MeasureValue"] = df["MeasureValue"].str.replace("\\", "/", regex=False)
     df = df.dropna(subset=["MeasureValue"])
 
     # SQLite LIKE is case-insensitive, so 'PLEX'/'Plex' variants both arrive ->
@@ -75,7 +75,9 @@ def load_measurements(
 
     if include_OPA and full_raw_df is not None:
         df = _merge_measure(
-            df, full_raw_df, "OPA",
+            df,
+            full_raw_df,
+            "OPA",
             measure_names=["Pascal OPA"],
             on_keys=["PatientId", "Eye", "Date"],
             numeric=True,
@@ -88,7 +90,9 @@ def load_measurements(
         # if you want — but do NOT silently mix Goldman/ORA conventions.
         iop_priority = [iop_instrument]
         df = _merge_measure(
-            df, full_raw_df, "IOP",
+            df,
+            full_raw_df,
+            "IOP",
             measure_names=iop_priority,
             on_keys=["PatientId", "Eye", "Date"],
             numeric=True,
@@ -101,7 +105,9 @@ def load_measurements(
         # AL is static per eye -> merge on (PatientId, Eye) only, ignoring Date.
         # Prefer IOLMaster (optical biometry) over generic 'Axial Length'.
         df = _merge_measure(
-            df, full_raw_df, "AxialLength",
+            df,
+            full_raw_df,
+            "AxialLength",
             measure_names=["IOLMaster AL", "Axial Length"],
             on_keys=["PatientId", "Eye"],
             numeric=True,
@@ -111,7 +117,9 @@ def load_measurements(
 
     if include_HR and full_raw_df is not None:
         df = _merge_measure(
-            df, full_raw_df, "HR",
+            df,
+            full_raw_df,
+            "HR",
             measure_names=["HR"],
             on_keys=["PatientId", "Date"],
             numeric=True,

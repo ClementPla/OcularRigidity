@@ -1,7 +1,7 @@
 import numpy as np
 
 from ocularrigidity.motion.one_cycle import estimate_cardiac_amplitude
-from ocularrigidity.motion.pulsation import run_cardiac_pipeline
+from ocularrigidity.motion.pulsation.pipeline import run_composed_pipeline
 from ocularrigidity.consts import (
     ROOT_MASKS,
     ROOT_DATA_MNT,
@@ -24,13 +24,14 @@ from ocularrigidity.segmentation.inference import infer
 OVERWRITE = False
 
 
-def compute_one_cycle(
-    root_one_cycle,
-    root_measures,
-    method="pca",
-    phase_method_for_fold="iq",
-    cache_dir=None,
-):
+def compute_one_cycle(root_one_cycle, root_measures, cache_dir=None):
+    """Fold every cohort video into ``N_CYCLES`` cardiac cycles.
+
+    The recipe is the composed chain pinned in ``PULSATION.chain`` — the one
+    validated in notebooks/pipeline/test.ipynb. It no longer sweeps
+    method/phase: the chain fixes PCA + IQ, so the output directory names
+    (``one_cycle_pca_iq`` / ``measures_pca_iq``) are set by the caller.
+    """
     df = load_measurements(include_HR=True)
 
     for index, row in tqdm(df.iterrows(), total=len(df)):
@@ -52,34 +53,32 @@ def compute_one_cycle(
         one_cycle_path = root_one_cycle / video / "one_cycle.mkv"
         if (one_cycle_path.exists() and not OVERWRITE) and not process_anyway:
             continue
-        extraction_config, fold_config = PULSATION.for_video(
-            method=method,
-            phase_method=phase_method_for_fold,
-            expected_bpm=HR,
-        )
+        stage_configs, fold_config = PULSATION.chain_for_video(expected_bpm=HR)
         try:
-            result: CardiacPipelineResults = run_cardiac_pipeline(
+            result: CardiacPipelineResults = run_composed_pipeline(
                 video_relpath=video,
                 root_masks=ROOT_MASKS,
                 root_data=ROOT_COMPRESSED_VIDEO,
                 timestamps_path=ROOT_DATA_MNT / video / "timestamp.txt",
-                config=extraction_config,
+                stage_configs=stage_configs,
                 fold_config=fold_config,
                 registration_config=REGISTRATION,
                 compute_n_cycle_video=True,
                 cache_dir=cache_dir,
             )
+            one_cycle_path.parent.mkdir(parents=True, exist_ok=True)
+            cube_to_mkv_lossless(
+                result.cycles,
+                str(one_cycle_path.parent / "one_cycle.mkv"),
+                fps=PULSATION.output_fps,
+            )
+            measure_path.parent.mkdir(parents=True, exist_ok=True)
+            result.save(measure_path, include_cycles=False)
         except Exception as e:
-            print(f"Error processing {video}: {e}")
+            # Writing is inside the try as well: a case that folds but fails to
+            # encode should not take the cohort down either.
+            print(f"Error processing {video}: {type(e).__name__}: {e}")
             continue
-        one_cycle_path.parent.mkdir(parents=True, exist_ok=True)
-        cube_to_mkv_lossless(
-            result.cycles,
-            str(one_cycle_path.parent / "one_cycle.mkv"),
-            fps=PULSATION.output_fps,
-        )
-        measure_path.parent.mkdir(parents=True, exist_ok=True)
-        result.save(measure_path, include_cycles=False)
 
 
 def extract_deltaY_from_one_cycle(
@@ -158,8 +157,6 @@ if __name__ == "__main__":
             compute_one_cycle(
                 root_one_cycle,
                 root_measures,
-                method=method,
-                phase_method_for_fold=phase_method,
                 cache_dir=ROOT_REGISTERED_CACHE,
             )
             extract_deltaY_from_one_cycle(

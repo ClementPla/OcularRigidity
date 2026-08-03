@@ -1,7 +1,6 @@
 """Beat-by-beat phase, locked to detected systolic peaks."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from scipy.signal import find_peaks
@@ -37,15 +36,15 @@ class PeakLockedPhaseEstimator(AbstractPhaseEstimator):
 
     def __init__(
         self,
-        config: Optional[PeakLockConfig] = None,
-        aggregator: Optional[AbstractTraceAggregator] = None,
-        band: Optional[CardiacBand] = None,
+        config: PeakLockConfig | None = None,
+        aggregator: AbstractTraceAggregator | None = None,
+        band: CardiacBand | None = None,
     ):
         super().__init__(aggregator, per_trace=False)
         self.config = config or PeakLockConfig()
         self.band = band or CardiacBand()
 
-    def _nominal_freq(self, rate: Optional[RateEstimate]) -> float:
+    def _nominal_freq(self, rate: RateEstimate | None) -> float:
         if rate is not None and np.isfinite(rate.freq):
             return rate.freq
         return self.band.effective_hz_range[1]

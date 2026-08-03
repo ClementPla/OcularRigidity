@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from tqdm.auto import tqdm
 
 
-def load_cube_mp4(path: str) -> np.ndarray:
+def load_cube_mp4(path: str, collapse_rgb: bool = True) -> np.ndarray:
     """
     Decode an MP4 video to a (n_frames, H, W) uint8 grayscale numpy array.
 
@@ -19,11 +19,10 @@ def load_cube_mp4(path: str) -> np.ndarray:
     """
     video = iio.imread(path)  # shape (n, H, W, 3) or (n, H, W)
 
-    if video.ndim == 4:
-        # RGB — collapse to grayscale. Taking channel 0 is fine if the source
-        # was grayscale replicated to 3 channels. Use luminance formula if
-        # you want to be safe against color drift from chroma subsampling.
+    if video.ndim == 4 and collapse_rgb:
         return video[..., 0]
+    elif video.ndim == 4 and not collapse_rgb:
+        return video
     elif video.ndim == 3:
         return video
     else:

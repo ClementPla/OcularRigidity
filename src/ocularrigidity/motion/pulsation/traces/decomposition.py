@@ -18,7 +18,9 @@ from ocularrigidity.motion.pulsation.traces.base import AbstractTraceSource, Tra
 
 @dataclass
 class DecompositionConfig:
-    method: Literal["ICA", "PCA", "ica", "pca"] = "ICA"
+    method: Literal[
+        "ICA", "PCA", "SVD", "SPARSE-PCA", "ica", "pca", "svd", "sparse-pca"
+    ] = "ICA"
     n_components: int = 16
     random_state: int = 0
     standardize_sign: bool = True
@@ -40,7 +42,7 @@ class DecomposedTraceSource(AbstractTraceSource):
     def __init__(
         self,
         source: AbstractTraceSource,
-        config: Optional[DecompositionConfig] = None,
+        config: DecompositionConfig | None = None,
     ):
         super().__init__()
         self.source = source

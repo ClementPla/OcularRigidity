@@ -65,12 +65,18 @@ from ocularrigidity.motion.pulsation.traces import (
     AbstractTraceSource,
     AbstractUniformTraceSource,
     ArrayTraceSource,
+    BandPassFilterTraceConfig,
+    BandPassFilterTraceSource,
     DecompositionConfig,
     DecomposedTraceSource,
     MaskThicknessTraceSource,
     MaskTraceConfig,
     Traces,
     UniformTraceConfig,
+)
+from ocularrigidity.motion.pulsation.traces.coherence import (
+    CoherenceConfig,
+    CoherentTraceSource,
 )
 
 #: Deprecated alias — the monolithic base class is gone, ``PulseExtractor`` is
@@ -91,6 +97,10 @@ __all__ = [
     "UniformTraceConfig",
     "MaskThicknessTraceSource",
     "MaskTraceConfig",
+    "BandPassFilterTraceSource",
+    "BandPassFilterTraceConfig",
+    "CoherentTraceSource",
+    "CoherenceConfig",
     "DecomposedTraceSource",
     "DecompositionConfig",
     "Traces",

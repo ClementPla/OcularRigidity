@@ -13,9 +13,17 @@ from ocularrigidity.motion.pulsation.traces.base import (
     Traces,
     UniformTraceConfig,
 )
+from ocularrigidity.motion.pulsation.traces.coherence import (
+    CoherenceConfig,
+    CoherentTraceSource,
+)
 from ocularrigidity.motion.pulsation.traces.decomposition import (
-    DecompositionConfig,
     DecomposedTraceSource,
+    DecompositionConfig,
+)
+from ocularrigidity.motion.pulsation.traces.filter import (
+    BandPassFilterTraceConfig,
+    BandPassFilterTraceSource,
 )
 from ocularrigidity.motion.pulsation.traces.mask import (
     MaskThicknessTraceSource,
@@ -23,13 +31,17 @@ from ocularrigidity.motion.pulsation.traces.mask import (
 )
 
 __all__ = [
-    "Traces",
     "AbstractTraceSource",
     "AbstractUniformTraceSource",
     "ArrayTraceSource",
-    "UniformTraceConfig",
-    "MaskThicknessTraceSource",
-    "MaskTraceConfig",
+    "BandPassFilterTraceConfig",
+    "BandPassFilterTraceSource",
+    "CoherenceConfig",
+    "CoherentTraceSource",
     "DecomposedTraceSource",
     "DecompositionConfig",
+    "MaskThicknessTraceSource",
+    "MaskTraceConfig",
+    "Traces",
+    "UniformTraceConfig",
 ]

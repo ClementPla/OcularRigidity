@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import numpy as np
@@ -11,13 +11,18 @@ from ocularrigidity.segmentation.postprocess.blob import (
 from ocularrigidity.segmentation.postprocess.graphcut_gpu import (
     graphcut_masks_from_probs_batch_torch,
 )
+import numpy as np
+import torch
+import torch.nn.functional as F
+from tqdm import tqdm
 
 
 @torch.inference_mode()
 def infer(
     module: ChoroidSegmentationModule,
     data: torch.Tensor | np.ndarray,
-    scale_factor: float | Tuple[float, float] = 1.0,
+    scale_factor: float | tuple[float, float] = 1.0,
+    resize_to: tuple[int, int] | None = None,
     batch_size: int = 8,
     return_logit: bool = False,
     use_graphcut: bool = True,
@@ -25,88 +30,86 @@ def infer(
     device: str = "cuda",
     use_amp: bool = True,
     amp_dtype: torch.dtype = torch.float16,
-    verbose=False,
+    verbose: bool = False,
 ) -> np.ndarray:
-    """
-    Provide a convenient wrapper around the segmentation model for inference on a full video cube, with optional resizing and postprocessing.
-
-    Args:
-        module (ChoroidSegmentationModule):
-        data (torch.Tensor | np.ndarray): Input video cube, expected shape (T, C, H, W) or (T, H, W). If uint8, will be normalized to [0,1] and standardized.
-        scale_factor (float | Tuple[float, float], optional): Scale factor for resizing the input. Defaults to 1.0.
-        batch_size (int, optional): Batch size for inference. Defaults to 8.
-        return_logit (bool, optional): Whether to return logits instead of binary masks. Defaults to False.
-        use_graphcut (bool, optional): Whether to use graph cut for postprocessing. Defaults to True.
-        graphcut_kwargs (dict | None, optional): Keyword arguments for graph cut. Defaults to None.
-        device (str, optional): Device to run inference on. Defaults to "cuda".
-        use_amp (bool, optional): Whether to use automatic mixed precision. Defaults to True.
-        amp_dtype (torch.dtype, optional): Data type for mixed precision. Defaults to torch.float16.
-        verbose (bool, optional): Whether to show a progress bar. Defaults to False.
-
-    Returns:
-        np.ndarray: _description_
-    """
+    # 1. Convert to tensor without copying if possible; keep uint8 in CPU RAM
     if isinstance(data, np.ndarray):
-        data = torch.from_numpy(data).float()
+        data = torch.from_numpy(data)
     if data.ndim == 3:
         data = data.unsqueeze(1)
-    if data.max() > 1:
-        data = ((data / 255.0) - 0.5) / 0.5
 
-    module = module.to(device).eval()
-    n = data.shape[0]
-    org_h, org_w = data.shape[2], data.shape[3]
-
-    if return_logit:
-        predictions = np.empty((n, org_h, org_w), dtype=np.float32)
-    else:
-        predictions = np.empty((n, org_h, org_w), dtype=bool)
-
+    n, _, org_h, org_w = data.shape
     gc_kwargs = graphcut_kwargs or {}
+
+    # Pin memory so data transfers to GPU are truly asynchronous
+    if not data.is_pinned() and device == "cuda":
+        data = data.pin_memory()
+
+    # Pre-allocate GPU tensor for batch outputs (avoids inner-loop CPU syncs)
+    if return_logit:
+        gpu_predictions = torch.empty(
+            (n, org_h, org_w), dtype=torch.float32, device=device
+        )
+    else:
+        gpu_predictions = torch.empty(
+            (n, org_h, org_w), dtype=torch.bool, device=device
+        )
 
     for start in tqdm(range(0, n, batch_size), desc="Inference", disable=not verbose):
         end = min(start + batch_size, n)
+
+        # Fast async transfer of uint8 data
         chunk = data[start:end].to(device, non_blocking=True)
 
-        if scale_factor != 1.0:
-            chunk = torch.nn.functional.interpolate(
-                chunk,
-                scale_factor=scale_factor,
-                mode="bilinear",
-                align_corners=False,
+        # 2. Normalize ON GPU (fast FP16 vectorized operations)
+        if chunk.dtype == torch.uint8:
+            chunk = chunk.to(dtype=amp_dtype).mul_(1.0 / 255.0).sub_(0.5).div_(0.5)
+        else:
+            chunk = chunk.to(dtype=amp_dtype)
+
+        # Resizing / Padding on GPU
+        if resize_to is not None:
+            chunk = F.interpolate(
+                chunk, size=resize_to, mode="bilinear", align_corners=False
             )
-        # Pad if necessary to ensure divisible by 32 for UNet downsampling.
+        elif scale_factor != 1.0:
+            chunk = F.interpolate(
+                chunk, scale_factor=scale_factor, mode="bilinear", align_corners=False
+            )
+
         h, w = chunk.shape[2], chunk.shape[3]
         pad_h = (32 - h % 32) % 32
         pad_w = (32 - w % 32) % 32
         if pad_h > 0 or pad_w > 0:
-            chunk = torch.nn.functional.pad(chunk, (0, pad_w, 0, pad_h), mode="reflect")
+            chunk = F.pad(chunk, (0, pad_w, 0, pad_h), mode="reflect")
+
         with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=use_amp):
             out = module(chunk)
-        # Remove padding if added.
+
         if pad_h > 0 or pad_w > 0:
             out = out[:, :, :h, :w]
-        if scale_factor != 1.0:
-            out = torch.nn.functional.interpolate(
-                out,
-                size=(org_h, org_w),
-                mode="bilinear",
-                align_corners=False,
+
+        if (scale_factor != 1.0) or (resize_to is not None):
+            out = F.interpolate(
+                out, size=(org_h, org_w), mode="bilinear", align_corners=True
             )
 
+        # 3. Store results directly in GPU memory without syncing to CPU every batch
         if return_logit:
-            predictions[start:end] = out.squeeze(1).cpu().numpy()
+            gpu_predictions[start:end] = out.squeeze(1)
         elif use_graphcut:
-            probs = torch.sigmoid(out.float() * 0.5).squeeze(
-                1
-            )  # (B, H, W) stays on GPU
+            probs = torch.sigmoid(out.float() * 0.5).squeeze(1)
             masks = graphcut_masks_from_probs_batch_torch(probs, **gc_kwargs)
-            predictions[start:end] = masks.cpu().numpy()
+            gpu_predictions[start:end] = masks
         else:
-            predictions[start:end] = (out > 0.0).squeeze(1).cpu().numpy()
+            gpu_predictions[start:end] = out.squeeze(1) > 0.0
+
+    # Single transfer back to CPU host memory
+    predictions = gpu_predictions.cpu().numpy()
 
     if return_logit:
         return predictions
 
+    # Post-processing (CPU bottleneck)
     predictions = keep_largest_connected_component(predictions)
     return predictions

@@ -22,6 +22,7 @@ def regression_plot_with_stats(
     ax=None,
     drop_outlier_quantile=None,
     print_stats=True,
+    legend_position="best",
 ):
     fed_ax = ax is not None
     if ax is None:
@@ -118,6 +119,14 @@ def regression_plot_with_stats(
     ax.set_xlabel(x_label, fontsize=11, labelpad=8)
     ax.set_ylabel(y_label, fontsize=11, labelpad=8)
     ax.set_title(title, fontsize=13, fontweight="bold", pad=12)
+
+    # Set the legend position if there are any legends present
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.set_bbox_to_anchor((1.05, 1))
+        legend.set_title(None)
+        legend.set_frame_on(False)
+        legend.set_loc(legend_position)
 
     sns.despine()
     plt.tight_layout()

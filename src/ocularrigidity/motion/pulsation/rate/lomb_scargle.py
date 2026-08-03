@@ -40,8 +40,8 @@ class LombScargleRateEstimator(AbstractRateEstimator):
 
     def __init__(
         self,
-        config: Optional[LombScargleConfig] = None,
-        override_bpm: Optional[float] = None,
+        config: LombScargleConfig | None = None,
+        override_bpm: float | None = None,
     ):
         self.config = config or LombScargleConfig()
         self.override_bpm = override_bpm

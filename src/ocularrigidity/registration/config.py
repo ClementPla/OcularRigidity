@@ -10,6 +10,8 @@ instance in force for the pipeline is the ``REGISTRATION`` singleton in
 from dataclasses import dataclass
 from typing import Literal
 
+from ocularrigidity.consts import REGISTRATION_BATCH_SIZE
+
 
 @dataclass()
 class RegistrationConfig:
@@ -40,4 +42,7 @@ class RegistrationConfig:
 
     # General.
     subpixel: bool = True
-    batch_size: int = 256
+    # Frames warped per grid_sample call. Purely a memory/throughput trade-off:
+    # it does not change the result. Set OCULARRIGIDITY_REGISTRATION_BATCH to
+    # tune it for the card.
+    batch_size: int = REGISTRATION_BATCH_SIZE

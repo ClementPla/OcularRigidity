@@ -192,7 +192,8 @@ def smooth_boundary_2d(
         valid.astype(np.float32), sigma=(sigma_time, sigma_col), mode="nearest"
     )
 
-    smoothed = np.where(denom > 1e-6, num / denom, np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        smoothed = np.where(denom > 1e-6, num / denom, np.nan)
     return smoothed
 
 

@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 
-from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import render as R
 from ocularrigidity.viewer.streamlit_explorer._common import (
     cached_case_table,
@@ -15,10 +14,11 @@ from ocularrigidity.registration.config import RegistrationConfig
 st.set_page_config(page_title="Registration", layout="wide")
 
 
-root, suffix, iop = require_selection()
-st.title(f"Registration — {C.pretty_method(suffix)}")
+sel = require_selection()
+root, suffix = sel.root, sel.suffix
+st.title(f"Registration — {sel.method_label}")
 
-df = cached_case_table(root, suffix, iop)
+df = cached_case_table(sel)
 show_cols = [
     c
     for c in ["case_id", "PatientId", "Date", "Eye", "deltaA", "deltaCT", "K_thickness"]

@@ -26,14 +26,9 @@ class ChoroidSegmentationDataModule(LightningDataModule):
         super().__init__()
         # We want to fit the pixel size: from 512
         original_img_shape = (496, 512)
-        original_pixel_size_x = (
-            5.9 / original_img_shape[1]
-        )  # ≈ 11.52 μm/pixel (lateral)
-        original_pixel_size_y = (
-            3.87e-3  # Spectralis native axial pixel size, from specs
-        )
+        original_pixel_size_x = 8.69e-3
+        original_pixel_size_y = 3.77e-3
 
-        # Your clinical data (pixel sizes you know from your device)
         target_pixel_size_x = 5.9e-3
         target_pixel_size_y = 1.95e-3
 
@@ -79,17 +74,17 @@ class ChoroidSegmentationDataModule(LightningDataModule):
                 A.HorizontalFlip(p=0.5),
                 A.CLAHE(p=0.25),
                 A.Affine(
-                    scale=dict(x=(0.8, 1.2), y=(0.75, 1.25)),
+                    scale=dict(x=(0.9, 2.0), y=(0.9, 2.0)),
                     rotate=(-5, 5),
                     translate_percent=dict(
                         x=(-2 / 100, 2 / 100), y=(-10 / 100, 10 / 100)
                     ),
                     shear=(-5, 5),
-                    border_mode=cv2.BORDER_REPLICATE,
+                    border_mode=cv2.BORDER_REFLECT_101,
                     p=0.75,
                 ),
                 A.GaussNoise(std_range=(0, 0.5), p=0.3),
-                A.RandomBrightnessContrast(p=0.5),
+                A.RandomBrightnessContrast(p=0.5, brightness_limit=(-0.5,0.5)),
                 A.RandomGamma(),
                 A.Normalize(mean=0.5, std=0.5),
                 ToTensorV2(),
