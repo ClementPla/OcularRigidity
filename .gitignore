@@ -222,3 +222,36 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ==========================================================================
+# Donnees et sorties generees -- jamais versionnees.
+# Les resultats vivent sur E:/ (cf. CLAUDE.md, section "Where results go").
+# ==========================================================================
+
+# Tableaux / payloads numeriques
+*.npz
+*.npy
+*.mat
+*.csv
+
+# Cubes OCT bruts, masques compresses, bases locales
+*.bin
+*.zst
+*.db
+*.db-journal
+
+# Videos (acquisitions, exports one-cycle, animations)
+*.mp4
+*.mkv
+*.mj2
+*.avi
+*.mov
+*.tif
+*.tiff
+
+# Sorties batch / simulation
+Astronauts/simulation_output/
+
+# Notebooks exportes (nbconvert : page + dossier d'assets)
+notebook/*.html
+notebook/*_files/

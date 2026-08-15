@@ -1,0 +1,25 @@
+/.quarto/
+/_site/
+
+**/*.quarto_ipynb
+
+# ==========================================================================
+# Sorties generees -- seules les sources (.qmd ecrits a la main, _quarto.yml,
+# styles.css, copy_video_resources.py, figures_*/make_figures.py) sont suivies.
+# ==========================================================================
+
+# figures_*/ et firstPresentation_files/ sont des JONCTIONS Windows vers
+# E:/NASA_Rigidity/quarto_results/ (cf. CLAUDE.md). Leur contenu -- png, svg,
+# mp4, fragments .qmd, plotlyjs.html -- est entierement regenere par le script
+# de generation, seul fichier a versionner la-dedans (son nom varie :
+# make_figures.py, make_figures_mixtures.py, make_figure_bruit.py...).
+figures_*/**
+!figures_*/*.py
+firstPresentation_files/
+
+# Fragments .qmd generes : une page par condition / par mixture
+/one_cycles/
+/mixtures/
+
+# Rapports HTML auto-contenus (SANS_meca_predictors_REPORT.html fait ~19 Mo)
+/*.html
