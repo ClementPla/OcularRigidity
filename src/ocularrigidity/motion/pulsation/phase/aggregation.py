@@ -124,6 +124,23 @@ class SpectralCombinationConfig:
     random_state: int = 0
     maxiter: int = 200
 
+    # --- Temporal windowing ---------------------------------------------
+    # The objective is summed over `n_windows` evenly spaced time windows,
+    # each `window_n_cycles` cardiac cycles long (so `window_n_cycles / f0`
+    # seconds), instead of being evaluated once over the whole record. This
+    # stops a combination that is only cardiac during part of the acquisition
+    # from winning on its integrated spectrum alone: it has to concentrate
+    # power in-band *everywhere*. Windows overlap whenever
+    # `n_windows * window_n_cycles / f0` exceeds the record duration -- that is
+    # expected, they are placed by even spacing, not by tiling.
+    # A window longer than the record plus `n_windows = 1` degenerates to the
+    # un-windowed objective (see `_window_slices`).
+    window_n_cycles: float = 10000.0
+    n_windows: int = 1
+    # A window carrying fewer samples than this is dropped: too short for a
+    # meaningful Lomb-Scargle on the (full-record) frequency grid.
+    min_window_samples: int = 8
+
 
 @dataclass
 class SpectralCombinationResult:
@@ -133,6 +150,12 @@ class SpectralCombinationResult:
     weights: np.ndarray  # (len(selected_indices),), ||weights||_2 == 1
     objective: float
     spatial_pattern: Optional[np.ndarray]  # traces.mixing[:, selected] @ weights
+    # (n_windows_used, 2) start/end times in seconds of the windows the
+    # objective was summed over -- one full-record row when un-windowed.
+    windows_seconds: Optional[np.ndarray] = None
+    # Per-window objective (out-of-band minus in-band mean power) at `weights`,
+    # unregularized; sums to `objective` when `l2_regularization == 0`.
+    window_objectives: Optional[np.ndarray] = None
 
 
 class OptimizedSpectralCombination(AbstractTraceAggregator):
@@ -149,6 +172,13 @@ class OptimizedSpectralCombination(AbstractTraceAggregator):
     candidate traces -- SVD/ICA/PCA components (the intended use, pairing with
     ``DecompositionConfig(method="svd")``) or, with few enough columns, raw
     per-trace signals.
+
+    The spectral criterion is evaluated on several short time windows
+    (``window_n_cycles`` cardiac cycles each, ``n_windows`` of them, evenly
+    spaced and possibly overlapping) and **summed**, so the winning combination
+    must be cardiac throughout the acquisition rather than on average over it.
+    Asking for a window longer than the record with ``n_windows = 1`` recovers
+    the original whole-record objective exactly.
 
     Needs a :class:`RateEstimate` carrying full periodogram diagnostics (so,
     concretely, a :class:`~ocularrigidity.motion.pulsation.rate.lomb_scargle.LombScargleRateEstimator`)
@@ -201,11 +231,14 @@ class OptimizedSpectralCombination(AbstractTraceAggregator):
             in_band = np.zeros_like(in_band)
             in_band[int(np.argmin(np.abs(freqs - f0)))] = True
 
+        windows = self._window_slices(t, f0, cfg)
+
         w0 = self._initial_weights(V, t, f0, quality[candidates])
         if V.shape[1] == 1:
-            w_opt, objective = w0, self._objective(w0, V, t, freqs, in_band, 0.0)
+            w_opt = w0
+            objective = self._objective(w0, V, t, freqs, in_band, 0.0, windows)
         else:
-            w_opt, objective = self._optimize(V, t, freqs, in_band, w0, cfg)
+            w_opt, objective = self._optimize(V, t, freqs, in_band, w0, cfg, windows)
 
         spatial_pattern = (
             traces.mixing[:, candidates] @ w_opt if traces.mixing is not None else None
@@ -215,6 +248,16 @@ class OptimizedSpectralCombination(AbstractTraceAggregator):
             weights=w_opt,
             objective=objective,
             spatial_pattern=spatial_pattern,
+            windows_seconds=np.array(
+                [[t[sl][0], t[sl][-1]] for sl in windows], dtype=float
+            ),
+            window_objectives=np.array(
+                [
+                    self._window_objective(V[sl] @ w_opt, t[sl], freqs, in_band)
+                    for sl in windows
+                ],
+                dtype=float,
+            ),
         )
 
         return traces.embed(V @ w_opt)
@@ -241,22 +284,79 @@ class OptimizedSpectralCombination(AbstractTraceAggregator):
         norm = np.linalg.norm(w0)
         return w0 / norm if norm > 0 else np.ones(len(w0)) / np.sqrt(len(w0))
 
+    # -- temporal windows --------------------------------------------------
+    @staticmethod
+    def _window_slices(
+        t: np.ndarray, f0: float, cfg: SpectralCombinationConfig
+    ) -> list[slice]:
+        """Evenly spaced windows of ``cfg.window_n_cycles`` cardiac cycles.
+
+        Returned as slices into the (sorted) kept-sample times ``t``. Starts are
+        ``linspace``'d over the record so the first window opens at ``t[0]`` and
+        the last one closes at ``t[-1]``; with a window shorter than
+        ``span / n_windows`` this leaves gaps between them, with a longer one
+        they overlap. Either is fine -- the point is to sample the record, not
+        to partition it.
+
+        Falls back to a single whole-record window when one window would cover
+        everything anyway, when ``n_windows <= 1``, or when the requested
+        duration leaves every window under ``min_window_samples`` — which is
+        what makes "video-length window + 1 window" the original objective.
+        """
+        full = [slice(0, len(t))]
+        span = float(t[-1] - t[0])
+        if cfg.n_windows <= 1 or f0 <= 0 or cfg.window_n_cycles <= 0:
+            return full
+
+        duration = cfg.window_n_cycles / f0
+        if duration >= span:
+            return full
+
+        windows: list[slice] = []
+        for start in np.linspace(t[0], t[-1] - duration, cfg.n_windows):
+            i0 = int(np.searchsorted(t, start, side="left"))
+            i1 = int(np.searchsorted(t, start + duration, side="right"))
+            if i1 - i0 >= cfg.min_window_samples:
+                windows.append(slice(i0, i1))
+        return windows or full
+
     # -- objective + constrained multi-start optimization ------------------
     @staticmethod
+    def _window_objective(
+        y: np.ndarray,
+        t: np.ndarray,
+        freqs: np.ndarray,
+        in_band: np.ndarray,
+    ) -> float:
+        """Out-of-band minus in-band mean Lomb-Scargle power on one window.
+
+        ``freqs`` stays the whole-record grid even for a short window: it is
+        finer than the window's own resolution, which costs nothing here (the
+        periodogram is simply oversampled) and keeps ``in_band`` -- and hence
+        the summed objective -- comparable across windows.
+        """
+        y = y - y.mean()
+        power = lomb_scargle_power(t, y, freqs)
+        e_in = power[in_band].mean()
+        e_out = power[~in_band].mean() if (~in_band).any() else 0.0
+        return float(e_out - e_in)
+
+    @classmethod
     def _objective(
+        cls,
         w: np.ndarray,
         V: np.ndarray,
         t: np.ndarray,
         freqs: np.ndarray,
         in_band: np.ndarray,
         lam: float,
+        windows: list[slice],
     ) -> float:
         y = V @ w
-        y = y - y.mean()
-        power = lomb_scargle_power(t, y, freqs)
-        e_in = power[in_band].mean()
-        e_out = power[~in_band].mean() if (~in_band).any() else 0.0
-        return float(e_out - e_in + lam * np.sum(w**2))
+        total = sum(
+            cls._window_objective(y[sl], t[sl], freqs, in_band) for sl in windows
+        )
+        return float(total + lam * np.sum(w**2))
 
     def _optimize(
         self,
@@ -266,6 +366,7 @@ class OptimizedSpectralCombination(AbstractTraceAggregator):
         in_band: np.ndarray,
         w0: np.ndarray,
         cfg: SpectralCombinationConfig,
+        windows: list[slice],
     ) -> tuple[np.ndarray, float]:
         n = V.shape[1]
         bounds = [(-1.0, 1.0)] * n
@@ -282,7 +383,7 @@ class OptimizedSpectralCombination(AbstractTraceAggregator):
             minimize(
                 self._objective,
                 w_start,
-                args=(V, t, freqs, in_band, cfg.l2_regularization),
+                args=(V, t, freqs, in_band, cfg.l2_regularization, windows),
                 method="SLSQP",
                 bounds=bounds,
                 constraints=constraints,

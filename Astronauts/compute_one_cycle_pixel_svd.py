@@ -121,7 +121,18 @@ BLOCK_SIZES = (1, 2, 3)
 N_SVD_COMPONENTS = 20
 
 # --- 3) Optimisation des vecteurs singuliers ---
-SPECTRAL_COMBINATION_CONFIG = SpectralCombinationConfig(max_candidates=N_SVD_COMPONENTS)
+# L'energie in-band est sommee sur WINDOW_N_WINDOWS fenetres temporelles de
+# WINDOW_N_CYCLES cycles cardiaques, egalement reparties (elles peuvent se
+# recouvrir) : la combinaison retenue doit etre cardiaque tout au long de
+# l'acquisition, pas seulement en moyenne. Une fenetre plus longue que le
+# video + une seule fenetre redonne l'objectif global d'origine.
+WINDOW_N_CYCLES = 20.0
+WINDOW_N_WINDOWS = 5
+SPECTRAL_COMBINATION_CONFIG = SpectralCombinationConfig(
+    max_candidates=N_SVD_COMPONENTS,
+    window_n_cycles=WINDOW_N_CYCLES,
+    n_windows=WINDOW_N_WINDOWS,
+)
 
 # --- 4) Phase de Hilbert sur le signal agrege ---
 HILBERT_CONFIG = HilbertPhaseConfig()  # pas de lissage additionnel par defaut
@@ -279,6 +290,11 @@ def save_diagnostics(
         combined_power=combined_power.astype(np.float32),
         in_band_mask=in_band_mask,
         accept_tol_bpm=SPECTRAL_COMBINATION_CONFIG.accept_tol_bpm,
+        # fenetres temporelles sur lesquelles l'energie a ete sommee
+        opt_windows_seconds=last.windows_seconds,
+        opt_window_objectives=last.window_objectives,
+        window_n_cycles=SPECTRAL_COMBINATION_CONFIG.window_n_cycles,
+        n_windows=SPECTRAL_COMBINATION_CONFIG.n_windows,
         cardiac_freq_hz=rate.freq,
         cardiac_bpm=rate.freq * 60.0,
         confidence=extractor.confidence,

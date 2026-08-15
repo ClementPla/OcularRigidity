@@ -1,0 +1,642 @@
+---
+title: "SANS mechanical predictors"
+author: "Nicolas Desjardins-Lecavalier"
+format:
+  revealjs:
+    theme: dark
+    embed-resources: true
+    html-math-method: mathml
+    smaller: true
+    scrollable: true
+---
+
+# SVD mathematics
+
+## Basic definition
+
+$$
+A = U \Sigma V^{T}
+  = \left[\vec u_1\; \vec u_2\; \cdots\; \vec u_n\right]
+    \operatorname{diag}(\sigma_i)
+    \left[\vec v_1\; \vec v_2\; \cdots\; \vec v_m\right]^{T}
+$$ {#eq-svd}
+
+- $A$ : data ($n \times m$)
+- $U$ : left singular vectors, unitary ($U U^{T} = U^{T} U = I_{n \times n}$)
+- $V$ : right singular vectors, unitary ($V V^{T} = V^{T} V = I_{m \times m}$)
+- $\Sigma$ : singular values
+
+## SVD properties : singular vectors are eigenvectors of correlation matrix
+$$
+A A^{T} = (U \Sigma V^{T}) (V \Sigma^{T} U^{T}) = U \Sigma^2 U^{T}
+$$ {#eq-svd-aaT}
+$$
+A^{T} A = (V \Sigma^{T} U^{T}) (U \Sigma V^{T}) = V \Sigma^2 V^{T}
+$$ {#eq-svd-aTa}
+
+- $A^{T} A$ and $A A^{T}$ are symmetric, positive semi-definite matrices
+- $U$ : eigenvectors of $A A^{T}$, with eigenvalues $\lambda_i = \sigma_i^2$
+- $V$ : eigenvectors of $A^{T} A$, with eigenvalues $\lambda_i = \sigma_i^2$
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## $A^{T}A$ and $AA^{T}$ : rank and nullspace
+
+- **Symmetry** : $(A^{T}A)^{T} = A^{T}A$ and $(AA^{T})^{T} = AA^{T}$
+- **Equal nullspaces** : $N(A) = N(A^{T}A)$ and $N(A^{T}) = N(AA^{T})$
+- **Rank equality** :
+
+$$
+\operatorname{rank}(A^{T}A) = \operatorname{rank}(AA^{T}) = \operatorname{rank}(A) = r
+$$ {#eq-rank-equality}
+
+- **Invertibility** : $A^{T}A$ ($m \times m$) is invertible $\iff \operatorname{rank}(A) = m$
+  (full column rank) — the condition behind the normal equations
+  $\hat{\vec x} = (A^{T}A)^{-1}A^{T}\vec b$
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## $A^{T}A$ and $AA^{T}$ : spectrum
+
+- **Non-negative eigenvalues** : $\lambda \geq 0$ for both (positive semi-definite)
+- **Shared spectrum** : $A^{T}A$ and $AA^{T}$ have the *same non-zero* eigenvalues
+- **Count** : both have exactly $r = \operatorname{rank}(A)$ positive eigenvalues
+- **Eigenvector correspondence** : if $(\lambda, \vec v)$ is an eigenpair of
+  $A^{T}A$ with $\lambda > 0$, then $(\lambda, \vec u)$ is an eigenpair of $AA^{T}$ with
+
+$$
+\vec u = \frac{A \vec v}{\sqrt{\lambda}}
+$$ {#eq-eigvec-correspondence}
+
+With $\lambda_i = \sigma_i^2$ this is exactly $\vec u_i = A\vec v_i / \sigma_i$ — the
+relation used on the next slide.
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## SVD properties : fresh start
+
+$$
+A\vec v_i = \sigma_i \vec u_i
+$$ {#eq-svd-fresh-start}
+
+until...
+
+$$
+A\vec v_r = \sigma_r \vec u_r
+$$ {#eq-svd-fresh-start-r}
+- $r$ : rank of $A$, $\sigma_r > 0$, $\sigma_{r+1} = 0$
+- economy SVD : $A = U_r \Sigma_r V_r^{T}$, with $U_r$ ($n \times r$), $\Sigma_r$ ($r \times r$), $V_r$ ($m \times r$)
+
+## SVD properties : low-rank approximation
+
+## SVD properties : singular vectors are orthogonal
+$$
+\vec u_i^{T} \vec u_j = 0
+$$
+$$
+\left(\frac{A \vec v_i}{\sigma_i}\right)^{T}\left(\frac{A \vec v_j}{\sigma_j}\right)
+= \frac{\vec v_i^{T} A^{T} A \vec v_j}{\sigma_i \sigma_j}
+= \frac{\sigma_j^2 \, \vec v_i^{T} \vec v_j}{\sigma_i \sigma_j}
+= 0 \quad (i \neq j)
+$$ {#eq-svd-orthogonal}
+
+using the eigenvalue equation $A^{T}A\vec v_j = \sigma_j^2 \vec v_j$ (next slide)
+and $\vec v_i^{T}\vec v_j = 0$.
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## The eigenvalue equation of $A^{T}A$
+
+Starting from @eq-svd-aTa and right-multiplying by $V$, with $V^{T}V = I_{m \times m}$ :
+
+$$
+A^{T}A\,V = V \Sigma^2 V^{T} V = V \Sigma^2
+$$ {#eq-ata-times-v}
+
+Reading this column by column gives the **eigenvalue equation** :
+
+$$
+A^{T}A\,\vec v_i = \sigma_i^2 \, \vec v_i = \lambda_i \vec v_i
+\qquad \Longleftrightarrow \qquad
+\left(A^{T}A - \lambda_i I\right)\vec v_i = \vec 0
+$$ {#eq-ata-eigen}
+
+- $\vec v_i$ : right singular vector $=$ eigenvector of $A^{T}A$
+- $\lambda_i = \sigma_i^2 \geq 0$ : eigenvalue, non-negative since $A^{T}A$ is
+  positive semi-definite
+- non-trivial solutions require $\det\!\left(A^{T}A - \lambda I\right) = 0$
+- identically, $A A^{T}\vec u_i = \sigma_i^2 \vec u_i$ from @eq-svd-aaT
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## Geometrical interpretation of SVD
+- $V^T \vec y$ : rotate $\vec y$ into the singular vector basis
+- $\Sigma V^T \vec y$ : scale the rotated vector by the singular values
+- $U \Sigma V^T \vec y$ : rotate back into the original basis
+
+# One-cycle from OCT intensities
+
+## Multi-resolution
+
+## SVD importance
+{{< embed  ../notebook/phase_shift_pixel_svd_figures.ipynb#fig-svd-indices >}}
+
+# Rigidity coefficients
+
+## Friedenwald $K$
+
+Classic Friedenwald relation between pressure and volume change over one
+cardiac cycle:
+
+$$
+K = \frac{\log_{10}(P_s / P_d)}{\Delta V}
+$$ {#eq-friedenwald}
+
+- $P_d$, $P_s$: diastolic / systolic IOP (mmHg), from OPA
+- $\Delta V$: pulsatile volume change (µL), from the choroidal area change
+  $\Delta A$ via a spherical-shell model
+
+$$
+\Delta V = \frac{4}{3}\pi\left[(R + \delta t)^3 - R^3\right] \, f_{cov}
+$$ {#eq-friedenwald-dv}
+
+with $R$ the vitreous-chamber radius (from axial length), $\delta t = \Delta A
+/ w_{px} \cdot s_{axial}$ the mean axial thickness change, and $f_{cov}$ the
+covered fraction of the sphere.
+
+## Sayah *et al.* (2020) approximation
+
+Alternative $k$ coefficient (mm$^{-3}$), derived from choroidal *thickness*
+pulsatility $\Delta CT$ rather than area:
+
+$$
+\Delta V = \frac{\pi}{2} \left(AL \cdot f_{AL} + CT\right)^2 \Delta CT
+$$ {#eq-sayah-dv}
+
+$$
+k = \frac{\ln\!\left(\dfrac{IOP + OPA}{IOP}\right)}{\Delta V}
+$$ {#eq-sayah}
+
+- $AL$: axial length (mm), $f_{AL} = 0.87$ an axial adjustment factor
+- $CT$: baseline choroidal thickness (mm), $\Delta CT$: peak-to-peak
+  pulsatile amplitude (mm)
+- $IOP$, $OPA$: intraocular pressure and ocular pulse amplitude (mmHg)
+
+# Understanding SVD : numerical tests
+## SVD for temporal signals
+$$ 
+A = \begin{bmatrix}\vec x\; \vec y\end{bmatrix} = \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix} 
+$$
+
+$$
+A A^T = \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix} \begin{bmatrix} x(t_1) & y(t_1) \\  x(t_2) & y(t_2) \\  \vdots & \vdots \\  x(t_m) & y(t_m) \end{bmatrix} = \begin{bmatrix} \sum_{i=1}^{m} x^2(t_i) & \sum_{i=1}^{m} x(t_i)y(t_i) \\  \sum_{i=1}^{m} x(t_i)y(t_i) & \sum_{i=1}^{m} y^2(t_i) \end{bmatrix}
+$$
+$$
+A^T A = \begin{bmatrix} x(t_1) & y(t_1) \\  x(t_2) & y(t_2) \\  \vdots & \vdots \\  x(t_m) & y(t_m) \end{bmatrix} \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix} = \begin{bmatrix} x^2(t_1)+y^2(t_1) & x(t_1)x(t_2)+y(t_1)y(t_2) & \cdots & x(t_1)x(t_m)+y(t_1)y(t_m) \\  x(t_2)x(t_1)+y(t_2)y(t_1) & x^2(t_2)+y^2(t_2) & \cdots & x(t_2)x(t_m)+y(t_2)y(t_m) \\  \vdots & \vdots & \ddots & \vdots \\  x(t_m)x(t_1)+y(t_m)y(t_1) & x(t_m)x(t_2)+y(t_m)y(t_2) & \cdots & x^2(t_m)+y^2(t_m) \end{bmatrix}
+$$
+
+## SVD for temporal signals
+$$ 
+A = \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix} 
+$$
+
+\begin{align}
+A^T A &=\begin{bmatrix} x^2(t_1)+y^2(t_1) & x(t_1)x(t_2)+y(t_1)y(t_2) & \cdots & x(t_1)x(t_m)+y(t_1)y(t_m) \\  x(t_2)x(t_1)+y(t_2)y(t_1) & x^2(t_2)+y^2(t_2) & \cdots & x(t_2)x(t_m)+y(t_2)y(t_m) \\  \vdots & \vdots & \ddots & \vdots \\  x(t_m)x(t_1)+y(t_m)y(t_1) & x(t_m)x(t_2)+y(t_m)y(t_2) & \cdots & x^2(t_m)+y^2(t_m) \end{bmatrix} \\
+&= \begin{bmatrix} x(t_1)\vec x + y(t_1)\vec y \\  x(t_2)\vec x + y(t_2)\vec y \\  \vdots \\  x(t_m)\vec x + y(t_m)\vec y \end{bmatrix} \\
+&= \vec x^T \vec x + \vec y^T \vec y
+\end{align}
+
+
+## Eigenvalue equation of $A^{T}A$ for two signals
+
+The previous slide is a sum of two **rank-1 outer products** :
+
+$$
+A^{T}A = \vec x^{T}\vec x + \vec y^{T}\vec y ,
+\qquad
+\vec x = \left[x(t_1)\; \cdots\; x(t_m)\right],\;
+\vec y = \left[y(t_1)\; \cdots\; y(t_m)\right]
+$$ {#eq-ata-outer}
+
+so the eigenvalue equation $A^{T}A\,\vec v = \lambda \vec v$ reads
+
+$$
+\left(\vec x\,\vec v\right)\vec x^{T} + \left(\vec y\,\vec v\right)\vec y^{T}
+= \lambda \, \vec v
+$$ {#eq-ata-eigen-signals}
+
+- for $\lambda \neq 0$, the left side lies in $\operatorname{span}\{\vec x^{T}, \vec y^{T}\}$
+  $\Rightarrow$ **every eigenvector with $\lambda > 0$ is a combination of the two signals**
+- hence only $r = \operatorname{rank}(A) \leq 2$ non-zero eigenvalues, and $m - r$ zero ones,
+  whatever the number of time samples $m$
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## Eigenvalue equation of $A^{T}A$ : closed form
+
+Since $A^{T}A$ ($m \times m$) and $AA^{T}$ ($2 \times 2$) share their non-zero
+eigenvalues, solve the small one. With
+
+$$
+S_{xx} = \sum_{i} x^2(t_i), \quad
+S_{yy} = \sum_{i} y^2(t_i), \quad
+S_{xy} = \sum_{i} x(t_i)\,y(t_i)
+$$ {#eq-gram-entries}
+
+the characteristic equation $\det\!\left(AA^{T} - \lambda I\right) = 0$ gives
+
+$$
+\lambda_{\pm} = \frac{S_{xx} + S_{yy}}{2}
+  \pm \sqrt{\left(\frac{S_{xx} - S_{yy}}{2}\right)^{2} + S_{xy}^{2}}
+$$ {#eq-lambda-closed-form}
+
+- $\sigma_{\pm} = \sqrt{\lambda_{\pm}}$ : the two singular values of $A$
+- $S_{xy} = 0$ (orthogonal signals) $\Rightarrow \lambda_{\pm} = S_{xx},\, S_{yy}$ — the
+  singular vectors align with $\vec x$ and $\vec y$
+- $\lambda_- = 0 \Leftrightarrow S_{xx}S_{yy} = S_{xy}^{2}$ : the two signals are
+  proportional, $\operatorname{rank}(A) = 1$
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## Eigenvalues of $AA^{T}$ for $k$ signals
+
+With $k$ signals $\vec x, \vec y, \vec z, \vec w, \vec q, \vec p$ sampled at $m$ times,
+$A$ is $k \times m$ and $AA^{T}$ is the $k \times k$ **Gram matrix** $S_{ab} = \sum_{t} a(t)\,b(t)$ :
+
+$$
+AA^{T} =
+\begin{bmatrix}
+S_{xx} & S_{xy} & S_{xz} & S_{xw} & S_{xq} & S_{xp} \\
+S_{xy} & S_{yy} & S_{yz} & S_{yw} & S_{yq} & S_{yp} \\
+S_{xz} & S_{yz} & S_{zz} & S_{zw} & S_{zq} & S_{zp} \\
+S_{xw} & S_{yw} & S_{zw} & S_{ww} & S_{wq} & S_{wp} \\
+S_{xq} & S_{yq} & S_{zq} & S_{wq} & S_{qq} & S_{qp} \\
+S_{xp} & S_{yp} & S_{zp} & S_{wp} & S_{qp} & S_{pp}
+\end{bmatrix}
+$$ {#eq-gram-k}
+
+$k = 3, 4, 5$ are the leading principal submatrices of this $k = 6$ case.
+The eigenvalues are the roots of $\det\!\left(AA^{T} - \lambda I\right) = 0$, of degree $k$.
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## Eigenvalues of $AA^{T}$ : what is actually listable
+
+| $k$ | signals | $\det(AA^{T}-\lambda I)$ | closed form ? |
+|:--|:--|:--|:--|
+| 2 | $x,y$ | quadratic | yes — @eq-lambda-closed-form |
+| 3 | $x,y,z$ | cubic | yes — Cardano (next slide) |
+| 4 | $+\,w$ | quartic | in principle (Ferrari), unusable in practice |
+| 5 | $+\,q$ | quintic | **no** — Abel–Ruffini |
+| 6 | $+\,p$ | sextic | **no** — Abel–Ruffini |
+
+From $k \geq 5$ there is no general expression by radicals: the eigenvalues exist,
+are real and $\geq 0$, but are only reachable **numerically**.
+
+What *is* listable for every $k$ — the Vieta relations on the roots :
+
+$$
+\sum_{i} \lambda_i = \operatorname{tr}(AA^{T}) = \sum_{a} \|\vec a\|^{2},
+\qquad
+\prod_{i} \lambda_i = \det(AA^{T})
+$$ {#eq-vieta}
+
+- $e_j(\lambda_1 \ldots \lambda_k) =$ sum of the $j \times j$ principal minors of $AA^{T}$
+- number of $\lambda_i > 0$ equals $\operatorname{rank}(A) \leq \min(k, m)$
+- $\det(AA^{T}) = 0$ as soon as the signals are linearly dependent
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## $k = 3$ signals : closed form
+
+For the symmetric $3 \times 3$ Gram matrix of $\vec x, \vec y, \vec z$, with
+$\bar q = \operatorname{tr}(AA^{T})/3$ and
+
+$$
+P = \sqrt{\frac{(S_{xx}-\bar q)^2 + (S_{yy}-\bar q)^2 + (S_{zz}-\bar q)^2
+   + 2\left(S_{xy}^2 + S_{xz}^2 + S_{yz}^2\right)}{6}},
+\qquad
+B = \frac{AA^{T} - \bar q I}{P}
+$$ {#eq-cardano-setup}
+
+$$
+\varphi = \frac{1}{3}\arccos\!\left(\frac{\det B}{2}\right),
+\qquad
+\lambda_{1,2,3} = \bar q + 2P \cos\!\left(\varphi + \frac{2\pi j}{3}\right),
+\; j = 0, 1, 2
+$$ {#eq-cardano}
+
+The three cosines sum to zero, so $\sum_i \lambda_i = 3\bar q = \operatorname{tr}(AA^{T})$
+as required by @eq-vieta.
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## Phase-shifted sines : rank 2 for any $k$
+
+The degree-$k$ obstacle disappears for the case at hand. Every
+$a_i(t) = \sin(2\pi f t + \phi_i)$ expands on **two** basis signals only :
+
+$$
+a_i(t) = \cos\phi_i \, \underbrace{\sin(2\pi f t)}_{\vec s}
+       + \sin\phi_i \, \underbrace{\cos(2\pi f t)}_{\vec c}
+\quad \Longrightarrow \quad
+A = \Phi \begin{bmatrix} \vec s \\ \vec c \end{bmatrix},
+\;\; \Phi_{i} = \left[\cos\phi_i \;\; \sin\phi_i\right]
+$$ {#eq-sine-factorization}
+
+So $\operatorname{rank}(A) \leq 2$ and **$AA^{T}$ has only 2 non-zero eigenvalues
+whatever $k = 3, 4, 5, 6$** — the other $k - 2$ are exactly zero. Over an integer
+number of periods, $\vec s \vec c^{T} \simeq 0$ and $\|\vec s\|^2 = \|\vec c\|^2 = m/2$, giving
+
+$$
+\lambda_{\pm} = \frac{m}{4}\left(k \pm \left|\sum_{i=1}^{k} e^{\,2 i \phi_i}\right|\right)
+$$ {#eq-sine-eigenvalues}
+
+- phases spread uniformly over $[0, \pi)$ $\Rightarrow \sum_i e^{2i\phi_i} = 0$ and
+  $\lambda_+ = \lambda_- = mk/4$ : degenerate, no preferred direction
+- the more the phases cluster, the larger $\lambda_+ / \lambda_-$
+
+::: footer
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::
+
+## Simple phase shifted sine waves
+$$
+y_i(t) = \sin(2\pi f t + \phi_i)
+$$ {#eq-phase-shifted-sine}
+- $\phi_i = [0 \; \pi/4 \; \pi/2 \; 3\pi/4 \; \pi]$ : phase shifts
+
+{{< include figures_gaussienne_svd/slides.qmd >}}
+
+# Realistic simulations
+
+## The concept : a ring that breathes
+
+![](figures_simulation/concept_anneau.png){width=92%}
+
+![](figures_simulation/concept_kymographe.png){width=86%}
+
+::: {style="font-size:0.6em"}
+A ring of radial gaussians — a synthetic choroid whose **features sit on its
+edge** — inflating and deflating radially on a 1.0 → 1.3 Hz chirp, rendered on the
+**real acquisition calibration** : 11.4 µm/px lateral, 3.9 µm/px axial, 17.9 Hz,
+401 frames (22.4 s).
+
+- pixels are **not square** : a ring that is circular in µm is an ellipse in the
+  pixel grid — and the pixel grid is what the SVD works on
+- the typical 6 µm peak-to-peak amplitude is **1.54 px axially** : the motion is
+  **sub-pixel**, invisible frame by frame, and only shows up as an intensity
+  modulation once the temporal mean is removed
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation/`
+:::
+
+## Noise sources : jitter + image noise
+
+![](figures_simulation/bruit_sources.png){width=88%}
+
+::: {style="font-size:0.62em"}
+Two residual-registration jitters and one image noise, injected before the
+measurement chain (`PixelTraceSource` → `DecomposedTraceSource(svd)` →
+`LombScargleRateEstimator` → `OptimizedSpectralCombination` → `HilbertPhaseEstimator`).
+
+- **jitter $x$** — common to the whole frame : shifts the ring as a block ; on a
+  fixed-column slice it reads as a spurious vertical motion of the edge
+- **jitter $y$** — independent per A-scan : shreds the pattern, destroying spatial
+  coherence between neighbouring A-scans without moving the ring as a whole
+- **image noise** — greys out the red/blue alternation without deforming its
+  geometry : it attacks contrast, not position
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation/`
+:::
+
+## Measured image noise in the real data
+
+![](figures_bruit_reel/bruit_reel_mesure.png){width=80%}
+
+::: {style="font-size:0.62em"}
+82 / 102 registered cubes (`SegmentationVariations`, 20 rejected for
+$R^2 < 0.5$), each frame compared to its cube's temporal mean —
+$\operatorname{Var}[I]$ binned against $\mu$.
+
+- **the noise is not speckle** : $p = 0.54\;[0.32, 0.72]$ in $\operatorname{Var} = c\,\mu^{p}$,
+  between additive (0) and Poisson (1), far from multiplicative speckle (2)
+- **where the variance sits** : 38 % constant, 63 % $\propto \mu$, $-2\%$ $\propto \mu^2$ —
+  the $\mu^2$ term is the *only* one the simulation models
+- **no scalar `noise_level` fits both** : 0.19 seen through speckle vs 2.75 through
+  the additive floor, a factor $\simeq 14$
+- **6 % per-frame gain fluctuation** ($\mathrm{CV}$), global to the image and absent
+  from the simulation ; residuals are heavier-tailed than $\mathcal{N}(0,1)$, skew $-0.26$
+
+Expected : exported B-scans are **log-compressed**, so multiplicative speckle
+becomes additive.
+:::
+
+::: footer
+`Astronauts/quantify_image_noise.py` — figure : `figures_bruit_reel/make_figure_bruit.py`
+:::
+
+## Results : one factor at a time
+
+![](figures_simulation/resultats_phaseA.png){width=90%}
+
+::: {style="font-size:0.62em"}
+554 runs. *Detected* = `LombScargle` confidence high/medium **and** relative
+frequency error $\leq 10\%$. Each panel varies one factor, the others held at the
+value printed above it.
+
+- **amplitude** : 100 % from 0.5 to 10 µm — but at zero noise *and* zero jitter,
+  so this panel bounds nothing on its own
+- **image noise** : 100 % up to $\times 5$ the realistic level, 70 % at $\times 8$ ;
+  correlation with ground truth $1.00 \rightarrow 0.83$
+- **jitter $x$ and $y$** : 100 % detection up to 4 px of either, at the typical
+  6 µm amplitude ; correlation degrades gently to $\simeq 0.89$
+
+Taken **one at a time**, none of these factors defeats the chain at a realistic
+amplitude — the correlation erodes well before the detection does.
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation/`
+:::
+
+# Combined sweep : results
+
+## Methods — the simulated object
+
+![](figures_simulation/concept_anneau.png){width=90%}
+
+::: {style="font-size:0.62em"}
+- **geometry** : a ring of radial gaussians, the features sitting **on the edge**,
+  inflating and deflating radially — a synthetic choroid
+- **pixel size** : 11.4 µm/px lateral, 3.9 µm/px axial. Pixels are **not square**,
+  so a ring circular in µm is an ellipse in the grid the SVD works on
+- **sampling** : 17.9 Hz, 401 frames, 22.4 s — the real acquisition calibration
+- the ROI is a fixed mask (cyan), identical across every run
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation_complexe/`
+:::
+
+## Methods — imposed pulse, noise and design
+
+![](figures_simulation_complexe/methodes_design.png){width=94%}
+
+::: {style="font-size:0.62em"}
+- **imposed pulse** : a chirp sweeping **60 → 78 BPM** over the acquisition, so the
+  signal is deliberately **non-stationary** — a fixed-frequency test would flatter
+  the chain
+- **design** : 5 amplitudes × 3 `jitter_x` × 3 `jitter_y` × **15 replicates**
+  = **675 runs** (1015 with the 1-D sweeps ; 1 failed run in total)
+- **image noise is a nuisance variable, drawn per run** (0.5 – 3.1 × the realistic
+  level) rather than a controlled axis — it is averaged inside each cell, so every
+  number below already integrates over a spread of noise
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation_complexe/`
+:::
+
+## Amplitude is the major determinant
+
+| amplitude | runs | **detected** | corr. median [IQR] |
+|:--|--:|--:|:--|
+| 1 µm | 135 | **25 %** | 0.39 [0.05, 0.68] |
+| 2 µm | 135 | **72 %** | 0.84 [0.58, 0.94] |
+| 3 µm | 135 | **96 %** | 0.94 [0.84, 0.97] |
+| 6 µm | 135 | **100 %** | 0.97 [0.95, 0.99] |
+| 8 µm | 135 | **100 %** | 0.97 [0.96, 0.99] |
+
+![](figures_simulation_complexe/amplitude_detection.png){width=72%}
+
+::: {style="font-size:0.62em"}
+Each row pools **all** jitter and noise conditions. Detection goes from 25 % to
+100 % across the amplitude range — no other factor spans anything close to that.
+The transition is sharp between **2 and 3 µm**.
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation_complexe/`
+:::
+
+## The most critical jitter is in $y$
+
+![](figures_simulation_complexe/jitter_xy.png){width=80%}
+
+::: {style="font-size:0.62em"}
+| σ (px) | detect. $j_x$ | detect. $j_y$ | corr. $j_x$ | corr. $j_y$ |
+|:--|--:|--:|--:|--:|
+| 0 | 98.7 % | 98.7 % | 1.00 | 1.00 |
+| 1 | 94.7 % | **82.7 %** | 0.97 | 0.98 |
+| 2 | 88.0 % | **69.3 %** | 0.91 | 0.88 |
+
+At 2 px, jitter in $y$ costs **19 points of detection more** than jitter in $x$
+(69 % vs 88 %) — each column moving on its own destroys the spatial coherence
+between neighbouring A-scans, which is exactly what the SVD relies on.
+
+Note the two metrics disagree at $\sigma = 1$ : $j_y$ already costs 12 points of
+detection while its correlation is still 0.98. The pulse is still *there* — the
+rate estimator just stops being confident about it.
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation_complexe/`
+:::
+
+## Jitter in $x$ creates a spatial mode
+
+![](figures_simulation_complexe/run_jx2_jy0.png){width=88%}
+
+::: {style="font-size:0.62em"}
+3 µm, $j_x = 2$ px, $j_y = 0$. **$v_1$ is a clean left–right dipole** — red on one
+flank, blue on the other : the signature of the whole ring translating sideways.
+A common-mode shift is coherent across the image, so the SVD gives it **its own
+component**, well separated from the pulsation. Correlation stays at 0.94 and
+confidence `high`.
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — replicate closest to the cell median
+:::
+
+## Jitter in $y$ does not
+
+![](figures_simulation_complexe/run_jx0_jy2.png){width=88%}
+
+::: {style="font-size:0.62em"}
+3 µm, $j_x = 0$, $j_y = 2$ px. **No dipole anywhere** : $v_1 \ldots v_5$ are
+fragmented vertical striping. Because each A-scan moves independently, the
+perturbation is *incoherent* and has no single spatial mode to occupy — it spreads
+across many components instead. The aggregation is forced to keep **7** of them
+(against 3 opposite), correlation falls to 0.88 and confidence drops to `medium`.
+
+That is the mechanism behind the previous slide : $j_x$ is separable, $j_y$ is not.
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — replicate closest to the cell median
+:::
+
+## Phase : a constant offset, not a filter dispersion {.scrollable}
+
+![](figures_simulation_complexe/run_jx2_jy2_phase.png){width=100% .nostretch}
+
+::: {style="font-size:0.6em"}
+8 µm, $j_x = j_y = 2$ px. The measured Hilbert phase sits **+89° from the true
+chirp phase** — but three checks say this is **not** a filtering artefact :
+
+- the reconstructed pulse peaks at **lag 0** against ground truth (correlation
+  0.948 at zero shift — no temporal delay at all)
+- the offset is **±90° in every condition tested, including $j_x = j_y = 0$ and
+  zero noise** — it is not caused by the degradations
+- it **does not drift** with the chirp ($-1.7°$ from start to end, against a $7°$
+  scatter) ; a filter-induced shift would be frequency-dependent
+
+$\pm 90°$ is the quadrature convention of the analytic signal — for $x = \sin\theta$
+the Hilbert phase is $\theta - 90°$, and the arbitrary SVD sign flips it. It is a
+**constant, removable offset**, not dispersion.
+
+What *is* degraded : the instantaneous rate is unbiased (median error $0.1$ BPM)
+but its spread widens with degradation (IQR $0.4 \rightarrow 2.0$ BPM), and the
+**Hilbert edge artefacts** at $t = 0$ and $t = 22$ s are large.
+:::
+
+::: footer
+`Astronauts/simulate_svd_radial_gaussians.py` — replicate closest to the cell median
+:::

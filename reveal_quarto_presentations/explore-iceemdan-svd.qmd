@@ -1,0 +1,91 @@
+---
+title: "ICEEMDAN + SVD de Hankel"
+subtitle: "Débruiter un signal non stationnaire par décomposition modale, avant la SVD spatio-temporelle"
+---
+
+::: {.callout-note appearance="simple"}
+Piste non testée. Cette page dit ce que la référence propose, ce qui est
+transférable à la chaîne actuelle et ce qui ne l'est pas — pas ce que ça donne.
+:::
+
+## La référence
+
+> Poongadan, S. & Lineesh, M. C. (2024). *Non-linear Time Series Prediction
+> using Improved CEEMDAN, SVD and LSTM.* **Neural Processing Letters**.
+> [10.1007/s11063-024-11622-z](https://link.springer.com/article/10.1007/s11063-024-11622-z)
+
+Le texte intégral est derrière un abonnement ; ce qui suit vient du résumé et de
+la page de l'article.
+
+## Ce que l'article propose
+
+Une chaîne à trois étages pour des séries temporelles **non linéaires et non
+stationnaires** :
+
+1. **ICEEMDAN** (*Improved Complete Ensemble EMD with Adaptive Noise*) décompose
+   la série en fonctions modales intrinsèques (IMF) plus un résidu. C'est la
+   variante d'EMD conçue pour limiter le *mode mixing* — le défaut qui fait
+   qu'une même IMF mélange deux régimes fréquentiels.
+2. **SVD sur matrice de Hankel** : chaque composante est remise en matrice de
+   Hankel, puis débruitée en ne gardant que les premières valeurs singulières.
+   C'est la SVD appliquée à **un seul signal 1-D replié sur lui-même**, pas à un
+   ensemble de signaux.
+3. **LSTM** : un réseau par composante débruitée, prédictions ré-agrégées.
+
+Validation sur les nombres de Wolf (taches solaires, 1700–1988), meilleur RMSE
+et MAE que sept références dont LSTM seul, EMD-LSTM, EEMD-LSTM et CEEMDAN-LSTM.
+
+## Pourquoi c'est pertinent ici
+
+Deux points de contact avec la chaîne actuelle, et une divergence nette.
+
+### La SVD de Hankel n'est pas la SVD que nous faisons
+
+C'est le point le plus intéressant. Notre SVD est **spatio-temporelle** : la
+matrice est temps × pixels, et la décomposition sépare des *lieux* qui bougent
+ensemble (cf. [SVD applied to temporal signals](svd-temporal-signals.qmd)). La
+SVD de Hankel est **mono-signal** : elle replie une seule trace sur elle-même et
+sépare des *périodicités* — c'est l'analyse en spectre singulier (SSA).
+
+Les deux sont complémentaires, pas concurrentes : la première produit
+`combined_uniform`, la seconde pourrait le débruiter ensuite. Rien dans le
+pipeline actuel ne fait ce second étage — le pulse reconstruit part directement
+en Lomb-Scargle puis en Hilbert.
+
+### La non-stationnarité est exactement notre cas
+
+La simulation impose un chirp 1.0 → 1.3 Hz, et un vrai rythme cardiaque dérive
+au moins autant. Or `LombScargleRateEstimator` cherche **une** fréquence, et
+`HilbertPhaseEstimator` suppose un signal à bande étroite. Une décomposition
+modale, qui s'adapte localement en fréquence, attaque ce problème de front là où
+la sélection spectrale actuelle le contourne.
+
+### Ce qui n'est pas transférable
+
+Le LSTM. L'article **prédit** la suite de la série ; nous ne prédisons rien,
+nous mesurons une fréquence et une phase sur un enregistrement clos de 22 s.
+Il n'y a ni horizon de prévision, ni jeu d'entraînement — 401 frames par
+acquisition. Seuls les étages 1 et 2 ont un sens ici.
+
+## Un premier essai concret
+
+Le banc de la [phase B](sim-mixtures.qmd) permet de trancher sans acquérir quoi
+que ce soit : 675 runs de vérité terrain connue, déjà calculés, avec les
+conditions qui échouent identifiées.
+
+- prendre `combined_uniform` des runs sauvegardés, insérer un étage
+  ICEEMDAN → SVD de Hankel avant l'estimation de fréquence, et re-mesurer
+  `freq_rel_err` et `corr_combined_vs_truth` sur les **mêmes** runs ;
+- cibler d'abord les cases où la chaîne actuelle tombe : 1 µm avec
+  $j_x \geq 1$ et $j_y \geq 1$, à 0 % de détection ;
+- critère de décision : gain sur les cases qui échouent **sans** perte sur
+  celles à 100 %. Un débruitage qui améliore le difficile en dégradant le facile
+  ne vaut pas la complexité ajoutée.
+
+Aucun réentraînement n'est nécessaire pour cet essai, ce qui le rend peu coûteux :
+les `.npz` contiennent déjà tout ce dont il a besoin.
+
+::: {.source-note}
+Runs de référence : `E:/SANSORI_simulation_output/svd_radial_gaussians/sweep_combined`
+— chaîne actuelle : `motion.pulsation`
+:::

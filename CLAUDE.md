@@ -2,11 +2,60 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Write results to `E:`, never to `C:`.** `C:` is chronically full (it has hit 0 GB free, at which
+> point even a Python `print` to a pipe fails with `No space left on device`); `E:` has ~1.4 TB. Any
+> generated output — batch tables, per-condition `.npz`, figures, exported videos, caches — belongs
+> under `E:/NASA_Rigidity/` (or `E:/SANSORI/` for data written next to its condition). Only source
+> lives on `C:`. See "Where results go" below for the layout and the junction convention.
+
 > The package went through a large restructuring (58 files, +14k/-2.2k lines) shortly before this
 > revision of CLAUDE.md. Some consumers outside `src/ocularrigidity` (notably the gitignored
 > `Astronauts/` scripts, see below) were **not** updated to match and currently have broken imports.
 > Don't trust old references to `motion/registered_video.py`, `RegisteredVideo`,
 > `registration/horizontal/`, `registration/export.py`, or `rigidity/features.py` — they're gone.
+
+## Where results go
+
+Everything generated lands on `E:`. The three roots in use:
+
+```
+E:/SANSORI/<NN_id>/<...>_rigidity/<..._OD|OS...>/   raw acquisitions + per-condition outputs
+E:/NASA_Rigidity/SegmentationVariations/<variant>/  registered frames/masks + batch analysis tables
+E:/NASA_Rigidity/quarto_results/                    figures of the Quarto report site
+```
+
+A batch script writes its tables and per-condition payloads under a named subdirectory of the mask
+variant it consumed, so a result is always traceable to the segmentation it came from — e.g.
+`Astronauts/compute_pulse_from_data.py` → `SegmentationVariations/model1_scale_1.0/pulse_from_data/`
+(`conditions.csv`, `methods.csv`, `dmd_eigs.csv`, `ssa_sweep.csv`, `traces/<slug>.npz`). Follow that
+pattern for new scripts rather than inventing a root: `SEGVAR_ROOT / MASK_VARIANT / OUTPUT_SUBDIR`.
+
+**Quarto figures are junctions.** In `reveal_quarto_presentations/`, every `figures_*/` directory and
+`firstPresentation_files/` is a Windows directory junction pointing into
+`E:/NASA_Rigidity/quarto_results/`. Figure-generating scripts (`figures_*/make_figures.py`) therefore
+write "into the repo" and land on `E:` transparently, and Quarto resolves the relative image paths
+normally. To add a page, create the target directory on `E:` and junction it back
+(`New-Item -ItemType Junction -Path <repo>\figures_<name> -Target E:\NASA_Rigidity\quarto_results\figures_<name>`
+— no admin rights needed).
+
+**Quarto figures must be interactive.** In every Quarto document — the report site *and* the reveal.js
+slides — plots are produced as dynamic, interactive figures (Plotly preferred, Bokeh acceptable) and
+embedded as self-contained HTML widgets, not as static PNG/SVG. Zoom, pan, hover tooltips and
+series toggling are the point: these figures are read on screen, not printed. Fall back to a static
+Matplotlib image only when interactivity is genuinely impossible or useless for that figure — e.g.
+raw B-scan / mask image panels and video frames, very dense per-pixel maps whose HTML payload would
+be prohibitive, or output consumed by a PDF/print target — and say so when you do. When writing a
+new `figures_*/make_figures.py`, default to Plotly and write `.html` (or a Quarto code cell emitting
+the figure directly) rather than saving `.png`.
+
+`_site/` is the one deliberate exception and stays on `C:`: Quarto refuses to clean an output directory
+that resolves outside the project (`WARN: Refusing to remove directory ... since it is not a
+subdirectory of the main project directory`) and warns that strange behavior may result. It is a build
+artifact, so it is cheap to keep local.
+
+When `C:` needs reclaiming, the safe targets are the conda package cache (`conda clean -p`) and the pip
+cache (`pip cache purge`) — together ~70 GB, both re-downloadable. **Never** touch
+`Documents\Nicolas\mes-projets` (~1.2 TB of the user's data).
 
 ## What this repo does
 

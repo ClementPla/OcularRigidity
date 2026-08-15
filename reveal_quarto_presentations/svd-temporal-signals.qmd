@@ -1,0 +1,185 @@
+---
+title: "SVD applied to temporal signals"
+subtitle: "What $A^{T}A$ and $AA^{T}$ become when the rows are time signals"
+---
+
+The rows of $A$ are now signals sampled at $m$ time points — one per pixel or per
+A-scan. This page works out what the two correlation matrices look like, when
+their eigenvalues are reachable in closed form, and why the case actually met in
+the data (phase-shifted sines) collapses to rank 2 whatever the number of
+signals.
+
+## Two signals : the two correlation matrices
+
+$$
+A = \begin{bmatrix}\vec x\; \vec y\end{bmatrix}
+  = \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\
+                    y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix}
+$$ {#eq-two-signals}
+
+$$
+A A^T = \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix} \begin{bmatrix} x(t_1) & y(t_1) \\  x(t_2) & y(t_2) \\  \vdots & \vdots \\  x(t_m) & y(t_m) \end{bmatrix} = \begin{bmatrix} \sum_{i=1}^{m} x^2(t_i) & \sum_{i=1}^{m} x(t_i)y(t_i) \\  \sum_{i=1}^{m} x(t_i)y(t_i) & \sum_{i=1}^{m} y^2(t_i) \end{bmatrix}
+$$ {#eq-two-signals-aaT}
+
+$$
+A^T A = \begin{bmatrix} x(t_1) & y(t_1) \\  x(t_2) & y(t_2) \\  \vdots & \vdots \\  x(t_m) & y(t_m) \end{bmatrix} \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix} = \begin{bmatrix} x^2(t_1)+y^2(t_1) & x(t_1)x(t_2)+y(t_1)y(t_2) & \cdots & x(t_1)x(t_m)+y(t_1)y(t_m) \\  x(t_2)x(t_1)+y(t_2)y(t_1) & x^2(t_2)+y^2(t_2) & \cdots & x(t_2)x(t_m)+y(t_2)y(t_m) \\  \vdots & \vdots & \ddots & \vdots \\  x(t_m)x(t_1)+y(t_m)y(t_1) & x(t_m)x(t_2)+y(t_m)y(t_2) & \cdots & x^2(t_m)+y^2(t_m) \end{bmatrix}
+$$ {#eq-two-signals-aTa}
+
+$AA^{T}$ stays $2 \times 2$ whatever the record length ; $A^{T}A$ grows with the
+number of time samples.
+
+## $A^{T}A$ as a sum of outer products
+
+$$
+A = \begin{bmatrix} x(t_1) & x(t_2) & \cdots & x(t_m) \\  y(t_1) & y(t_2) & \cdots & y(t_m) \end{bmatrix}
+$$
+
+\begin{align}
+A^T A &=\begin{bmatrix} x^2(t_1)+y^2(t_1) & x(t_1)x(t_2)+y(t_1)y(t_2) & \cdots & x(t_1)x(t_m)+y(t_1)y(t_m) \\  x(t_2)x(t_1)+y(t_2)y(t_1) & x^2(t_2)+y^2(t_2) & \cdots & x(t_2)x(t_m)+y(t_2)y(t_m) \\  \vdots & \vdots & \ddots & \vdots \\  x(t_m)x(t_1)+y(t_m)y(t_1) & x(t_m)x(t_2)+y(t_m)y(t_2) & \cdots & x^2(t_m)+y^2(t_m) \end{bmatrix} \\
+&= \begin{bmatrix} x(t_1)\vec x + y(t_1)\vec y \\  x(t_2)\vec x + y(t_2)\vec y \\  \vdots \\  x(t_m)\vec x + y(t_m)\vec y \end{bmatrix} \\
+&= \vec x^T \vec x + \vec y^T \vec y
+\end{align}
+
+## Eigenvalue equation of $A^{T}A$ for two signals
+
+The expression above is a sum of two **rank-1 outer products** :
+
+$$
+A^{T}A = \vec x^{T}\vec x + \vec y^{T}\vec y ,
+\qquad
+\vec x = \left[x(t_1)\; \cdots\; x(t_m)\right],\;
+\vec y = \left[y(t_1)\; \cdots\; y(t_m)\right]
+$$ {#eq-ata-outer}
+
+so the eigenvalue equation $A^{T}A\,\vec v = \lambda \vec v$ reads
+
+$$
+\left(\vec x\,\vec v\right)\vec x^{T} + \left(\vec y\,\vec v\right)\vec y^{T}
+= \lambda \, \vec v
+$$ {#eq-ata-eigen-signals}
+
+- for $\lambda \neq 0$, the left side lies in $\operatorname{span}\{\vec x^{T}, \vec y^{T}\}$
+  $\Rightarrow$ **every eigenvector with $\lambda > 0$ is a combination of the two signals**
+- hence only $r = \operatorname{rank}(A) \leq 2$ non-zero eigenvalues, and $m - r$ zero ones,
+  whatever the number of time samples $m$
+
+## Eigenvalue equation : closed form
+
+Since $A^{T}A$ ($m \times m$) and $AA^{T}$ ($2 \times 2$) share their non-zero
+eigenvalues, solve the small one. With
+
+$$
+S_{xx} = \sum_{i} x^2(t_i), \quad
+S_{yy} = \sum_{i} y^2(t_i), \quad
+S_{xy} = \sum_{i} x(t_i)\,y(t_i)
+$$ {#eq-gram-entries}
+
+the characteristic equation $\det\!\left(AA^{T} - \lambda I\right) = 0$ gives
+
+$$
+\lambda_{\pm} = \frac{S_{xx} + S_{yy}}{2}
+  \pm \sqrt{\left(\frac{S_{xx} - S_{yy}}{2}\right)^{2} + S_{xy}^{2}}
+$$ {#eq-lambda-closed-form}
+
+- $\sigma_{\pm} = \sqrt{\lambda_{\pm}}$ : the two singular values of $A$
+- $S_{xy} = 0$ (orthogonal signals) $\Rightarrow \lambda_{\pm} = S_{xx},\, S_{yy}$ — the
+  singular vectors align with $\vec x$ and $\vec y$
+- $\lambda_- = 0 \Leftrightarrow S_{xx}S_{yy} = S_{xy}^{2}$ : the two signals are
+  proportional, $\operatorname{rank}(A) = 1$
+
+## Eigenvalues of $AA^{T}$ for $k$ signals
+
+With $k$ signals $\vec x, \vec y, \vec z, \vec w, \vec q, \vec p$ sampled at $m$ times,
+$A$ is $k \times m$ and $AA^{T}$ is the $k \times k$ **Gram matrix** $S_{ab} = \sum_{t} a(t)\,b(t)$ :
+
+$$
+AA^{T} =
+\begin{bmatrix}
+S_{xx} & S_{xy} & S_{xz} & S_{xw} & S_{xq} & S_{xp} \\
+S_{xy} & S_{yy} & S_{yz} & S_{yw} & S_{yq} & S_{yp} \\
+S_{xz} & S_{yz} & S_{zz} & S_{zw} & S_{zq} & S_{zp} \\
+S_{xw} & S_{yw} & S_{zw} & S_{ww} & S_{wq} & S_{wp} \\
+S_{xq} & S_{yq} & S_{zq} & S_{wq} & S_{qq} & S_{qp} \\
+S_{xp} & S_{yp} & S_{zp} & S_{wp} & S_{qp} & S_{pp}
+\end{bmatrix}
+$$ {#eq-gram-k}
+
+$k = 3, 4, 5$ are the leading principal submatrices of this $k = 6$ case.
+The eigenvalues are the roots of $\det\!\left(AA^{T} - \lambda I\right) = 0$, of degree $k$.
+
+## What is actually listable
+
+| $k$ | signals | $\det(AA^{T}-\lambda I)$ | closed form ? |
+|:--|:--|:--|:--|
+| 2 | $x,y$ | quadratic | yes — @eq-lambda-closed-form |
+| 3 | $x,y,z$ | cubic | yes — Cardano (below) |
+| 4 | $+\,w$ | quartic | in principle (Ferrari), unusable in practice |
+| 5 | $+\,q$ | quintic | **no** — Abel–Ruffini |
+| 6 | $+\,p$ | sextic | **no** — Abel–Ruffini |
+
+From $k \geq 5$ there is no general expression by radicals: the eigenvalues exist,
+are real and $\geq 0$, but are only reachable **numerically**.
+
+What *is* listable for every $k$ — the Vieta relations on the roots :
+
+$$
+\sum_{i} \lambda_i = \operatorname{tr}(AA^{T}) = \sum_{a} \|\vec a\|^{2},
+\qquad
+\prod_{i} \lambda_i = \det(AA^{T})
+$$ {#eq-vieta}
+
+- $e_j(\lambda_1 \ldots \lambda_k) =$ sum of the $j \times j$ principal minors of $AA^{T}$
+- number of $\lambda_i > 0$ equals $\operatorname{rank}(A) \leq \min(k, m)$
+- $\det(AA^{T}) = 0$ as soon as the signals are linearly dependent
+
+## $k = 3$ signals : closed form
+
+For the symmetric $3 \times 3$ Gram matrix of $\vec x, \vec y, \vec z$, with
+$\bar q = \operatorname{tr}(AA^{T})/3$ and
+
+$$
+P = \sqrt{\frac{(S_{xx}-\bar q)^2 + (S_{yy}-\bar q)^2 + (S_{zz}-\bar q)^2
+   + 2\left(S_{xy}^2 + S_{xz}^2 + S_{yz}^2\right)}{6}},
+\qquad
+B = \frac{AA^{T} - \bar q I}{P}
+$$ {#eq-cardano-setup}
+
+$$
+\varphi = \frac{1}{3}\arccos\!\left(\frac{\det B}{2}\right),
+\qquad
+\lambda_{1,2,3} = \bar q + 2P \cos\!\left(\varphi + \frac{2\pi j}{3}\right),
+\; j = 0, 1, 2
+$$ {#eq-cardano}
+
+The three cosines sum to zero, so $\sum_i \lambda_i = 3\bar q = \operatorname{tr}(AA^{T})$
+as required by @eq-vieta.
+
+## Phase-shifted sines : rank 2 for any $k$
+
+The degree-$k$ obstacle disappears for the case at hand. Every
+$a_i(t) = \sin(2\pi f t + \phi_i)$ expands on **two** basis signals only :
+
+$$
+a_i(t) = \cos\phi_i \, \underbrace{\sin(2\pi f t)}_{\vec s}
+       + \sin\phi_i \, \underbrace{\cos(2\pi f t)}_{\vec c}
+\quad \Longrightarrow \quad
+A = \Phi \begin{bmatrix} \vec s \\ \vec c \end{bmatrix},
+\;\; \Phi_{i} = \left[\cos\phi_i \;\; \sin\phi_i\right]
+$$ {#eq-sine-factorization}
+
+So $\operatorname{rank}(A) \leq 2$ and **$AA^{T}$ has only 2 non-zero eigenvalues
+whatever $k = 3, 4, 5, 6$** — the other $k - 2$ are exactly zero. Over an integer
+number of periods, $\vec s \vec c^{T} \simeq 0$ and $\|\vec s\|^2 = \|\vec c\|^2 = m/2$, giving
+
+$$
+\lambda_{\pm} = \frac{m}{4}\left(k \pm \left|\sum_{i=1}^{k} e^{\,2 i \phi_i}\right|\right)
+$$ {#eq-sine-eigenvalues}
+
+- phases spread uniformly over $[0, \pi)$ $\Rightarrow \sum_i e^{2i\phi_i} = 0$ and
+  $\lambda_+ = \lambda_- = mk/4$ : degenerate, no preferred direction
+- the more the phases cluster, the larger $\lambda_+ / \lambda_-$
+
+::: {.source-note}
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::

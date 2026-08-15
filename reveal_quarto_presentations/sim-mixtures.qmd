@@ -1,0 +1,86 @@
+---
+title: "Mixtures"
+subtitle: "Phase B — tous les facteurs mélangés sur la même grille"
+---
+
+La [page précédente](sim-one-feature.qmd) fait varier **un facteur à la fois** :
+utile pour des limites individuelles, muet sur ce qui arrive quand tout bouge
+en même temps. La phase B croise donc amplitude × jitter $x$ × jitter $y$, avec
+un niveau de bruit **tiré au sort à chaque run** dans la distribution mesurée
+d'un cube à l'autre — chaque run est un *cube plausible tiré au sort*, et la
+limite obtenue vaut pour la cohorte plutôt que pour un point de grille
+arbitraire.
+
+| | |
+|:--|:--|
+| conditions | 5 amplitudes × 3 jitter $x$ × 3 jitter $y$ = **45** |
+| réplicats par condition | 15 (graine de bruit/jitter différente, anatomie fixe) |
+| runs | **675** (1 en échec, exclu) |
+| bruit tiré | log-normale, médiane 1.01, étendue 0.50 → 3.12 |
+| détection globale | **78.5 %** |
+
+*Détecté* = confiance `LombScargle` high/medium **et** erreur relative de
+fréquence $\leq 10\%$. Un point de courbe agrège les réplicats de sa case, donc
+plusieurs niveaux de bruit : c'est la moyenne sur la nuisance, voulue.
+
+## Toutes les conditions superposées
+
+La couleur porte l'amplitude, le style de trait le second jitter, et le
+troisième facteur est en abscisse.
+
+### Jitter $y$ en abscisse
+
+![](figures_mixtures/phaseB_overlay_jitter_y.svg)
+
+C'est la dégradation la plus sévère : chaque A-scan bouge pour son compte, ce
+qui détruit la cohérence spatiale entre colonnes voisines — exactement ce sur
+quoi la SVD s'appuie. Détection moyenne 94 % à 0 px, 81 % à 1 px, **61 % à
+2 px**.
+
+### Jitter $x$ en abscisse
+
+![](figures_mixtures/phaseB_overlay_jitter_x.svg)
+
+Le jitter commun à l'image est nettement plus bénin : 84 % → 79 % → 73 % de 0 à
+2 px. Il déplace l'anneau en bloc sans casser la cohérence entre A-scans.
+
+### Bruit en abscisse
+
+![](figures_mixtures/phaseB_overlay_noise.svg)
+
+Le bruit étant tiré au sort, il est lu ici comme un **régresseur** et non comme
+un facteur contrôlé : casiers de quantiles sur les 675 valeurs tirées. C'est
+l'usage prévu quand on l'a rendu aléatoire, et ce que la grille facettée
+empêchait de lire.
+
+## Ce que la grille dit
+
+- **L'amplitude domine tout le reste.** 25 % de détection à 1 µm, 72 % à 2 µm,
+  96 % à 3 µm, **100 % à 6 et 8 µm** — quel que soit le jitter. En dessous de
+  2 µm crête à crête, aucune combinaison de jitters n'est bonne.
+- **Les jitters ne cassent que ce qui était déjà fragile.** À 6 et 8 µm la
+  détection reste à 100 % jusqu'à 2 px des deux jitters ; la corrélation avec la
+  vérité terrain descend seulement de 1.00 à 0.88.
+- **Le mélange est plus dur que la somme des facteurs pris isolément.** En phase
+  A, 4 px de jitter $y$ seul ne faisait rien tomber à 6 µm. Ici, à 1 µm, les
+  conditions $j_x \geq 1$ et $j_y \geq 1$ tombent à **0 % de détection** — la
+  conclusion « aucun facteur ne défait la chaîne » de la phase A ne survit pas
+  au croisement.
+- **$j_y$ pèse environ deux fois $j_x$**, à budget de pixels égal.
+
+## Un exemple par condition
+
+Une sous-page par condition (45), chacune montrant **un réplicat représentatif** :
+celui d'erreur de fréquence médiane parmi les 15 — ni le meilleur, ni le pire.
+Chaque page donne le spectre des valeurs singulières et les composantes
+retenues, les vecteurs singuliers temporels et leur contenu fréquentiel, les
+cartes spatiales, le pulse reconstruit avec son périodogramme et les poids de la
+combinaison, puis la phase imposée contre la phase mesurée.
+
+{{< include mixtures/_table.qmd >}}
+
+::: {.source-note}
+`Astronauts/simulate_svd_radial_gaussians.py` (phase B) — figures :
+`figures_mixtures/make_figures_mixtures.py` — calibration du bruit :
+[Noise in dataset](sim-noise-in-dataset.qmd)
+:::

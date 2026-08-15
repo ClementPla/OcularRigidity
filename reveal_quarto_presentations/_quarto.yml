@@ -1,0 +1,201 @@
+project:
+  type: website
+  output-dir: _site
+  # Only the website pages are part of this project — the revealjs decks
+  # (SANS_meca_predictors_REPORT.qmd, firstPresentation.qmd) are rendered
+  # on their own and are deliberately left out.
+  render:
+    - index.qmd
+    - svd-basics.qmd
+    - svd-temporal-signals.qmd
+    - svd-simple-simulation.qmd
+    - svd-simple-simulation-two-gaussians.qmd
+    - sim-noise-in-dataset.qmd
+    - sim-one-feature.qmd
+    - sim-mixtures.qmd
+    - mixtures/*.qmd
+    - data-pulse-extraction-methods.qmd
+    - comparing-one-cycle-videos.qmd
+    - one_cycles/*.qmd
+    - explore-iceemdan-svd.qmd
+  # Les <video> sont ecrites en HTML brut dans les fragments generes : le
+  # detecteur de ressources de Quarto ne suit pas ces balises (il suit <img>,
+  # <link>, <script>), et le glob `resources` ci-dessous ne les rattrape pas non
+  # plus -- tous les `figures_*/` sont des JONCTIONS vers E:, que le parcours
+  # d'arbre resolvant ces globs ne traverse pas. Les .png du meme dossier
+  # arrivent bien dans _site : eux passent par la syntaxe markdown, donc par le
+  # detecteur, chemin par chemin. Les .mp4 sont donc copies apres coup par
+  # `post-render`. Les entrees `resources` sont gardees comme declaration
+  # d'intention (elles ne coutent rien) mais ne suffisent pas.
+  resources:
+    - figures_deux_gaussiennes_svd/*.mp4
+    - figures_one_cycle_compare/videos/*.mp4
+  post-render:
+    - copy_video_resources.py
+
+website:
+  title: "SANSORI — experiment reports"
+  description: "Rapports d'expériences : SVD, pulsatilité choroïdienne, rigidité oculaire"
+  page-navigation: true
+  search:
+    location: sidebar
+    type: textbox
+  sidebar:
+    style: docked
+    alignment: left
+    collapse-level: 2
+    search: true
+    contents:
+      - text: "Home"
+        href: index.qmd
+      - section: "Understanding SVD"
+        contents:
+          - text: "SVD basics"
+            href: svd-basics.qmd
+          - text: "SVD applied to temporal signals"
+            href: svd-temporal-signals.qmd
+          - text: "Simple simulation: one Gaussian"
+            href: svd-simple-simulation.qmd
+          - text: "Simple simulation: two Gaussians"
+            href: svd-simple-simulation-two-gaussians.qmd
+      - section: "Realistic simulations"
+        contents:
+          - text: "Noise in dataset"
+            href: sim-noise-in-dataset.qmd
+          - text: "One feature"
+            href: sim-one-feature.qmd
+          - section: "Mixtures"
+            href: sim-mixtures.qmd
+            contents:
+              - section: "A = 1 µm"
+                contents:
+                  - text: "jx 0 / jy 0"
+                    href: mixtures/cond_A1_Jx0_Jy0.qmd
+                  - text: "jx 0 / jy 1"
+                    href: mixtures/cond_A1_Jx0_Jy1.qmd
+                  - text: "jx 0 / jy 2"
+                    href: mixtures/cond_A1_Jx0_Jy2.qmd
+                  - text: "jx 1 / jy 0"
+                    href: mixtures/cond_A1_Jx1_Jy0.qmd
+                  - text: "jx 1 / jy 1"
+                    href: mixtures/cond_A1_Jx1_Jy1.qmd
+                  - text: "jx 1 / jy 2"
+                    href: mixtures/cond_A1_Jx1_Jy2.qmd
+                  - text: "jx 2 / jy 0"
+                    href: mixtures/cond_A1_Jx2_Jy0.qmd
+                  - text: "jx 2 / jy 1"
+                    href: mixtures/cond_A1_Jx2_Jy1.qmd
+                  - text: "jx 2 / jy 2"
+                    href: mixtures/cond_A1_Jx2_Jy2.qmd
+              - section: "A = 2 µm"
+                contents:
+                  - text: "jx 0 / jy 0"
+                    href: mixtures/cond_A2_Jx0_Jy0.qmd
+                  - text: "jx 0 / jy 1"
+                    href: mixtures/cond_A2_Jx0_Jy1.qmd
+                  - text: "jx 0 / jy 2"
+                    href: mixtures/cond_A2_Jx0_Jy2.qmd
+                  - text: "jx 1 / jy 0"
+                    href: mixtures/cond_A2_Jx1_Jy0.qmd
+                  - text: "jx 1 / jy 1"
+                    href: mixtures/cond_A2_Jx1_Jy1.qmd
+                  - text: "jx 1 / jy 2"
+                    href: mixtures/cond_A2_Jx1_Jy2.qmd
+                  - text: "jx 2 / jy 0"
+                    href: mixtures/cond_A2_Jx2_Jy0.qmd
+                  - text: "jx 2 / jy 1"
+                    href: mixtures/cond_A2_Jx2_Jy1.qmd
+                  - text: "jx 2 / jy 2"
+                    href: mixtures/cond_A2_Jx2_Jy2.qmd
+              - section: "A = 3 µm"
+                contents:
+                  - text: "jx 0 / jy 0"
+                    href: mixtures/cond_A3_Jx0_Jy0.qmd
+                  - text: "jx 0 / jy 1"
+                    href: mixtures/cond_A3_Jx0_Jy1.qmd
+                  - text: "jx 0 / jy 2"
+                    href: mixtures/cond_A3_Jx0_Jy2.qmd
+                  - text: "jx 1 / jy 0"
+                    href: mixtures/cond_A3_Jx1_Jy0.qmd
+                  - text: "jx 1 / jy 1"
+                    href: mixtures/cond_A3_Jx1_Jy1.qmd
+                  - text: "jx 1 / jy 2"
+                    href: mixtures/cond_A3_Jx1_Jy2.qmd
+                  - text: "jx 2 / jy 0"
+                    href: mixtures/cond_A3_Jx2_Jy0.qmd
+                  - text: "jx 2 / jy 1"
+                    href: mixtures/cond_A3_Jx2_Jy1.qmd
+                  - text: "jx 2 / jy 2"
+                    href: mixtures/cond_A3_Jx2_Jy2.qmd
+              - section: "A = 6 µm"
+                contents:
+                  - text: "jx 0 / jy 0"
+                    href: mixtures/cond_A6_Jx0_Jy0.qmd
+                  - text: "jx 0 / jy 1"
+                    href: mixtures/cond_A6_Jx0_Jy1.qmd
+                  - text: "jx 0 / jy 2"
+                    href: mixtures/cond_A6_Jx0_Jy2.qmd
+                  - text: "jx 1 / jy 0"
+                    href: mixtures/cond_A6_Jx1_Jy0.qmd
+                  - text: "jx 1 / jy 1"
+                    href: mixtures/cond_A6_Jx1_Jy1.qmd
+                  - text: "jx 1 / jy 2"
+                    href: mixtures/cond_A6_Jx1_Jy2.qmd
+                  - text: "jx 2 / jy 0"
+                    href: mixtures/cond_A6_Jx2_Jy0.qmd
+                  - text: "jx 2 / jy 1"
+                    href: mixtures/cond_A6_Jx2_Jy1.qmd
+                  - text: "jx 2 / jy 2"
+                    href: mixtures/cond_A6_Jx2_Jy2.qmd
+              - section: "A = 8 µm"
+                contents:
+                  - text: "jx 0 / jy 0"
+                    href: mixtures/cond_A8_Jx0_Jy0.qmd
+                  - text: "jx 0 / jy 1"
+                    href: mixtures/cond_A8_Jx0_Jy1.qmd
+                  - text: "jx 0 / jy 2"
+                    href: mixtures/cond_A8_Jx0_Jy2.qmd
+                  - text: "jx 1 / jy 0"
+                    href: mixtures/cond_A8_Jx1_Jy0.qmd
+                  - text: "jx 1 / jy 1"
+                    href: mixtures/cond_A8_Jx1_Jy1.qmd
+                  - text: "jx 1 / jy 2"
+                    href: mixtures/cond_A8_Jx1_Jy2.qmd
+                  - text: "jx 2 / jy 0"
+                    href: mixtures/cond_A8_Jx2_Jy0.qmd
+                  - text: "jx 2 / jy 1"
+                    href: mixtures/cond_A8_Jx2_Jy1.qmd
+                  - text: "jx 2 / jy 2"
+                    href: mixtures/cond_A8_Jx2_Jy2.qmd
+      - section: "Data analysis"
+        contents:
+          - text: "Comparing pulse-extraction methods on real videos"
+            href: data-pulse-extraction-methods.qmd
+          # Les 106 pages par condition (one_cycles/oc_*.qmd) sont rendues mais
+          # deliberement absentes de la barre laterale : elles y ajouteraient
+          # 106 entrees. On y arrive par la table de liens de la page ci-dessous.
+          - text: "Comparing one-cycle videos"
+            href: comparing-one-cycle-videos.qmd
+      - section: "Paths to explore"
+        contents:
+          - text: "ICEEMDAN + Hankel SVD"
+            href: explore-iceemdan-svd.qmd
+          - text: "PyDMD — Dynamic Mode Decomposition (vidéo)"
+            href: https://www.youtube.com/watch?v=v33cL3o2Yuk
+  page-footer:
+    center: "Nicolas Desjardins-Lecavalier — SANSORI / OcularRigidity"
+
+format:
+  html:
+    theme:
+      dark: darkly
+      light: flatly
+    css: styles.css
+    toc: true
+    toc-depth: 3
+    toc-title: "On this page"
+    html-math-method: katex
+    fig-align: center
+    link-external-newwindow: true
+
+author: "Nicolas Desjardins-Lecavalier"

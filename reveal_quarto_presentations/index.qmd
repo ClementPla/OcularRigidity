@@ -1,0 +1,60 @@
+---
+title: "SANSORI — experiment reports"
+subtitle: "Choroidal pulsatility, SVD and ocular rigidity"
+---
+
+This site collects the experiment reports behind the *SANS mechanical predictors*
+work: the same material as the revealjs deck
+([`SANS_meca_predictors_REPORT.qmd`](SANS_meca_predictors_REPORT.html)), but laid
+out as reports rather than slides — one page per experiment, navigable from the
+sidebar on the left.
+
+## Understanding SVD
+
+Why the singular value decomposition is the tool used to pull a cardiac-frequency
+motion out of a stack of B-scans, and what it actually does when the input is a
+set of time signals.
+
+| Page | What it covers |
+|:--|:--|
+| [SVD basics](svd-basics.qmd) | Definition, link to $A^{T}A$ / $AA^{T}$, rank, spectrum, orthogonality, geometry |
+| [SVD applied to temporal signals](svd-temporal-signals.qmd) | What $A^{T}A$ and $AA^{T}$ become when the rows are signals sampled in time; closed forms for $k = 2, 3$; why phase-shifted sines are rank 2 |
+| [Simple simulation: one Gaussian](svd-simple-simulation.qmd) | A 2-D Gaussian oscillating vertically, with and without noise — $U$, $V$ and their spectra, plus a $1.0 \rightarrow 1.3$ Hz chirp and a stepped amplitude modulation |
+| [Simple simulation: two Gaussians](svd-simple-simulation-two-gaussians.qmd) | Two Gaussians oscillating in phase, differing in amplitude, then in intensity, then in width — why synchronous oscillators share one component, what $u_1$ actually weighs, et les phases FIR / M-SSA confrontées à une phase imposée connue |
+
+## Realistic simulations
+
+A synthetic choroid rendered on the real acquisition calibration, with the noise
+measured on the real cubes — how far the extraction chain holds before it breaks.
+
+| Page | What it covers |
+|:--|:--|
+| [Noise in dataset](sim-noise-in-dataset.qmd) | Image noise measured on 82 registered cubes, and the jitter + noise model injected in the simulation |
+| [One feature](sim-one-feature.qmd) | Ring of radial gaussians, one feature per A-scan ; detection limits one factor at a time (phase A) |
+| [Mixtures](sim-mixtures.qmd) | Phase B : 45 conditions crossing amplitude × jitter $x$ × jitter $y$, 675 runs, plus one detailed replicate per condition |
+
+## Data analysis
+
+The same questions, asked of the real cohort rather than of a simulation.
+
+| Page | What it covers |
+|:--|:--|
+| [Comparing pulse-extraction methods on real videos](data-pulse-extraction-methods.qmd) | Seven routes from a registered B-scan video to a cardiac phase — no filter, FIR band-pass, SSA, M-SSA, per-channel SSA, BOPDMD model and projected — over 81 conditions and 14 subjects: where in the SVD the pulse actually lives, which phases are interpretable, and what each method costs |
+
+## Paths to explore
+
+Pistes non testées : ce qu'une référence propose, ce qui serait transférable à
+la chaîne actuelle, et l'essai qui trancherait.
+
+| Page | What it covers |
+|:--|:--|
+| [ICEEMDAN + Hankel SVD](explore-iceemdan-svd.qmd) | Décomposition modale + SVD mono-signal (SSA) pour débruiter un pulse non stationnaire, d'après Poongadan & Lineesh (2024) |
+| [PyDMD — Dynamic Mode Decomposition](https://www.youtube.com/watch?v=v33cL3o2Yuk) (vidéo) | Présentation du paquet Python `PyDMD`. La DMD est bâtie sur une SVD mais chaque mode ressort avec **sa propre fréquence**, là où la SVD seule laisse la fréquence à estimer après coup (Lomb-Scargle ici) — à confronter aux pages « two Gaussians », où deux oscillateurs synchrones partagent forcément un seul $v_k$ |
+
+## Conventions
+
+- $A$ is always the data matrix, $n \times m$, rows = spatial locations
+  (pixels / A-scans), columns = time samples.
+- $U$ holds the **spatial** singular vectors, $V$ the **temporal** ones.
+- $r = \operatorname{rank}(A)$, $\sigma_i$ the singular values,
+  $\lambda_i = \sigma_i^2$ the eigenvalues of $A^{T}A$ and $AA^{T}$.

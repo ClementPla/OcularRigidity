@@ -1,0 +1,283 @@
+---
+title: "Comparing pulse-extraction methods on real videos"
+subtitle: "Seven ways from a registered B-scan video to a cardiac phase, run over the whole SANSORI cohort — 107 conditions attempted, 106 usable, 14 subjects"
+include-in-header: figures_pulse_from_data/plotlyjs.html
+---
+
+Every page before this one asks what an SVD does to an object we built
+ourselves. This one asks the only question that ultimately matters: on **real**
+registered B-scan videos, which of the available tools actually returns a usable
+cardiac pulse — and at what price.
+
+"Usable" is not a matter of taste here. The pulse is never the deliverable; the
+**phase** is. Downstream, that phase folds the video into an averaged cardiac
+cycle, from which choroidal thickness pulsatility and then the rigidity
+coefficient $k$ are estimated. A method that recovers a beautiful heart rate but
+a phase that is wrong at any given instant is worse than useless — it produces a
+clean-looking one-cycle reconstruction of nothing. Keep that in mind when
+reading the tables below: **rate accuracy and phase correctness are not the same
+property**, and the results separate on exactly that point.
+
+Every figure is interactive: hover a point to get the condition it belongs to,
+drag to zoom, click a legend entry to isolate a series.
+
+## What every method is given
+
+All seven methods share one front end, computed once per condition, so that
+nothing downstream can be blamed on a different input:
+
+1. **ROI** — the central 3/4 of the A-scans (the lateral edges are where
+   registration is least reliable) and the upper half of the local choroidal
+   thickness (the Bruch's-membrane / choriocapillaris side). One pixel is one
+   trace; no spatial pooling.
+2. **Normalisation** — each frame divided by its own mean intensity, then the
+   temporal mean removed from every trace.
+3. **Decomposition** — SVD at **rank 100**, plus a Lomb–Scargle periodogram of
+   every singular vector on the true, non-uniform acquisition timestamps.
+4. **Channel selection** — the optimised spectral combination returns both a
+   reference pulse and the list of singular components it considers cardiac.
+
+The reference heart rate comes from `visit_data.csv` (ECG-derived) for all 106
+usable conditions — the SVD-based fallback was never needed.
+
+{{< include figures_pulse_from_data/tab_cohort.qmd >}}
+
+Two numbers in that table deserve attention. The **first triplet holds only 18 %
+of the variance**: there is no dominant mode, the video is genuinely
+high-dimensional. And the **resampling correlation of 0.93** is a cost, not a
+diagnostic — SSA and the Hilbert transform both require a uniformly sampled
+signal, so every method except the raw combination pays for one interpolation
+from the real timestamps onto a uniform grid. The production pipeline avoids it
+until the FIR stage; the SSA methods incur it immediately.
+
+## The pulse is not in the leading components
+
+Before comparing methods, one result decides the shape of the whole pipeline.
+
+{{< include figures_pulse_from_data/f4_svd_map.qmd >}}
+
+On this condition the components tagged cardiac are $v_{49}$ through $v_{83}$ —
+and the largest weight in the combination goes to $v_{78}$. The leading
+components, bright across the whole frequency axis on the left of the map, carry
+broadband and low-frequency content: bulk motion, residual misregistration,
+intensity drift. Not the heartbeat.
+
+{{< include figures_pulse_from_data/f4b_channel_index.qmd >}}
+
+This holds across the cohort. Of the 623 components kept as cardiac, only
+**4.5 % have an index below 10**, and the median index is **50**. In **82 of 106
+conditions there is nothing cardiac at all in the first ten singular vectors**.
+A rank-6 or rank-10 truncation — the reflex when one thinks of the SVD as a
+compression step — would discard the signal entirely. Rank 100 is not
+conservatism; it is the minimum that reaches the pulse.
+
+That the cardiac subspace is spread over dozens of components, rather than
+concentrated in one pair, is also why a *combination* step exists at all: a
+median of 30 of the 100 components peak inside the cardiac band, and 5 of them
+(median) survive the concentration threshold to be mixed into the pulse.
+
+## The seven methods
+
+Hover (or tab to) any cell in the **what it does** column for the full sequence
+of steps.
+
+| | method | what it does | what it needs to know |
+|---|---|---|---|
+| 0 | no filter | <span class="method-hint" tabindex="0">the optimised combination, untouched<span class="method-pop"><strong>0 · no filter</strong><span class="pt">The rank-100 SVD of the pixel traces gives 100 temporal singular vectors.</span><span class="pt">The optimised spectral combination selects the cardiac ones and fits a weight for each.</span><span class="pt">Those weighted vectors are summed into a single pulse.</span><span class="pt">The pulse is resampled onto the uniform time grid, which the Hilbert transform requires.</span><span class="pt">Its sign is fixed against the phasor at the reference frequency — and nothing else is done.</span><span class="pt">Present only as a control: it shows what a phase looks like when no filtering is applied.</span></span></span> | — |
+| 1 | FIR band-pass | <span class="method-hint" tabindex="0">linear-phase FIR over HR ± 20 %<span class="method-pop"><strong>1 · FIR band-pass</strong><span class="pt">Starts from the same combined pulse as method 0.</span><span class="pt">Interpolated from the true timestamps onto the uniform grid.</span><span class="pt">Band-passed by a linear-phase FIR whose band is the reference rate ± 20 %.</span><span class="pt">Linear phase means a constant group delay, so the filter shifts no frequency relative to another — the phase stays unbiased.</span><span class="pt">The first and last 20 % of samples are dropped from every statistic, to keep the filter transient out of the comparison.</span><span class="pt">This is the reference every other method is scored against.</span></span></span> | the reference HR |
+| 2 | SSA on the pulse | <span class="method-hint" tabindex="0">singular spectrum analysis of the combined pulse, cardiac components regrouped<span class="method-pop"><strong>2 · SSA on the pulse</strong><span class="pt">Embeds the combined pulse in a Hankel trajectory matrix, window L = 3 cardiac cycles.</span><span class="pt">Takes the SVD of that matrix and examines its first 20 components.</span><span class="pt">Reconstructs each component as a 1-D signal by averaging its anti-diagonals.</span><span class="pt">Calls a component cardiac when its Lomb–Scargle peak falls within ± 20 % of the reference rate — a test, not a filter: no band is imposed on the signal.</span><span class="pt">Sums the components kept, typically 2, one oscillation showing up as a pair.</span><span class="pt">If none qualifies, falls back to the two carrying the most in-band power.</span></span></span> | HR, for grouping only |
+| 3a | M-SSA | <span class="method-hint" tabindex="0">one trajectory matrix stacking all cardiac channels, then first PC<span class="method-pop"><strong>3a · M-SSA (multichannel)</strong><span class="pt">Builds one Hankel matrix per cardiac channel and stacks them vertically into a single tall matrix.</span><span class="pt">A single SVD therefore sees one temporal subspace shared by every channel — the physical hypothesis of the problem: one pulse, seen by several channels at different amplitudes and delays.</span><span class="pt">Diagonal-averages each component back, channel by channel.</span><span class="pt">Groups on the mean across channels: a component is cardiac or it is not, since that is a property of the shared mode.</span><span class="pt">Summing the kept components gives denoised channels which are near rank 2 by construction.</span><span class="pt">Their first principal component is the pulse.</span></span></span> | HR, for grouping only |
+| 3b | SSA per channel | <span class="method-hint" tabindex="0">each channel denoised separately, then re-combined<span class="method-pop"><strong>3b · SSA per channel</strong><span class="pt">Runs method 2's SSA independently on each cardiac channel.</span><span class="pt">Each channel is therefore denoised on its own basis, with no assumption that they share a subspace — the opposite premise to M-SSA.</span><span class="pt">Feeds the denoised channels back into the optimised spectral combination.</span><span class="pt">The combination re-selects and re-weights them, exactly as it did on the raw singular vectors.</span><span class="pt">Costs one full SSA per channel, which is where its 3.4 s per condition come from.</span></span></span> | HR, for grouping only |
+| — | DMD · model | <span class="method-hint" tabindex="0">BOPDMD rank 6; the retained mode evaluated analytically<span class="method-pop"><strong>DMD · model</strong><span class="pt">Takes the same normalised trace matrix, transposed to pyDMD's (space, time) convention.</span><span class="pt">Fits BOPDMD at rank 6 — three conjugate pairs — directly on the true, non-uniform timestamps.</span><span class="pt">Three initialisations are tried (default, harmonic seed, harmonic seed plus a purely-imaginary eigenvalue constraint) and the one landing closest to the reference rate is kept.</span><span class="pt">Eigenvalues are continuous-time here, so a mode's frequency is Im(λ)/2π — not log(λ) as for a discrete-time DMD.</span><span class="pt">The mode closest to the reference rate is retained and evaluated analytically as 2 Re(a e^(λt)).</span><span class="pt">Interpolated onto the uniform grid so its phase is comparable sample by sample with the others.</span></span></span> | HR, to pick the mode |
+| — | DMD · projected | <span class="method-hint" tabindex="0">the same mode's coordinate obtained by projecting the data<span class="method-pop"><strong>DMD · projected</strong><span class="pt">Same fit and same retained mode as above — only the final step differs.</span><span class="pt">Instead of evaluating the model, the data are projected onto the mode basis: pinv(modes) applied to the trace matrix.</span><span class="pt">The row of those coordinates belonging to the retained mode is taken as the pulse.</span><span class="pt">It therefore keeps whatever the data actually do along that direction, noise included, rather than the clean exponential the fit prescribes.</span><span class="pt">That contrast is the point: the same mode, read as a model and read as a measurement.</span></span></span> | HR, to pick the mode |
+
+Method 1 is the reference **by construction**, so its correlation of 1.00 with
+itself in the tables below is a definition, not a finding. Methods 2, 3a and 3b
+are the interesting comparison: they are data-adaptive, and use the heart rate
+only to decide which SSA components are cardiac — never to impose a passband.
+
+## One condition, seven pulses
+
+{{< include figures_pulse_from_data/f1_pulses.qmd >}}
+
+The dotted lines mark one cardiac period at the reference rate, so a
+well-behaved pulse should cross zero on a regular grid. Reading top to bottom:
+
+- **No filter** is not a pulse. Nothing periodic is visible above the noise.
+- **FIR** and **SSA** are nearly the same trace, and both show a clear amplitude
+  modulation — weak beats between 3 s and 7 s, strong ones after 8 s. This
+  modulation is real signal, not a filtering artifact: it survives two
+  independent methods.
+- **M-SSA** flattens that modulation into a much more uniform oscillation. It is
+  extracting the *shared* subspace across channels, and beat-to-beat amplitude
+  is precisely what is not shared.
+- **DMD · model** is a perfectly regular sinusoid. It has to be: a single DMD
+  mode is $a e^{\lambda t}$, one frequency, one fixed initial phase. It cannot
+  represent amplitude modulation, and it cannot drift with the heart rate.
+- **DMD · projected** is noise.
+
+{{< include figures_pulse_from_data/f2_spectra.qmd >}}
+
+The spectra say the same thing more compactly: the unfiltered combination puts
+most of its power outside the cardiac band, and the projected DMD coordinate
+peaks well below it.
+
+{{< include figures_pulse_from_data/f3_hr_inst.qmd >}}
+
+## Is the phase interpretable at all?
+
+The Hilbert transform returns a meaningful instantaneous phase only for a
+narrow-band signal. When that condition is violated, the unwrapped phase *runs
+backwards* — a negative instantaneous frequency, which has no physical reading
+for a heartbeat. That fraction is a direct, assumption-free test of whether a
+given pulse may be used for folding.
+
+{{< include figures_pulse_from_data/f5_phase_legitimacy.qmd >}}
+
+Unfiltered, **16 % of samples have a phase going backwards** and 83 % of them
+sit outside the cardiac band. This is the quantitative justification for
+filtering before taking any phase — without it, roughly one sample in six is
+assigned to the wrong point of the cardiac cycle. Every filtered method brings
+this below 1 %.
+
+## Rate: accuracy and stability
+
+{{< include figures_pulse_from_data/f6_hr_accuracy.qmd >}}
+
+{{< include figures_pulse_from_data/tab_methods.qmd >}}
+
+Read that table with the caveat stated above. **DMD · model wins every rate
+column** — 0.63 BPM from the reference, an interquartile range of 2.5 BPM — and
+is nonetheless the second-worst method on this page. Its correlation with the
+FIR pulse is **0.09**. A pure sinusoid at the correct frequency is not the same
+object as the pulse: its phase is set once at $t = 0$ and never corrected, so
+after a few tens of seconds of ordinary heart-rate variability it is
+phase-incoherent with the actual heartbeat. It answers "what was the average
+rate", which is not the question the pipeline asks.
+
+The honest ranking for *phase* use is therefore: FIR, then SSA (correlation
+0.95, at 3.5× the cost), then a clear gap to per-channel SSA (0.59) and M-SSA
+(0.54). That SSA tracks the FIR band-pass this closely without being told a
+passband is the substantive result — it means the band-pass is not imposing the
+pulse, it is recovering one that is there.
+
+## BOPDMD: initialisation is the whole method
+
+{{< include figures_pulse_from_data/f8_dmd_init.qmd >}}
+
+With default initialisation (B1), BOPDMD lands within ±20 % of the reference
+heart rate in **3 % of conditions**. Seeded with the cardiac fundamental and its
+harmonics (B2) it reaches **91 %**; adding the purely-imaginary eigenvalue
+constraint (B3) reaches **100 %**, with a median error of 0.31 BPM.
+
+The eigenvalue plane explains the failure. B1's modes collapse toward zero
+frequency — it spends its rank-6 budget on the same low-frequency drift that
+dominates the leading singular vectors. B2 and B3 sit tightly on 1×, 2× and 3×
+the reference rate: at rank 6, three conjugate pairs, BOPDMD recovers the
+fundamental and two harmonics, which is a sensible description of a pulse
+waveform.
+
+This is worth stating plainly: **BOPDMD did not find the cardiac frequency, it
+was told where to look**, and the 100 % figure for B3 measures the quality of
+the prior, not the discovery power of the method. Two further caveats belong
+here — the variational-projection solver reported a non-convergence warning on
+**every** fit across all three variants, and the mode is selected *a posteriori*
+as the one closest to the known heart rate.
+
+## What it costs
+
+{{< include figures_pulse_from_data/f7_cost_fidelity.qmd >}}
+
+Three orders of magnitude separate the methods, and cost does not buy fidelity.
+FIR costs 7 ms; SSA 25 ms for a correlation of 0.95; per-channel SSA costs
+3.4 s — 480× the FIR — for a correlation of 0.59. BOPDMD costs about 1.8 s per
+condition and yields, for phase purposes, nothing.
+
+## Choosing the SSA window
+
+The one free parameter of the SSA methods is the embedding window $L$, set here
+in cardiac cycles rather than samples so it adapts to each subject's rate.
+
+{{< include figures_pulse_from_data/f9_ssa_sweep.qmd >}}
+
+Below 2 cycles the window cannot resolve the fundamental: in-band power collapses
+to 68 % and the rate scatters over 13.5 BPM. From 3 cycles on the curves flatten,
+and the two approaches part company. For **SSA on the pulse**, 3 and 5 cycles are
+nearly indistinguishable (rate IQR 7.3 vs 6.9 BPM) while the grouping stops being
+clean above 3 — the number of components tagged cardiac climbs from 2 to 4, then
+6 at 8 cycles, meaning the decomposition is splitting the same oscillation across
+more components. **3 cycles remains the right default there**, and it is what
+every other result on this page uses. **M-SSA is a different story**: it improves
+markedly out to 5 cycles (IQR 10.3 → 7.9 BPM), which is consistent with it
+needing a longer window to lock onto a subspace shared across channels. Since
+M-SSA loses on waveform fidelity anyway, this was not pursued.
+
+## What did not work
+
+{{< include figures_pulse_from_data/f10_outcome.qmd >}}
+
+**106 of the 107 conditions now produce a result.** That figure is recent: an
+earlier pass over the same data returned only 81, and the 26 missing conditions
+were lost to two guards in the trace builder rather than to anything wrong with
+the recordings.
+
+Registration can leave a frame blank, or reduce its choroid mask to a sliver.
+Two consequences followed, both fixed:
+
+- **19 conditions, "all-NaN traces"** — per-frame intensity normalisation divides
+  each frame by its own mean. A blank frame has mean zero, so the division
+  poisoned that row with NaN, and a single bad frame was enough to make the whole
+  SVD input non-finite. Such a frame is now left at zero instead.
+- **7 conditions, "empty ROI"** — the ROI keeps only pixels inside the mask in
+  *every* frame, so one degenerate frame emptied the intersection and no trace
+  survived. Frames whose mask covers less than 30 % of the temporal median area
+  are now excluded from that intersection; they keep their place in the time
+  base and simply lose their vote on the pixel set.
+
+The 30 % threshold is not tuned to rescue conditions: across the cohort, the
+smallest per-frame mask of a *healthy* recording sits at 0.50 of its own median
+(0.84 median across conditions), while degenerate frames sit at or near 0. Of the
+81 conditions that already worked, exactly one changed — and it *gained* usable
+pixels, its ROI having been clipped by two bad frames out of 457.
+
+**One condition still fails**, and for a different reason: its masks never
+overlap enough to leave a stable ROI, even after degenerate frames are removed.
+That is a registration or segmentation problem, not a missing guard, and no
+threshold on mask area fixes it.
+
+Two smaller caveats: the concentration threshold had to be lowered below its
+nominal 0.15 in **49 of 106 conditions** for the combination to select any
+channel at all — a higher share than before, since the newly recovered
+conditions are the harder ones. And all methods are scored against a band centred
+on the reference HR, so the comparison measures agreement with a known rate
+rather than blind discovery.
+
+## Conclusion
+
+- The cardiac signal lives at **high singular indices** (median 50, essentially
+  never below 10). Rank-100 decomposition is a requirement, not a safety margin.
+- **Unfiltered phase is not usable**: one sample in six runs backwards.
+- **The FIR band-pass remains the right default** — cheapest, cleanest phase.
+  **SSA is the credible alternative**, reproducing it at 0.95 correlation
+  without being handed a passband, at 3.5× the cost. Use it as an independent
+  check that the band-pass is not manufacturing the pulse it finds.
+- **M-SSA and per-channel SSA are not worth their cost** for phase; M-SSA
+  actively destroys the beat-to-beat amplitude modulation, and it is the method
+  that degraded most when the harder conditions were added (correlation 0.66 on
+  the easy 81, 0.54 on all 106).
+- **BOPDMD is a rate estimator, not a phase estimator.** With harmonic
+  initialisation and an imaginary-eigenvalue constraint it returns the heart rate
+  to a median 0.31 BPM of the reference — never worse than 1.6 BPM on any of the
+  106 conditions — and a phase that correlates 0.09 with the real pulse. If an
+  average rate is what is wanted, it is excellent; for folding, it cannot be
+  used.
+
+::: {.source-note}
+Data produced by `Astronauts/compute_pulse_from_data.py` (107 conditions, masks
+`model1_scale_1.0`); figures and tables generated by
+`figures_pulse_from_data/make_figures.py`, which only reads the four CSVs and the
+per-condition `.npz` traces and never recomputes anything. Both the source tables
+and the figures live under `E:/NASA_Rigidity/`. Re-run the figure script rather
+than editing the generated fragments (`f*.html`, `tab_methods.qmd`,
+`tab_cohort.qmd`) by hand.
+:::

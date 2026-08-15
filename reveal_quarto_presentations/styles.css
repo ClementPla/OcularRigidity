@@ -1,0 +1,175 @@
+/* Website styles for the SANSORI experiment reports.
+   Kept intentionally small: only what the reveal -> website conversion needs. */
+
+/* Figure grids coming from figures_gaussienne_svd/slides.qmd are markdown
+   tables of images. Scoped with :has(img) — applying these to every table
+   squeezed the two-column metadata tables of the condition pages, whose first
+   column is a long label, not a `u_0` row header. */
+.content table:has(img) {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.content table img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.content table:has(img) th,
+.content table:has(img) td {
+  vertical-align: middle;
+  text-align: center;
+  padding: 0.35rem;
+}
+
+.content table:has(img) th:first-child,
+.content table:has(img) td:first-child {
+  width: 8rem;
+  white-space: nowrap;
+}
+
+/* Wide equations (the m x m Gram matrices) must scroll inside their block,
+   never push the page sideways. */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+/* KaTeX lays the equation number out in a full-width table; without this it is
+   pinned to the *visible* right edge and lands on top of an overflowing matrix.
+   Letting the box grow to the content width moves the number past the end. */
+.katex-display > .katex {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Hover detail in the "what it does" column of the method-comparison table
+   (data-pulse-extraction-methods.qmd). The summary stays readable at a glance;
+   the full step list only appears on demand, so the table keeps its shape.
+
+   Colours come from the Bootstrap variables rather than being hardcoded: the
+   site ships a dark and a light theme, and a fixed background would be
+   unreadable under one of them. */
+.method-hint {
+  position: relative;
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+}
+
+.method-pop {
+  display: none;
+  position: absolute;
+  z-index: 100;
+  /* Anchored on the LEFT edge of the cell so the box grows rightwards. The
+     column is the third of four equal ones, so its left edge sits around 40 %
+     of the content width — there is room to the right, and anchoring on the
+     right instead pushed the box off the left of the page. */
+  left: 0;
+  right: auto;
+  top: calc(100% + 0.4rem);
+  width: max-content;
+  max-width: min(30rem, 55vw);
+  padding: 0.7rem 0.9rem 0.5rem;
+  background: var(--bs-body-bg, #1f1f1f);
+  color: var(--bs-body-color, #e8e8e8);
+  border: 1px solid var(--bs-border-color, rgba(128, 128, 128, 0.45));
+  border-radius: 5px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.38);
+  font-size: 0.86rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  cursor: auto;
+}
+
+/* `:focus-within` keeps it reachable with the keyboard — the cells carry
+   tabindex="0" — not only with a mouse. */
+.method-hint:hover .method-pop,
+.method-hint:focus .method-pop,
+.method-hint:focus-within .method-pop {
+  display: block;
+}
+
+.method-pop strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--bs-border-color, rgba(128, 128, 128, 0.3));
+}
+
+/* The bullets are spans, not a <ul>: the popover lives inside a table cell,
+   which is an INLINE context, and Pandoc silently drops block-level elements
+   there — the lists disappeared entirely from the output. `display: list-item`
+   gives a real bullet marker while keeping the markup inline. */
+.method-pop .pt {
+  display: list-item;
+  list-style: disc;
+  margin-left: 1.1rem;
+  margin-bottom: 0.3rem;
+}
+
+/* Narrow screens have no room for a floating box beside the text: pin it to
+   the viewport instead of letting it hang off the edge. The breakpoint is
+   deliberately generous — below roughly 900 px the table columns are too thin
+   for any anchored box to fit without overflowing. */
+@media (max-width: 900px) {
+  .method-pop {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    top: auto;
+    bottom: 1rem;
+    max-width: none;
+  }
+}
+
+/* Source / reference note at the bottom of a section. */
+.source-note {
+  font-size: 0.85em;
+  opacity: 0.75;
+  border-left: 3px solid rgba(128, 128, 128, 0.4);
+  padding: 0.25rem 0 0.25rem 0.75rem;
+  margin: 1.25rem 0;
+}
+
+/* Smaller commentary blocks carried over from the deck. */
+.small-note {
+  font-size: 0.9em;
+}
+
+/* Wide tables (the 106-row one-cycle index) scroll inside their own box rather
+   than pushing the page out and sliding under the table of contents. */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* Sur les cellules, pas sur la table : les regles de Quarto ciblent les cellules
+   et l'emportent sinon, ce qui coupe "watch" en "watc / h". */
+.table-scroll th,
+.table-scroll td {
+  white-space: nowrap;
+}
+
+/* One-cycle comparison videos (pages `one_cycles/oc_*.qmd`). The two methods are
+   stacked in a single file, so the element is tall and narrow-ish; capping the
+   width keeps it readable without letting it dominate the page. */
+.oc-video {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  margin: 0.5rem auto 1.25rem auto;
+  background: #000;
+}
+
+/* `::: footer` blocks inherited from the revealjs fragments: on slides they are
+   pinned to the bottom, here they are just a discreet caption under the figure. */
+.content div.footer {
+  font-size: 0.85em;
+  opacity: 0.75;
+  margin: 0.75rem 0 1.5rem 0;
+}

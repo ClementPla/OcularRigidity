@@ -1,0 +1,22 @@
+---
+title: "first Presentation"
+author: "Nicolas"
+format:
+  revealjs: 
+    theme: dark
+---
+
+# first section
+
+## Getting up and running
+- Just RUN
+- Go out and RUN
+- face your ability to not know what to do next
+
+## Second slide
+### c'est quoi ça ?
+- test the second slide
+
+# second section
+
+# third section

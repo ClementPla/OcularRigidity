@@ -1,0 +1,136 @@
+---
+title: "SVD basics"
+subtitle: "Definition, correlation matrices, rank, spectrum, geometry"
+---
+
+Reference page for everything the other reports lean on: the decomposition
+itself, and the properties of $A^{T}A$ and $AA^{T}$ that make the singular
+vectors meaningful.
+
+## Basic definition
+
+$$
+A = U \Sigma V^{T}
+  = \left[\vec u_1\; \vec u_2\; \cdots\; \vec u_n\right]
+    \operatorname{diag}(\sigma_i)
+    \left[\vec v_1\; \vec v_2\; \cdots\; \vec v_m\right]^{T}
+$$ {#eq-svd}
+
+- $A$ : data ($n \times m$)
+- $U$ : left singular vectors, unitary ($U U^{T} = U^{T} U = I_{n \times n}$)
+- $V$ : right singular vectors, unitary ($V V^{T} = V^{T} V = I_{m \times m}$)
+- $\Sigma$ : singular values
+
+## Singular vectors are eigenvectors of the correlation matrix
+
+$$
+A A^{T} = (U \Sigma V^{T}) (V \Sigma^{T} U^{T}) = U \Sigma^2 U^{T}
+$$ {#eq-svd-aaT}
+
+$$
+A^{T} A = (V \Sigma^{T} U^{T}) (U \Sigma V^{T}) = V \Sigma^2 V^{T}
+$$ {#eq-svd-aTa}
+
+- $A^{T} A$ and $A A^{T}$ are symmetric, positive semi-definite matrices
+- $U$ : eigenvectors of $A A^{T}$, with eigenvalues $\lambda_i = \sigma_i^2$
+- $V$ : eigenvectors of $A^{T} A$, with eigenvalues $\lambda_i = \sigma_i^2$
+
+## $A^{T}A$ and $AA^{T}$ : rank and nullspace
+
+- **Symmetry** : $(A^{T}A)^{T} = A^{T}A$ and $(AA^{T})^{T} = AA^{T}$
+- **Equal nullspaces** : $N(A) = N(A^{T}A)$ and $N(A^{T}) = N(AA^{T})$
+- **Rank equality** :
+
+$$
+\operatorname{rank}(A^{T}A) = \operatorname{rank}(AA^{T}) = \operatorname{rank}(A) = r
+$$ {#eq-rank-equality}
+
+- **Invertibility** : $A^{T}A$ ($m \times m$) is invertible $\iff \operatorname{rank}(A) = m$
+  (full column rank) — the condition behind the normal equations
+  $\hat{\vec x} = (A^{T}A)^{-1}A^{T}\vec b$
+
+## $A^{T}A$ and $AA^{T}$ : spectrum
+
+- **Non-negative eigenvalues** : $\lambda \geq 0$ for both (positive semi-definite)
+- **Shared spectrum** : $A^{T}A$ and $AA^{T}$ have the *same non-zero* eigenvalues
+- **Count** : both have exactly $r = \operatorname{rank}(A)$ positive eigenvalues
+- **Eigenvector correspondence** : if $(\lambda, \vec v)$ is an eigenpair of
+  $A^{T}A$ with $\lambda > 0$, then $(\lambda, \vec u)$ is an eigenpair of $AA^{T}$ with
+
+$$
+\vec u = \frac{A \vec v}{\sqrt{\lambda}}
+$$ {#eq-eigvec-correspondence}
+
+With $\lambda_i = \sigma_i^2$ this is exactly $\vec u_i = A\vec v_i / \sigma_i$ — the
+relation used below.
+
+## Fresh start
+
+$$
+A\vec v_i = \sigma_i \vec u_i
+$$ {#eq-svd-fresh-start}
+
+until...
+
+$$
+A\vec v_r = \sigma_r \vec u_r
+$$ {#eq-svd-fresh-start-r}
+
+- $r$ : rank of $A$, $\sigma_r > 0$, $\sigma_{r+1} = 0$
+- economy SVD : $A = U_r \Sigma_r V_r^{T}$, with $U_r$ ($n \times r$),
+  $\Sigma_r$ ($r \times r$), $V_r$ ($m \times r$)
+
+## Low-rank approximation
+
+::: {.callout-note appearance="simple"}
+Section left open in the source deck — to be filled in.
+:::
+
+## Singular vectors are orthogonal
+
+$$
+\vec u_i^{T} \vec u_j = 0
+$$
+
+$$
+\left(\frac{A \vec v_i}{\sigma_i}\right)^{T}\left(\frac{A \vec v_j}{\sigma_j}\right)
+= \frac{\vec v_i^{T} A^{T} A \vec v_j}{\sigma_i \sigma_j}
+= \frac{\sigma_j^2 \, \vec v_i^{T} \vec v_j}{\sigma_i \sigma_j}
+= 0 \quad (i \neq j)
+$$ {#eq-svd-orthogonal}
+
+using the eigenvalue equation $A^{T}A\vec v_j = \sigma_j^2 \vec v_j$ (below)
+and $\vec v_i^{T}\vec v_j = 0$.
+
+## The eigenvalue equation of $A^{T}A$
+
+Starting from @eq-svd-aTa and right-multiplying by $V$, with $V^{T}V = I_{m \times m}$ :
+
+$$
+A^{T}A\,V = V \Sigma^2 V^{T} V = V \Sigma^2
+$$ {#eq-ata-times-v}
+
+Reading this column by column gives the **eigenvalue equation** :
+
+$$
+A^{T}A\,\vec v_i = \sigma_i^2 \, \vec v_i = \lambda_i \vec v_i
+\qquad \Longleftrightarrow \qquad
+\left(A^{T}A - \lambda_i I\right)\vec v_i = \vec 0
+$$ {#eq-ata-eigen}
+
+- $\vec v_i$ : right singular vector $=$ eigenvector of $A^{T}A$
+- $\lambda_i = \sigma_i^2 \geq 0$ : eigenvalue, non-negative since $A^{T}A$ is
+  positive semi-definite
+- non-trivial solutions require $\det\!\left(A^{T}A - \lambda I\right) = 0$
+- identically, $A A^{T}\vec u_i = \sigma_i^2 \vec u_i$ from @eq-svd-aaT
+
+## Geometrical interpretation of SVD
+
+- $V^T \vec y$ : rotate $\vec y$ into the singular vector basis
+- $\Sigma V^T \vec y$ : scale the rotated vector by the singular values
+- $U \Sigma V^T \vec y$ : rotate back into the original basis
+
+::: {.source-note}
+Properties of $A^{T}A$ / $AA^{T}$ :
+[bsc-iitm.github.io — ATA and AAT](https://bsc-iitm.github.io/karthikt/notes/linear_algebra/ata_and_aat.html)
+:::

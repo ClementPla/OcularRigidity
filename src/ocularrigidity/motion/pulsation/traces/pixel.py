@@ -18,6 +18,23 @@ from ocularrigidity.motion.pulsation.traces.base import (
 from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 
 
+def _normalize_per_frame(values: np.ndarray, axis) -> np.ndarray:
+    """Divide each frame by its own mean, leaving blank frames at 0.
+
+    Registration can blank a frame entirely (a dropped acquisition, or every
+    A-scan zeroed by the bad-A-scan filter). Its mean is then 0, and the plain
+    division used to fill that frame with ``inf``/``NaN`` — enough, on its own,
+    to make the whole trace matrix non-finite and to abort the condition
+    downstream (``sklearn`` refuses non-finite input to the SVD). A blank frame
+    carries no intensity to normalise, so it is simply left at 0: the frame stays
+    in place, keeping the time base intact, and contributes nothing.
+    """
+    values = np.asarray(values, dtype=float)
+    mean = np.nanmean(values, axis=axis, keepdims=True)
+    usable = np.isfinite(mean) & (mean != 0)
+    return np.divide(values, mean, out=np.zeros_like(values), where=usable)
+
+
 @dataclass
 class PixelTraceConfig(UniformTraceConfig):
     """Extra knobs specific to the raw-pixel source."""
@@ -41,6 +58,16 @@ class PixelTraceConfig(UniformTraceConfig):
     # off by default here.
     sigma_col: float = 0.0
     normalize_intensity: bool = True
+    # A frame whose mask covers less than this fraction of the temporal MEDIAN
+    # mask area is left out of the ROI intersection (see
+    # :attr:`PixelTraceSource.base_roi`). Registration can blank or badly
+    # truncate a frame, and since the ROI is an intersection over time, one such
+    # frame vetoes pixels every other frame agrees on. Measured on this cohort,
+    # the smallest per-frame mask of a healthy condition sits at 0.50 of its
+    # median (median across conditions 0.84), while degenerate frames are at or
+    # near 0 — so 0.3 separates the two without touching healthy recordings.
+    # 0.0 disables the area test and only drops completely empty masks.
+    min_mask_area_frac: float = 0.3
 
 
 class PixelTraceSource(AbstractUniformTraceSource):
@@ -51,9 +78,11 @@ class PixelTraceSource(AbstractUniformTraceSource):
     ``frames[masks]`` breaks because the count of ``True`` pixels isn't
     constant across frames. Instead, the trace grid is built from
     :attr:`base_roi`, the *intersection* of the mask over time: pixels inside
-    the choroid in every frame. That fixes the pixel set once, which is what
-    lets ``(T, N)`` indexing work at all, and as a side effect every trace is
-    valid in every frame — no holes to mark, unlike the thickness source.
+    the choroid in every frame whose mask is large enough to be trusted (frames
+    blanked or truncated by registration are skipped, see :attr:`base_roi`).
+    That fixes the pixel set once, which is what lets ``(T, N)`` indexing work
+    at all, and as a side effect every trace is valid in every frame — no holes
+    to mark, unlike the thickness source.
     ``col_frac``/``row_frac`` (see :class:`PixelTraceConfig`) then trim that
     ROI to a sub-region of its own extent — by default the central third of
     A-scans and, within each of those A-scans, the top third of the choroid
@@ -81,12 +110,46 @@ class PixelTraceSource(AbstractUniformTraceSource):
     @property
     def base_roi(self) -> np.ndarray:
         """Full-resolution ``(H, W)`` boolean ROI: pixels inside the mask in
-        every frame, further restricted per :attr:`PixelTraceConfig.col_frac`
-        / :attr:`PixelTraceConfig.row_frac`."""
+        every frame whose mask is big enough to be trusted (see
+        :attr:`PixelTraceConfig.min_mask_area_frac`), further restricted per
+        :attr:`PixelTraceConfig.col_frac` / :attr:`PixelTraceConfig.row_frac`."""
         if self._base_roi is None:
             cfg: PixelTraceConfig = self.config
             masks = self.registered_video.registered_masks.astype(bool)
-            roi = masks.all(axis=0)
+            # The ROI is an intersection over time, so a frame whose mask is
+            # blank or badly truncated vetoes, on its own, pixels that every
+            # other frame agrees on — "no trace survived at any block size".
+            # Such a frame says nothing reliable about which pixels are choroid,
+            # so it is dropped from the intersection rather than allowed to
+            # decide it. Its samples stay in the traces (at 0, see
+            # `_normalize_per_frame`); only its vote on the pixel set is lost.
+            areas = masks.sum(axis=(1, 2))
+            # Reference taken over NON-EMPTY frames: a plain median would
+            # collapse to 0, and disable the test entirely, on a video where
+            # more than half the frames came out blank.
+            non_vides = areas[areas > 0]
+            if non_vides.size == 0:
+                raise ValueError(
+                    "Every frame has an empty mask: no ROI can be built."
+                )
+            # The `max(..., 1)` keeps empty masks out even when the area test is
+            # disabled with `min_mask_area_frac = 0`.
+            seuil = max(cfg.min_mask_area_frac * float(np.median(non_vides)), 1.0)
+            keep = areas >= seuil
+            n_drop = int((~keep).sum())
+            if n_drop:
+                msg = (f"{n_drop}/{keep.size} frame(s) left out of the ROI "
+                       f"intersection: mask smaller than "
+                       f"{cfg.min_mask_area_frac:.0%} of the median area.")
+                self.notes.append(msg)
+                if self.verbose:
+                    print(msg)
+            if not keep.any():
+                raise ValueError(
+                    "No frame has a mask above "
+                    f"{cfg.min_mask_area_frac:.0%} of the median area."
+                )
+            roi = masks.all(axis=0, where=keep[:, None, None])
             if cfg.col_frac is not None:
                 roi = self._restrict_col_frac(roi, cfg.col_frac)
             if cfg.row_frac is not None:
@@ -163,7 +226,7 @@ class PixelTraceSource(AbstractUniformTraceSource):
         cfg: PixelTraceConfig = self.config
 
         if cfg.normalize_intensity:
-            frames = frames / np.nanmean(frames, axis=(1, 2), keepdims=True)
+            frames = _normalize_per_frame(frames, axis=(1, 2))
 
         columns = []
         scale_of_trace = []
@@ -209,8 +272,10 @@ class PixelTraceSource(AbstractUniformTraceSource):
         if not self.config.normalize_intensity:
             return
         sig = self.raw_signal()
-        sig = sig / np.nanmean(sig, axis=1, keepdims=True)
-        return sig
+        # Same per-frame division as in `raw_signal`, across traces this time,
+        # and the same blank-frame guard: a row of zeros has a zero mean.
+        return _normalize_per_frame(sig, axis=1)
 
+    @property
     def filtered_signal(self) -> np.ndarray:
-       return self.raw_signal()
+        return self.raw_signal()

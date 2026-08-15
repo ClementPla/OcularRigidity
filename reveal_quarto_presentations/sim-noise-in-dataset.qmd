@@ -1,0 +1,70 @@
+---
+title: "Noise in dataset"
+subtitle: "What the noise in the real cubes actually is, and how it is injected in the simulation"
+---
+
+Before a simulation can claim anything about detectability, the noise it injects
+has to be the noise the real acquisitions carry. This page measures the second
+and defines the first.
+
+## Measured image noise in the real data
+
+![](figures_bruit_reel/bruit_reel_mesure.png){width=80%}
+
+82 / 102 registered cubes (`SegmentationVariations`, 20 rejected for
+$R^2 < 0.5$), each frame compared to its cube's temporal mean —
+$\operatorname{Var}[I]$ binned against $\mu$.
+
+- **the noise is not speckle** : $p = 0.54\;[0.32, 0.72]$ in $\operatorname{Var} = c\,\mu^{p}$,
+  between additive (0) and Poisson (1), far from multiplicative speckle (2)
+- **where the variance sits** : 38 % constant, 63 % $\propto \mu$, $-2\%$ $\propto \mu^2$ —
+  the $\mu^2$ term is the *only* one the earlier gaussian simulation modelled
+- **no scalar `noise_level` fits both** : 0.19 seen through speckle vs 2.75 through
+  the additive floor, a factor $\simeq 14$
+- **6 % per-frame gain fluctuation** ($\mathrm{CV}$), global to the image and absent
+  from the earlier simulation ; residuals are heavier-tailed than $\mathcal{N}(0,1)$,
+  skew $-0.26$
+
+Expected : exported B-scans are **log-compressed**, so multiplicative speckle
+becomes additive.
+
+::: {.source-note}
+`Astronauts/quantify_image_noise.py` — figure : `figures_bruit_reel/make_figure_bruit.py`
+:::
+
+## The noise model injected in the simulation
+
+The measurement above is what calibrates `add_image_noise` in the ring
+simulation: an **additive floor**, a term $\propto R$ ("Poisson"), and a residual
+**multiplicative speckle**, plus a global per-frame gain and a per-frame noise
+scale — the noise is not the same from one image to the next inside a single
+cube. Everything is scaled by a single `noise_level` :
+
+| `noise_level` | meaning |
+|:--|:--|
+| 0 | clean image |
+| 1 | **median measured noise** |
+| > 1 | noisier than reality (up to $\times 8$ in the sweep) |
+
+## Noise sources : jitter + image noise
+
+![](figures_simulation/bruit_sources.png){width=88%}
+
+Two residual-registration jitters and one image noise, injected before the
+measurement chain (`PixelTraceSource` → `DecomposedTraceSource(svd)` →
+`LombScargleRateEstimator` → `OptimizedSpectralCombination` → `HilbertPhaseEstimator`).
+
+- **jitter $x$** — common to the whole frame : shifts the ring as a block ; on a
+  fixed-column slice it reads as a spurious vertical motion of the edge
+- **jitter $y$** — independent per A-scan : shreds the pattern, destroying spatial
+  coherence between neighbouring A-scans without moving the ring as a whole
+- **image noise** — greys out the red/blue alternation without deforming its
+  geometry : it attacks contrast, not position
+
+The jitter is injected **directly before the measurement**, without going through
+the real registration engine: the point is to test the robustness of the
+measurement to a registration *residual*, not the registration chain itself.
+
+::: {.source-note}
+`Astronauts/simulate_svd_radial_gaussians.py` — figures : `figures_simulation/`
+:::
