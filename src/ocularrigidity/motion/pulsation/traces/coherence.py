@@ -1,16 +1,11 @@
 """Coherence-based A-scan selection as a trace-source *wrapper*.
 
-Every existing trace score judges a trace **in isolation** — its own periodogram
-power / concentration / FAP (the Lomb-Scargle stage), or its instantaneous
-envelope (the amplitude-weighted phase estimators). None of them asks whether
-the A-scans agree *with each other* on a common pulsation. A trace can be
-strongly periodic on its own (a noise resonance, a local artifact) yet be
-incoherent with the ensemble, and nothing currently catches that.
-
-This wrapper adds the missing mutual-coherence stage. It keeps the A-scans whose
+Every other trace score judges a trace **in isolation** — its own periodogram
+power / concentration / FAP, or its instantaneous envelope — so a trace that is
+strongly periodic on its own (a noise resonance, a local artifact) but
+incoherent with the ensemble goes uncaught. This wrapper keeps the A-scans whose
 cardiac phase stays in a *constant* relation to the ensemble over time —
-**coherent even when not in phase** — and drops the ones whose phase
-relationship drifts or scatters.
+**coherent even when not in phase** — and drops the rest.
 
 The primitive is the phase-locking value (PLV)::
 
@@ -22,15 +17,11 @@ random relationship decays to 0. That offset-invariance is exactly what PCA/ICA
 lack — a lagged pulsation splits across a sin/cos pair of components there, but
 stays a single coherent group here.
 
-Because it consumes and produces the same :class:`Traces` contract, it composes
-with the other sources without a parallel hierarchy::
+It consumes and produces the same :class:`Traces` contract, so it composes with
+the other sources. Put it *before* the rate/phase stages, so Lomb-Scargle and
+the phase estimator run on an already-coherent subset::
 
-    raw      = MaskThicknessTraceSource(reg, aligner)
-    coherent = CoherentTraceSource(raw, CoherenceConfig())   # keeps a subset
-
-Put it *before* the rate/phase stages, so Lomb-Scargle and the phase estimator
-run on an already-coherent subset. The per-trace scores, the selected indices
-and (eigenvector mode) the eigengap are stashed for plotting.
+    coherent = CoherentTraceSource(MaskThicknessTraceSource(reg, aligner))
 """
 
 from dataclasses import dataclass

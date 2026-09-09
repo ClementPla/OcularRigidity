@@ -9,28 +9,10 @@ from ocularrigidity.data.io import load_cube
 from ocularrigidity.data.compression import cube_to_mp4, cube_to_mp4_fastest
 from ocularrigidity.data.measurements.dataframe import load_measurements
 from ocularrigidity.consts import OUTPUT_FOLDER, ROOT_DATA_MNT
+from ocularrigidity.scripts._logging import setup_logging
 
 
 LOG_FILE = OUTPUT_FOLDER / "processing.log"
-
-
-def setup_logging(log_file: Path) -> logging.Logger:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("batch_infer")
-    logger.setLevel(logging.INFO)
-    logger.handlers.clear()  # avoid duplicate handlers if re-run in a notebook
-
-    fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-
-    fh = logging.FileHandler(log_file, mode="a")
-    fh.setFormatter(fmt)
-    logger.addHandler(fh)
-
-    ch = logging.StreamHandler()
-    ch.setFormatter(fmt)
-    logger.addHandler(ch)
-
-    return logger
 
 
 def output_path_for(measure_value: str, output_folder: Path) -> Path:
@@ -72,7 +54,7 @@ def process_row(
 
 
 def main():
-    logger = setup_logging(LOG_FILE)
+    logger = setup_logging("compress", LOG_FILE)
     logger.info("=" * 60)
     logger.info("Starting compression")
 

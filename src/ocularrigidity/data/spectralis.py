@@ -3,17 +3,10 @@
 Python port of the MATLAB helpers ``parseXML.m`` and ``analyzeSpectralisXML.m``
 (M. Hidalgo, 2015).
 
-The MATLAB version converted the whole document into a positional struct and
-then indexed into it (``Children(2)``, ``Children(20)`` ...). That is brittle:
-``xmlread`` keeps the whitespace text nodes between elements, so every real
-field sits at an even index, and the slightest change in the exporter shifts
-everything -- which is why ``analyzeSpectralisXML.m`` already needed the
-``Children(20)`` vs ``Children(22)`` work-around for the ``Start``/``End``
-fields.
-
-Here we navigate the DOM *by tag name* with :mod:`xml.etree`, so the code does
-not care about ordering or about extra fields the exporter may add. The result
-is a small tree of frozen dataclasses queried by attribute::
+The DOM is navigated *by tag name* with :mod:`xml.etree`, never positionally:
+the exporter's whitespace text nodes and any added field shift every index, and
+the MATLAB original needed per-field work-arounds because of it. The result is
+a small tree of frozen dataclasses queried by attribute::
 
     study = SpectralisStudy.from_file("export.xml")
 
@@ -34,7 +27,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from typing import Optional
-
+import pandas as pd
 import numpy as np
 import cv2
 
@@ -454,7 +447,7 @@ def analyze(path) -> SpectralisStudy:
     return SpectralisStudy.from_file(path)
 
 
-def load_video(path):
+def load_video(path, return_fundus=False):
     """
     Returns a np.ndarray and the timestamps associated.
     """
@@ -477,5 +470,20 @@ def load_video(path):
         if img is None:
             raise ValueError(f"Failed to read image {img_path}")
         video[i] = img
+
     timestamps = df["time"]
-    return video, timestamps, df
+
+    if return_fundus:
+        fundus_files = df["fundus_file"].to_list()
+        fundus_video = np.zeros((N, 768, 768), dtype=np.uint8)
+        for i, f in enumerate(fundus_files):
+            img_path = path / f
+            if not img_path.exists():
+                raise ValueError(f"File {img_path} does not exist")
+            img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                raise ValueError(f"Failed to read image {img_path}")
+            fundus_video[i] = img
+        return video, fundus_video, timestamps, df
+    else:
+        return video, timestamps, df

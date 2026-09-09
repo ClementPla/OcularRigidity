@@ -52,29 +52,12 @@ def baseline_vs_future_slope(
     over that group's visits from the baseline onward. This tests whether the
     present rigidity predicts subsequent progression of ``measure``.
 
-    Parameters
-    ----------
-    df :
-        Long dataframe with one row per (group, visit, measure). Filtered to
-        ``measure`` via ``measure_name_col == measure``; the numeric value is
-        read from ``measure_value_col``.
-    measure :
-        Measure name to select (e.g. ``"MD"``).
-    value_col :
-        Column holding the present value to use as baseline (default ``"K"``).
-    date_col :
-        Visit date column, parsed as ``%Y-%m``.
-    group_cols :
-        Grouping keys (default patient + eye).
-    min_points :
-        Minimum number of distinct visit-months required to fit the slope.
+    ``df`` is long — one row per (group, visit, measure) — and is filtered to
+    ``measure`` via ``measure_name_col``. Dates are parsed as ``%Y-%m``.
 
-    Returns
-    -------
-    pandas.DataFrame
-        One row per group with columns
-        ``[*group_cols, f"{value_col}_baseline", f"{measure}_slope"]``.
-        Groups with too few points or zero time-spread are dropped.
+    Returns one row per group, ``[*group_cols, f"{value_col}_baseline",
+    f"{measure}_slope"]``. Groups with fewer than ``min_points`` distinct
+    visit-months, or zero time-spread, are dropped.
     """
     group_cols = list(group_cols)
     d = df[df[measure_name_col] == measure].copy()
@@ -227,34 +210,13 @@ def pairwise_rate_of_change(
     from :func:`baseline_vs_future_slope` (one present-vs-future point per
     subject): here the unit of analysis is the visit interval.
 
-    Parameters
-    ----------
-    df :
-        Long dataframe with one row per (group, visit, measure). Filtered to
-        ``measure`` via ``measure_name_col == measure``; the numeric value is
-        read from ``measure_value_col`` and paired with ``value_col``.
-    measure :
-        Measure name to select (e.g. ``"MD"``).
-    value_col :
-        The other variable to rate (default ``"K"``).
-    date_col :
-        Visit date column, parsed as ``%Y-%m``.
-    group_cols :
-        Grouping keys (default patient + eye).
-    consecutive_only :
-        If True, only adjacent visit pairs; if False, every visit pair
-        (``itertools.combinations``) — denser but the intervals overlap and are
-        not independent.
-    min_dt_years :
-        Skip pairs whose interval is shorter than this (guards divide-by-zero
-        for visits collapsed into the same month).
+    Two arguments carry traps. ``consecutive_only=False`` takes every visit
+    pair rather than adjacent ones — denser, but the intervals overlap and are
+    not independent. ``min_dt_years`` skips pairs shorter than that interval,
+    guarding divide-by-zero for visits collapsed into the same month.
 
-    Returns
-    -------
-    pandas.DataFrame
-        One row per visit pair with columns
-        ``[*group_cols, "date1", "date2", "dt_years",
-        f"{value_col}_rate", f"{measure}_rate"]``.
+    Returns one row per visit pair, ``[*group_cols, "date1", "date2",
+    "dt_years", f"{value_col}_rate", f"{measure}_rate"]``.
     """
     import itertools
 

@@ -6,6 +6,11 @@ segmented thickness, ``decomposition.py`` for the ICA/PCA wrapper. Add a new
 source as a new module here and export it below.
 """
 
+from ocularrigidity.motion.pulsation.traces.aggregate import (
+    AggregateConfig,
+    AggregateMethod,
+    AggregateTraceSource,
+)
 from ocularrigidity.motion.pulsation.traces.array import ArrayTraceSource
 from ocularrigidity.motion.pulsation.traces.base import (
     AbstractTraceSource,
@@ -33,6 +38,9 @@ from ocularrigidity.motion.pulsation.traces.mask import (
 __all__ = [
     "AbstractTraceSource",
     "AbstractUniformTraceSource",
+    "AggregateConfig",
+    "AggregateMethod",
+    "AggregateTraceSource",
     "ArrayTraceSource",
     "BandPassFilterTraceConfig",
     "BandPassFilterTraceSource",

@@ -11,7 +11,7 @@ import streamlit as st
 from ocularrigidity.viewer import render as R
 from ocularrigidity.viewer.quiver import QuiverStyle
 from ocularrigidity.viewer.streamlit_explorer._common import (
-    cached_case_table,
+    cached_cohort,
     require_selection,
 )
 
@@ -24,31 +24,31 @@ FPS = 10
 CROP = 1024  # center-crop each frame to a CROP×CROP square before downscaling
 
 
-def _mkv(root, suffix, case):
-    return Path(root) / f"one_cycle_{suffix}" / case / "one_cycle.mkv"
+def _mkv(root, case):
+    return Path(root) / "one_cycle" / case / "one_cycle.mkv"
 
 
-def _measures(root, suffix, case):
-    return Path(root) / f"measures_{suffix}" / case
+def _measures(root, case):
+    return Path(root) / "measures" / case
 
 
 @st.cache_data(show_spinner="Rendering one-cycle…")
-def render_one_cycle(root, suffix, case, factor):
-    mkv = _mkv(root, suffix, case)
+def render_one_cycle(root, case, factor):
+    mkv = _mkv(root, case)
     if not mkv.exists():
         return None
     cube = R.resize_cube(R.center_crop_square(R.read_cube(str(mkv)), CROP), factor)
-    out = R.WORKDIR / f"{suffix}__{case.replace('/', '_')}_oc_sq{CROP}_d{factor}.mp4"
+    out = R.WORKDIR / f"{case.replace('/', '_')}_oc_sq{CROP}_d{factor}.mp4"
     if not out.exists():
         R.write_mp4(cube, str(out), fps=FPS, quality=QUALITY, preset=PRESET)
     return str(out)
 
 
 @st.cache_data(show_spinner="Rendering overlay…")
-def render_overlay(root, suffix, case, factor, alpha):
+def render_overlay(root, case, factor, alpha):
     mkv, seg = (
-        _mkv(root, suffix, case),
-        _measures(root, suffix, case) / "segmented_cycles.npz",
+        _mkv(root, case),
+        _measures(root, case) / "segmented_cycles.npz",
     )
     if not mkv.exists() or not seg.exists():
         return None
@@ -61,7 +61,7 @@ def render_overlay(root, suffix, case, factor, alpha):
     ).astype(bool)
     out = (
         R.WORKDIR
-        / f"{suffix}__{case.replace('/', '_')}_mask_sq{CROP}_d{factor}_a{alpha:.2f}.mp4"
+        / f"{case.replace('/', '_')}_mask_sq{CROP}_d{factor}_a{alpha:.2f}.mp4"
     )
     if not out.exists():
         R.write_mp4(
@@ -75,10 +75,10 @@ def render_overlay(root, suffix, case, factor, alpha):
 
 
 @st.cache_data(show_spinner="Rendering quiver…")
-def render_quiver(root, suffix, case, factor, cycle, style: QuiverStyle):
+def render_quiver(root, case, factor, cycle, style: QuiverStyle):
     mkv, da = (
-        _mkv(root, suffix, case),
-        _measures(root, suffix, case) / "deltaA_per_cycle.pkl",
+        _mkv(root, case),
+        _measures(root, case) / "deltaA_per_cycle.pkl",
     )
     if not mkv.exists() or not da.exists():
         return None
@@ -99,7 +99,7 @@ def render_quiver(root, suffix, case, factor, cycle, style: QuiverStyle):
         or style.show_csi_summary
         or style.show_only_csi_anchors
     ):
-        seg = _measures(root, suffix, case) / "segmented_cycles.npz"
+        seg = _measures(root, case) / "segmented_cycles.npz"
         if not seg.exists():
             return None
         masks_full = R.read_masks(str(seg))
@@ -112,7 +112,7 @@ def render_quiver(root, suffix, case, factor, cycle, style: QuiverStyle):
     key = "_".join(str(v) for v in style)
     out = (
         R.WORKDIR
-        / f"{suffix}__{case.replace('/', '_')}_quiver_sq{CROP}_d{factor}_c{cycle}_{key}.mp4"
+        / f"{case.replace('/', '_')}_quiver_sq{CROP}_d{factor}_c{cycle}_{key}.mp4"
     )
     if not out.exists():
         R.render_quiver(
@@ -135,8 +135,8 @@ def render_quiver(root, suffix, case, factor, cycle, style: QuiverStyle):
 # --- page --------------------------------------------------------------------
 
 sel = require_selection()
-root, suffix = sel.root, sel.suffix
-st.title(f"Viewer — {sel.method_label}")
+root = sel.root
+st.title("Viewer")
 
 # Render controls (kept in the sidebar so the main area stays focused).
 st.sidebar.header("Render (speed-first)")
@@ -183,7 +183,7 @@ style = QuiverStyle(
     tip_length=st.sidebar.slider("Tip length", 0.0, 1.0, d.tip_length, 0.05),
 )
 
-df = cached_case_table(sel)
+df = cached_cohort(sel)
 show_cols = [
     c
     for c in ["case_id", "PatientId", "Date", "Eye", "deltaA", "deltaCT", "minCT", "K"]
@@ -211,9 +211,9 @@ if not rows:
 case = df.iloc[rows[0]]["case_id"]
 st.subheader(case)
 
-oc = render_one_cycle(root, suffix, case, factor)
-overlay = render_overlay(root, suffix, case, factor, alpha)
-quiver = render_quiver(root, suffix, case, factor, q_cycle, style)
+oc = render_one_cycle(root, case, factor)
+overlay = render_overlay(root, case, factor, alpha)
+quiver = render_quiver(root, case, factor, q_cycle, style)
 
 
 def _play(path):

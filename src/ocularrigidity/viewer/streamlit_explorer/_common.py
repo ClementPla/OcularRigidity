@@ -14,6 +14,13 @@ import plotly.express as px
 import streamlit as st
 
 from ocularrigidity.consts import ROOT_CARDIAC_PIPELINE
+from ocularrigidity.data.measurements.cohort import (
+    DEFAULT_MEASURES,
+    build_cohort,
+    cohort_to_long,
+    load_excluded_cases,
+)
+from ocularrigidity.data.measurements.pulsation_results import load_pulsation_results
 from ocularrigidity.data.measurements.studies import Study
 from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import longitudinal as L
@@ -25,44 +32,44 @@ class Selection(NamedTuple):
     """What the sidebar picked. A tuple, so it keys the cached loaders directly."""
 
     root: str
-    suffix: str
     iop: str
     study: Study | None
     exclude_qc: bool
-
-    @property
-    def method_label(self) -> str:
-        return C.pretty_method(self.suffix)
 
     @property
     def cohort_label(self) -> str:
         return self.study.value if self.study else "all studies"
 
 
-@st.cache_data(show_spinner="Building case table…")
-def cached_case_table(sel: Selection) -> pd.DataFrame:
-    excluded = C.load_excluded_cases() if sel.exclude_qc else None
-    return C.build_case_table(
-        sel.root, sel.suffix, sel.iop, study=sel.study, excluded_cases=excluded
+@st.cache_data(show_spinner="Building the cohort table…")
+def cached_cohort(sel: Selection) -> pd.DataFrame:
+    """The one wide table every cohort page reads — see :func:`build_cohort`.
+
+    The first call for a root has to measure ΔCT over every mask (minutes);
+    it is pickled next to the pipeline outputs, so later runs are instant.
+    """
+    return build_cohort(
+        sel.root,
+        study=sel.study,
+        iop_instrument=sel.iop,
+        exclude_qc=sel.exclude_qc,
     )
 
 
 @st.cache_data(show_spinner=False)
-def cached_deltaA(sel: Selection) -> pd.DataFrame:
-    return C.load_deltaA_per_cycle(sel.root, sel.suffix)
-
-
-@st.cache_data(show_spinner="Measuring ΔCT (first run walks every mask)…")
-def cached_deltaCT(sel: Selection) -> pd.DataFrame:
-    df = C.load_deltaCT_per_cycle(sel.root, sel.suffix)
+def cached_cycles(sel: Selection) -> pd.DataFrame:
+    """Per-(video, cardiac cycle) metrics — the test-retest / reliability input."""
+    _cases, cycles = load_pulsation_results(Path(sel.root))
+    cycles = cycles.rename(columns={"caseId_path": "video"})
     if sel.exclude_qc:
-        df = df[~df["case_id"].isin(C.load_excluded_cases())]
-    return df
+        cycles = cycles[~cycles["video"].isin(load_excluded_cases())]
+    return cycles
 
 
-@st.cache_data(show_spinner="Joining clinical measures…")
+@st.cache_data(show_spinner="Melting the measures…")
 def cached_clinical_long(sel: Selection) -> pd.DataFrame:
-    return C.load_clinical_long(cached_case_table(sel))
+    """The cohort table in the long shape the longitudinal designs read."""
+    return cohort_to_long(cached_cohort(sel))
 
 
 @st.cache_data(show_spinner=False)
@@ -93,11 +100,18 @@ def cached_screen(
     means moving one tab's slider only invalidates that tab's ranking).
     """
     long_df = cached_clinical_long(sel)
-    return L.screen(design, long_df, probe, C.available_measures(long_df), dict(params))
+    return L.screen(design, long_df, probe, available_measures(long_df), dict(params))
+
+
+def available_measures(long_df: pd.DataFrame) -> list[str]:
+    """Measures present in the long frame, the ones worth testing first."""
+    present = list(dict.fromkeys(long_df["MeasureName_y"].dropna()))
+    head = [m for m in DEFAULT_MEASURES if m in present]
+    return head + sorted(m for m in present if m not in head)
 
 
 def sidebar_selector() -> Selection | None:
-    """Root / method / cohort picker shared across pages; persists in session."""
+    """Root / cohort picker shared across pages; persists in session."""
     st.sidebar.header("Experiment")
     root = st.sidebar.text_input(
         "Experiments root",
@@ -105,19 +119,9 @@ def sidebar_selector() -> Selection | None:
     )
     st.session_state["root"] = root
 
-    methods = C.discover_methods(root) if Path(root).is_dir() else []
-    if not methods:
-        st.sidebar.error("No `measures_*` method folders under this root.")
+    if not (Path(root).is_dir() and C.has_measures(root)):
+        st.sidebar.error("No `measures/` folder under this root.")
         return None
-
-    labels = {C.pretty_method(m): m for m in methods}
-    prev = st.session_state.get("method")
-    default = next((lbl for lbl, s in labels.items() if s == prev), list(labels)[0])
-    label = st.sidebar.selectbox(
-        "Method", list(labels), index=list(labels).index(default)
-    )
-    suffix = labels[label]
-    st.session_state["method"] = suffix
 
     st.sidebar.header("Cohort")
     studies = {"All": None} | {s.value.capitalize(): s for s in Study}
@@ -125,16 +129,16 @@ def sidebar_selector() -> Selection | None:
     exclude_qc = st.sidebar.checkbox(
         "Exclude QC-rejected cases",
         value=True,
-        help=f"Drops the {len(C.load_excluded_cases())} cases flagged in the gif viewer's errors.json.",
+        help=f"Drops the {len(load_excluded_cases())} cases flagged in the gif viewer's errors.json.",
     )
     iop = st.sidebar.selectbox(
         "IOP instrument", ["Pascal IOP", "Goldman IOP", "ORA IOPcc"], index=0
     )
-    return Selection(root, suffix, iop, study, exclude_qc)
+    return Selection(root, iop, study, exclude_qc)
 
 
 def require_selection() -> Selection:
-    """Run the selector and stop the page if no valid method is chosen."""
+    """Run the selector and stop the page if no valid root is chosen."""
     sel = sidebar_selector()
     if sel is None:
         st.warning("Pick a valid experiments root in the sidebar to continue.")

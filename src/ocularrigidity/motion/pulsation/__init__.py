@@ -1,41 +1,23 @@
 """Cardiac pulse extraction, composed from three swappable stages.
 
-    traces/  →  rate/ (optional)  →  phase/
+    traces/  ->  rate/ (optional)  ->  phase/
 
-One subpackage per stage. Each has a ``base.py`` holding the ABC and the data
-type it passes on, then one module per concrete method — with that method's
-config dataclass next to it, so adding a method means adding a single file:
+One subpackage per stage, each with a ``base.py`` holding the ABC and the type
+it passes on, then one module per concrete method with that method's config
+dataclass beside it — so adding a method means adding a single file.
 
-    traces/   base.py  mask.py  decomposition.py
-    rate/     base.py  lomb_scargle.py  fixed.py
-    phase/    base.py  aggregation.py  demodulation.py  peak_locking.py
-              hilbert.py
-
-At the package root: ``band.py`` (the physiological prior, shared by the trace
-bandpass and the rate estimators), ``extractor.py`` (:class:`PulseExtractor`,
-the orchestrator), ``n_cycle_reconstructor.py`` (folding), ``pipeline.py``
-(end-to-end wiring) and ``legacy.py`` (the pre-refactor
-:class:`MaskPulseExtractor` facade — do not extend).
-
-Typical use::
-
-    PulseExtractor(
-        trace_source=DecomposedTraceSource(MaskThicknessTraceSource(reg, aligner)),
-        rate_estimator=LombScargleRateEstimator(),
-        phase_estimator=IQDemodPhaseEstimator(aggregator=SelectBestComponent()),
-    )
+``band.py`` holds the physiological prior, shared by the trace bandpass and the
+rate estimators; ``extractor.py`` the orchestrator; ``n_cycle_reconstructor.py``
+the folding; ``pipeline.py`` the end-to-end wiring.
 """
 
 from ocularrigidity.motion.pulsation.band import CardiacBand
 from ocularrigidity.motion.pulsation.extractor import PulseExtractor
-from ocularrigidity.motion.pulsation.legacy import (
-    MaskPulseExtractor,
-    PulseExtractionConfig,
-)
 from ocularrigidity.motion.pulsation.n_cycle_reconstructor import (
     NCycleConfig,
     NCycleReconstructor,
 )
+from ocularrigidity.motion.pulsation.pipeline import run_composed_pipeline
 from ocularrigidity.motion.pulsation.phase import (
     AbstractPhaseEstimator,
     AmplitudeWeightedHilbertConfig,
@@ -53,7 +35,6 @@ from ocularrigidity.motion.pulsation.phase import (
     SelectBestComponent,
     SingleTrace,
 )
-from ocularrigidity.motion.pulsation.pipeline import run_cardiac_pipeline
 from ocularrigidity.motion.pulsation.rate import (
     AbstractRateEstimator,
     FixedRateEstimator,
@@ -79,16 +60,12 @@ from ocularrigidity.motion.pulsation.traces.coherence import (
     CoherentTraceSource,
 )
 
-#: Deprecated alias — the monolithic base class is gone, ``PulseExtractor`` is
-#: now concrete and composed. Kept so old imports and type hints resolve.
-AbstractPulseExtractor = PulseExtractor
-
 __all__ = [
     # Orchestration
     "PulseExtractor",
     "NCycleReconstructor",
     "NCycleConfig",
-    "run_cardiac_pipeline",
+    "run_composed_pipeline",
     "CardiacBand",
     # Stage 1: traces
     "AbstractTraceSource",
@@ -126,8 +103,4 @@ __all__ = [
     "SingleTrace",
     "MeanTrace",
     "PowerWeightedMean",
-    # Legacy
-    "MaskPulseExtractor",
-    "PulseExtractionConfig",
-    "AbstractPulseExtractor",
 ]

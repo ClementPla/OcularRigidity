@@ -9,6 +9,7 @@ from ocularrigidity.registration.lateral.utils import (
     robust_temporal_dx,
     smooth_translations,
 )
+from ocularrigidity.registration.postprocess import binarize_warped_mask
 from ocularrigidity.segmentation.fovea.from_ilm import (
     estimate_fovea,
 )
@@ -128,13 +129,26 @@ def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose
     dy_fovea = torch.as_tensor(
         ref_fovea_y - fovea_locations[:, 1], device=device, dtype=torch.float32
     )
+    # `estimate_fovea` returns NaN for frames it cannot fit, and a NaN in the
+    # sampling grid makes grid_sample return an all-NaN frame — which becomes an
+    # all-True mask under `.to(bool)` and noise under `.to(uint8)`, silently.
+    # A frame with no usable estimate is left where it is instead. Note this
+    # covers the reference frame too: if *its* fovea is NaN every shift is, and
+    # the whole volume would otherwise be destroyed.
+    dx_fovea = torch.nan_to_num(dx_fovea, nan=0.0)
+    dy_fovea = torch.nan_to_num(dy_fovea, nan=0.0)
     T, H, W = raw_masks.shape
     ys = torch.arange(H, device=device, dtype=torch.float32)
     xs = torch.arange(W, device=device, dtype=torch.float32)
-    registered_masks_chunks = []
-    registered_frames_chunks = []
     raw_masks = torch.as_tensor(raw_masks)
     mask_dtype, frame_dtype = raw_masks.dtype, raw_frames.dtype
+
+    # One preallocated buffer per output, written a batch at a time. Collecting
+    # chunks and torch.cat-ing them at the end holds the whole volume twice —
+    # ~9 GB extra for a 3000-frame cube — and pays a full copy to concatenate.
+    n_channels = raw_frames.shape[1]
+    registered_masks = torch.empty((T, H, W), dtype=mask_dtype)
+    registered_frames = torch.empty((T, n_channels, H, W), dtype=frame_dtype)
 
     for start in tqdm(
         range(0, T, batch_size),
@@ -166,9 +180,6 @@ def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose
             padding_mode="zeros",
             align_corners=True,
         )
-        registered_masks_chunks.append(data[:, 0].to(mask_dtype).cpu())
-        registered_frames_chunks.append(data[:, 1:].to(frame_dtype).cpu())
-    return (
-        torch.cat(registered_masks_chunks, dim=0),
-        restore_layout(torch.cat(registered_frames_chunks, dim=0), layout),
-    )
+        registered_masks[start:end] = binarize_warped_mask(data[:, 0], mask_dtype).cpu()
+        registered_frames[start:end] = data[:, 1:].to(frame_dtype).cpu()
+    return registered_masks, restore_layout(registered_frames, layout)

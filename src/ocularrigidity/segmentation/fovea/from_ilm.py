@@ -100,6 +100,17 @@ def estimate_fovea_from_ilm(
 
     with np.errstate(divide="ignore", invalid="ignore"):
         vertex_t = -b2 / (2.0 * a2)
+    # The vertex is a sub-pixel refinement of `peak`, so it has to stay inside
+    # the window it was fitted on. Left unbounded, a flat or noisy window drives
+    # `a2` towards zero and `vertex_t` towards infinity, putting `fovea_x`
+    # hundreds of columns from the peak — and since the fovea shift is the only
+    # transversal correction applied, that lands directly in the registration.
+    # `peak` maximises the score, so its parabola must be concave: a non-negative
+    # `a2` means the fit is degenerate and the integer argmax is the best
+    # estimate available.
+    vertex_t = np.where(a2 < 0, vertex_t, 0.0)
+    vertex_t = np.nan_to_num(vertex_t, nan=0.0, posinf=0.0, neginf=0.0)
+    vertex_t = np.clip(vertex_t, -margin, margin)
     fovea_x = peak + vertex_t
     fovea_y = a2 * vertex_t**2 + b2 * vertex_t + c2
 
@@ -117,14 +128,16 @@ def estimate_fovea(
         masks = masks.cpu().numpy()
     bm, csi = clean_boundaries(*extract_boundaries_fast(masks))
     margin = 75
-    axial_pixel_size = AXIAL_PIXEL_SIZE_MM
-    max_thickness_um = 425
+    axial_pixel_size_um = AXIAL_PIXEL_SIZE_MM * 1000  # mm -> µm
+    max_thickness_um = 450
     upper_retinal_bbox = bm - (
-        max_thickness_um / axial_pixel_size
+        max_thickness_um / axial_pixel_size_um
     )  # upper retinal boundary
 
     roi_mask = rebuild_mask(upper_retinal_bbox, bm, masks.shape[1])
-    roi_mask = roi_mask.astype(bool) & (frames > 25)
+    # In place, and no astype: rebuild_mask already returns bool, so the cast
+    # was a copy of a volume-sized array and the `&` allocated a third one.
+    roi_mask &= frames > 25
     roi_mask = keep_largest_connected_component(
         roi_mask
     )  # keep largest connected component

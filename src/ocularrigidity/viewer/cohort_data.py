@@ -1,25 +1,24 @@
 """Data layer for the Streamlit cohort browser.
 
 Pure (no Streamlit) helpers that turn a cohort experiments folder — the
-per-method/phase outputs of ``scripts/pulsation/infer.py`` and
+outputs of ``scripts/pulsation/infer.py`` and
 ``scripts/cohort_analysis/extract_deltaA.py`` — into per-case tables of the
 pulsatile metrics (ΔA, ΔCT, min CT) and the Friedenwald rigidity K, merged with
 the clinical measurements.
 
-Layout consumed (one ``<method>`` = ``<algo>_<phase>``, e.g. ``pca_iq``)::
+Layout consumed::
 
-    <root>/measures_<method>/<case>/deltaA_per_cycle.pkl   (ΔA + boundary displacements)
-    <root>/measures_<method>/<case>/segmented_cycles.npz   (choroid masks)
+    <root>/measures/<case>/deltaA_per_cycle.pkl   (ΔA + boundary displacements)
+    <root>/measures/<case>/segmented_cycles.npz   (choroid masks)
 
 ``<case>`` is ``<patient>/<date>/Rigidity/<eye>`` and matches the cleaned
 ``MeasureValue`` path in :func:`load_measurements`, which is how the clinical
 IOP / OPA / AxialLength / HR are joined.
 
-This mirrors ``notebooks/cohort_analysis/prospective.ipynb``: ΔCT is *measured*
-by tracking the choroid-sclera interface (:func:`measure_delta_ct_from_disp`)
-rather than read from the legacy ``deltaY_<method>.pkl`` harmonic fit, which
-also yields the absolute thickness ``minCT`` and the unit-free
-``RelativeGrowth = ΔCT / minCT``.
+ΔCT is *measured* by tracking the choroid-sclera interface
+(:func:`measure_delta_ct_from_disp`) rather than read from the ``deltaY.pkl``
+harmonic fit, which also yields the absolute thickness ``minCT`` and the
+unit-free ``RelativeGrowth = ΔCT / minCT``.
 """
 
 from __future__ import annotations
@@ -91,21 +90,9 @@ CLINICAL_MEASURES = [
 ]
 
 
-def discover_methods(root: str | Path) -> list[str]:
-    """Method suffixes with a ``measures_<suffix>`` directory under ``root``."""
-    root = Path(root)
-    return sorted(
-        d.name[len("measures_") :] for d in root.glob("measures_*") if d.is_dir()
-    )
-
-
-def pretty_method(suffix: str) -> str:
-    """``pca_peak_locked`` -> ``PCA · Peak-locked``."""
-    algo, _, phase = suffix.partition("_")
-    phase_label = {"iq": "IQ", "peak_locked": "Peak-locked"}.get(
-        phase, phase.replace("_", " ").title()
-    )
-    return f"{algo.upper()} · {phase_label}"
+def has_measures(root: str | Path) -> bool:
+    """Does ``root`` hold this pipeline's ``measures/`` output?"""
+    return (Path(root) / "measures").is_dir()
 
 
 def load_excluded_cases(path: str | Path = QC_ERRORS_PATH) -> set[str]:
@@ -121,10 +108,10 @@ def load_excluded_cases(path: str | Path = QC_ERRORS_PATH) -> set[str]:
         return {e.replace("_", "/").replace(".gif", "") for e in json.load(fh)}
 
 
-def load_deltaA_per_cycle(root: str | Path, suffix: str) -> pd.DataFrame:
+def load_deltaA_per_cycle(root: str | Path) -> pd.DataFrame:
     """Per-cycle ΔA table: ``case_id, cycle, deltaA (px²), minimal_area (px²)``."""
     root = Path(root)
-    measures_root = root / f"measures_{suffix}"
+    measures_root = root / "measures"
     rows = {"case_id": [], "cycle": [], "deltaA": [], "minimal_area": []}
     for f in sorted(measures_root.rglob("deltaA_per_cycle.pkl")):
         case_id = f.parent.relative_to(measures_root).as_posix()
@@ -140,14 +127,13 @@ def load_deltaA_per_cycle(root: str | Path, suffix: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def deltaCT_cache_path(root: str | Path, suffix: str, trim: int) -> Path:
+def deltaCT_cache_path(root: str | Path, trim: int) -> Path:
     """Where :func:`load_deltaCT_per_cycle` persists its (slow) result."""
-    return Path(root) / f"deltaCT_measured_{suffix}_trim{trim}.parquet"
+    return Path(root) / f"deltaCT_measured_trim{trim}.parquet"
 
 
 def load_deltaCT_per_cycle(
     root: str | Path,
-    suffix: str,
     trim: int = DELTA_CT_TRIM,
     n_cycles: int = DELTA_A.n_cycles,
     use_cache: bool = True,
@@ -168,11 +154,11 @@ def load_deltaCT_per_cycle(
     unless ``use_cache`` is False.
     """
     root = Path(root)
-    cache = deltaCT_cache_path(root, suffix, trim)
+    cache = deltaCT_cache_path(root, trim)
     if use_cache and cache.exists():
         return pd.read_parquet(cache)
 
-    measures_root = root / f"measures_{suffix}"
+    measures_root = root / "measures"
     rows = []
     for f in sorted(measures_root.rglob("deltaA_per_cycle.pkl")):
         case_id = f.parent.relative_to(measures_root).as_posix()
@@ -230,7 +216,6 @@ def load_deltaCT_per_cycle(
 
 def build_case_table(
     root: str | Path,
-    suffix: str,
     iop_instrument: str = "Pascal IOP",
     study: Study | None = None,
     excluded_cases: Iterable[str] | None = None,
@@ -253,8 +238,8 @@ def build_case_table(
     """
     root = Path(root)
 
-    da = load_deltaA_per_cycle(root, suffix)
-    ct = load_deltaCT_per_cycle(root, suffix, trim=trim)
+    da = load_deltaA_per_cycle(root)
+    ct = load_deltaCT_per_cycle(root, trim=trim)
 
     da_g = (
         da.groupby("case_id")

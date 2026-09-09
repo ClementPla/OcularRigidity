@@ -7,6 +7,12 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 )
 
 
+def binarize_warped_mask(warped: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    if dtype.is_floating_point:
+        return warped
+    return (warped > 0.5).to(dtype)
+
+
 _BM_JUMP_THRESHOLD_PX = 20.0  # saut horizontal de la BM (px) juge discontinu
 _BM_BAD_FRAME_FRACTION = (
     0.5  # colonne noircie si mauvaise dans >= cette fraction des frames

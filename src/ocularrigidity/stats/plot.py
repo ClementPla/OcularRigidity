@@ -28,13 +28,19 @@ def regression_plot_with_stats(
     if ax is None:
         figsize = (6, 6) if equal_axis else (7, 5)
         fig, ax = plt.subplots(figsize=figsize)
+    df = df.dropna(subset=[col1, col2])
     if drop_outlier_quantile is not None:
-        df = df.copy()
         for col in [col1, col2]:
-            q_low, q_high = df[col1].quantile(
+            q_low, q_high = df[col].quantile(
                 [1.0 - drop_outlier_quantile, drop_outlier_quantile]
             )
             df = df[(df[col] <= q_high) & (df[col] >= q_low)]
+    if len(df) < 2:
+        raise ValueError(
+            f"{title!r}: only {len(df)} usable point(s) for '{col1}' vs '{col2}' "
+            "-- the correlation needs at least 2. Check for all-NaN columns "
+            "upstream before blaming the outlier filter."
+        )
     sns.regplot(
         x=col1,
         y=col2,

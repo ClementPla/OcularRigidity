@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from astropy.timeseries import LombScargle
 import numpy as np
-from ocularrigidity.motion.pulsation import AbstractPulseExtractor
+from ocularrigidity.motion.pulsation import PulseExtractor
 from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
 def plot_cardiac_signals(
-    CC_ex: AbstractPulseExtractor | CardiacPipelineResults,
+    CC_ex: PulseExtractor | CardiacPipelineResults,
     include_2d_thickness: bool = True,
     include_2d_thickness_filtered: bool = True,
     include_1d_mean_thickness: bool = True,

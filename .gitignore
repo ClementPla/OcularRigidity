@@ -222,3 +222,51 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Quarto report cache + rendered output
+reports/.cache/
+reports/*_files/
+reports/.quarto/
+
+# --- Binary data and generated artifacts -------------------------------------
+# These are why .git reached 14 GB: `git stash -u` snapshots *untracked* files
+# into the object store, so any large file sitting in the tree unignored ends up
+# committed inside a stash. Dropping the stash orphans the blobs but does not
+# delete them. Keep data out of the tree, or ignored.
+
+# Video / animation
+*.mp4
+*.mkv
+*.mpeg
+*.mpg
+*.avi
+*.mov
+*.gif
+
+# Model weights and archives
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.zip
+*.tar
+*.tar.gz
+
+# Arrays, pickles, local databases
+*.npz
+*.npy
+*.pkl
+*.pickle
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated figures (every one is produced by a plt.savefig in this repo)
+*.png
+*.jpg
+*.jpeg
+
+# Bulk sample data kept locally, never versioned
+test/previous_masks/
+
+# LLM context dump of the repo, regenerated on demand
+repomix-output.xml

@@ -1,7 +1,7 @@
 """Study-level configuration: what settings *this* cohort is processed with.
 
 The distinction against the per-component configs (``RegistrationConfig``,
-``PulseExtractionConfig``, ``NCycleConfig``, …) is deliberate:
+``RegistrationConfig``, ``NCycleConfig``, …) is deliberate:
 
 - A **component** config is the argument list of one class. It lives next to
   that class, and its defaults say what the algorithm does by default.
@@ -32,7 +32,6 @@ from ocularrigidity.motion.pulsation import (
     LombScargleConfig,
     MaskTraceConfig,
     NCycleConfig,
-    PulseExtractionConfig,
 )
 from ocularrigidity.motion.pulsation.traces.coherence import CoherenceConfig
 from ocularrigidity.registration.config import RegistrationConfig
@@ -70,8 +69,7 @@ __all__ = [
 class ChainConfig:
     """The composed trace → rate → phase chain, as run in notebooks/pipeline/test.ipynb.
 
-    This is the recipe that replaced the flat :class:`PulseExtractionConfig`
-    recipe. The differences that matter, established by comparing against the
+    The differences that matter, established by comparing against the
     July-2026 cohort run:
 
     * ``SelectBestComponent`` for phase aggregation — averaging the PCA
@@ -90,9 +88,7 @@ class ChainConfig:
         default_factory=lambda: BandPassFilterTraceConfig(sigma_col=5.0)
     )
     coherence: CoherenceConfig = field(
-        default_factory=lambda: CoherenceConfig(
-            selection="quantile", keep_quantile=0.5
-        )
+        default_factory=lambda: CoherenceConfig(selection="quantile", keep_quantile=0.5)
     )
     decomposition: DecompositionConfig = field(
         default_factory=lambda: DecompositionConfig(
@@ -106,8 +102,6 @@ class ChainConfig:
         default_factory=lambda: IQPhaseConfig(
             smoother_cycles=2.0,
             density_threshold=0.5,
-            # The instantaneous-frequency gate is disabled: it trims good frames
-            # out of the fold, and the July-2026 reference run predates it.
             freq_tolerance=1e9,
         )
     )
@@ -135,31 +129,20 @@ class ChainConfig:
 class PulsationConfig:
     """Cardiac-cycle extraction + folding (pulsation/infer.py).
 
-    ``extraction`` and ``fold`` are the component configs handed straight to
-    :func:`run_cardiac_pipeline`; use :meth:`for_video` to stamp in the
-    per-video and per-sweep values. The remaining fields are the ones no
-    component owns: which variants to sweep, and the output video's fps.
+    ``chain`` and ``fold`` are the component configs; use
+    :meth:`chain_for_video` to stamp in the per-video values. The remaining
+    field is the one no component owns: the output video's fps.
 
-    ``extraction`` is the flat :class:`PulseExtractionConfig` because that is
-    what the pipeline entry point still takes. When ``run_cardiac_pipeline``
-    moves off the legacy ``MaskPulseExtractor`` facade, this field becomes the
-    per-stage configs (``MaskTraceConfig``, ``DecompositionConfig``, …) and
-    nothing else here has to change.
+    There is no method/phase sweep: the composed ``chain`` *is* the recipe, and
+    the decomposition and demodulation are fields of the stage configs it
+    holds, saved with every ``measure.pkl``. So the outputs carry no
+    ``<method>_<phase>`` suffix — what was ``one_cycle_pca_iq`` is just
+    ``one_cycle``.
     """
 
     # Values equal to the library defaults are still spelled out: a study
     # config should pin what it ran, so a later change to a library default
     # cannot silently change this cohort's settings.
-    extraction: PulseExtractionConfig = field(
-        default_factory=lambda: PulseExtractionConfig(
-            sigma_col=5.0,
-            expected_bpm_band_frac=0.3,
-            col_slice=slice(100, 924),
-        )
-    )
-    # The composed chain, which is what the cohort scripts now run.
-    # ``extraction`` above is the superseded flat recipe, kept because old
-    # ``measure.pkl`` files carry it as provenance.
     chain: ChainConfig = field(default_factory=ChainConfig)
     fold: NCycleConfig = field(
         default_factory=lambda: NCycleConfig(
@@ -172,9 +155,6 @@ class PulsationConfig:
         )
     )
 
-    # --- Sweep axes: one run per combination (pulsation/infer.py) ---------
-    methods: tuple[str, ...] = ("pca",)
-    phase_methods: tuple[str, ...] = ("iq",)
     # fps written into the lossless one_cycle.mkv (display metadata only).
     output_fps: int = 30
 
@@ -186,35 +166,6 @@ class PulsationConfig:
             self.chain.for_video(expected_bpm=expected_bpm, verbose=verbose),
             replace(self.fold, verbose=verbose),
         )
-
-    def for_video(
-        self,
-        *,
-        method: Optional[str] = None,
-        phase_method: Optional[str] = None,
-        expected_bpm: Optional[float] = None,
-        verbose: bool = True,
-    ) -> tuple[PulseExtractionConfig, NCycleConfig]:
-        """The *legacy* flat settings, specialised for one video / sweep point.
-
-        ``expected_bpm`` is the measured heart rate, which is per-video and so
-        cannot live in a cohort-wide config. New code wants
-        :meth:`chain_for_video`.
-        """
-        extraction = replace(
-            self.extraction,
-            expected_bpm=expected_bpm,
-            verbose=verbose,
-            **({"ICA_or_PCA": method} if method is not None else {}),
-        )
-        fold = replace(
-            self.fold,
-            verbose=verbose,
-            **({"phase_method": phase_method} if phase_method is not None else {}),
-        )
-        return extraction, fold
-
-
 @dataclass(frozen=True)
 class DeltaYConfig:
     """Choroid segmentation + cardiac-amplitude (deltaY) fit on one_cycle.mkv."""
@@ -252,9 +203,10 @@ class DeltaAConfig:
 
     n_cycles: int = N_CYCLES
     method: Literal["optical_flow", "demons"] = "optical_flow"
-    smooth_window: int = 15
+    smooth_window: int = 25
     lk_window: int = 35
     csi_normal_smooth_sigma: float = 0.0
+    csi_normal_slope_window: int = 51
 
 
 @dataclass(frozen=True)
@@ -294,7 +246,17 @@ class MisregistrationConfig:
 
 
 # Singletons imported by the pipeline scripts.
-REGISTRATION = RegistrationConfig()
+# The cohort runs the *learned* registrator: one encoder pass per frame feeds
+# both the segmentation decoder and the (dx, dy) heads, which is what the fused
+# stage exists to exploit. The dataclass default stays "classical" so a direct
+# caller of `register_videos` is unaffected.
+#
+# `use_encoded_video=False`: this run reads the raw cube.bin off the share, not
+# the compressed mp4 beside it. The mp4 is lossy — mean |difference| 11.7 grey
+# levels against the raw cube — so it is not an equivalent input to a
+# segmentation, and a cohort measured from a mix of the two would not be
+# comparable within itself.
+REGISTRATION = RegistrationConfig(method="learned", use_encoded_video=False)
 PULSATION = PulsationConfig()
 DELTA_Y = DeltaYConfig()
 SEGMENTATION = SegmentationConfig()

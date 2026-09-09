@@ -30,6 +30,10 @@ def infer(
     device: str = "cuda",
     use_amp: bool = True,
     amp_dtype: torch.dtype = torch.float16,
+    post_process: bool = True,
+    pin_memory: bool = True,
+    accumulate_on_cpu: bool = False,
+    pad_last_batch: bool = False,
     verbose: bool = False,
 ) -> np.ndarray:
     # 1. Convert to tensor without copying if possible; keep uint8 in CPU RAM
@@ -42,18 +46,17 @@ def infer(
     gc_kwargs = graphcut_kwargs or {}
 
     # Pin memory so data transfers to GPU are truly asynchronous
-    if not data.is_pinned() and device == "cuda":
+    if pin_memory and not data.is_pinned() and device == "cuda":
         data = data.pin_memory()
 
-    # Pre-allocate GPU tensor for batch outputs (avoids inner-loop CPU syncs)
-    if return_logit:
-        gpu_predictions = torch.empty(
-            (n, org_h, org_w), dtype=torch.float32, device=device
-        )
-    else:
-        gpu_predictions = torch.empty(
-            (n, org_h, org_w), dtype=torch.bool, device=device
-        )
+    # Pre-allocate the whole-volume output (avoids inner-loop CPU syncs when it
+    # lives on the device; see ``accumulate_on_cpu`` for when it should not)
+    buffer_device = "cpu" if accumulate_on_cpu else device
+    predictions_buf = torch.empty(
+        (n, org_h, org_w),
+        dtype=torch.float32 if return_logit else torch.bool,
+        device=buffer_device,
+    )
 
     for start in tqdm(range(0, n, batch_size), desc="Inference", disable=not verbose):
         end = min(start + batch_size, n)
@@ -83,8 +86,19 @@ def infer(
         if pad_h > 0 or pad_w > 0:
             chunk = F.pad(chunk, (0, pad_w, 0, pad_h), mode="reflect")
 
+        # Fill the tail batch out to batch_size with copies of its last frame,
+        # so the module only ever sees one input shape. The copies are sliced
+        # back off below and never reach the output.
+        n_real = end - start
+        batch_padding = batch_size - n_real if pad_last_batch else 0
+        if batch_padding > 0:
+            chunk = torch.cat([chunk, chunk[-1:].expand(batch_padding, -1, -1, -1)])
+
         with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=use_amp):
             out = module(chunk)
+
+        if batch_padding > 0:
+            out = out[:n_real]
 
         if pad_h > 0 or pad_w > 0:
             out = out[:, :, :h, :w]
@@ -94,22 +108,25 @@ def infer(
                 out, size=(org_h, org_w), mode="bilinear", align_corners=True
             )
 
-        # 3. Store results directly in GPU memory without syncing to CPU every batch
+        # 3. Store the batch. Assigning into a host buffer is a cross-device
+        # copy_, so this is the same line either way.
         if return_logit:
-            gpu_predictions[start:end] = out.squeeze(1)
+            predictions_buf[start:end] = out.squeeze(1)
         elif use_graphcut:
             probs = torch.sigmoid(out.float() * 0.5).squeeze(1)
             masks = graphcut_masks_from_probs_batch_torch(probs, **gc_kwargs)
-            gpu_predictions[start:end] = masks
+            predictions_buf[start:end] = masks
         else:
-            gpu_predictions[start:end] = out.squeeze(1) > 0.0
+            predictions_buf[start:end] = out.squeeze(1) > 0.0
 
-    # Single transfer back to CPU host memory
-    predictions = gpu_predictions.cpu().numpy()
+    # No-op when the buffer is already in host memory.
+    predictions = predictions_buf.cpu().numpy()
 
     if return_logit:
         return predictions
 
-    # Post-processing (CPU bottleneck)
+    if not post_process:
+        return predictions
+
     predictions = keep_largest_connected_component(predictions)
     return predictions

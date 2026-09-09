@@ -6,7 +6,9 @@ import torch
 import cv2
 
 
-@njit(parallel=True)
+# cache=True: without it numba re-compiles this on every process start, which is
+# seconds of silence before the first volume of every run and of every shard.
+@njit(parallel=True, cache=True)
 def extract_boundaries_fast(masks):
     T, H, W = masks.shape
     bm = np.full((T, W), np.nan, dtype=np.float32)
@@ -345,17 +347,35 @@ def get_masks_contours(masks):
 def rebuild_mask(upper: np.ndarray, lower: np.ndarray, H: int) -> np.ndarray:
     """
     Rebuild (T, H, W) bool mask from (T, W) boundary curves.
+
+    Written straight into one output array rather than as a chain of whole-array
+    expressions: at cohort size (T, H, W) is several GB, so each intermediate
+    ``(y >= upper)``, ``(y <= lower)`` and their ``&`` costs another allocation
+    and another full pass over that much memory.
+
+    NaN columns need no explicit handling. Every comparison against NaN is
+    False, so a NaN in either boundary already leaves its column empty; masking
+    against ``~isnan`` afterwards only re-derived a result that was there.
     """
     T, W = upper.shape
-    y_grid = np.arange(H)[None, :, None]  # (1, H, 1)
+    mask = np.empty((T, H, W), dtype=bool)
+
+    # float64 so the comparison against float64 boundaries runs the native loop
+    # rather than casting through a buffer on every batch.
+    y_grid = np.arange(H, dtype=np.float64)[None, :, None]  # (1, H, 1)
     bm_grid = upper[:, None, :]  # (T, 1, W)
     csi_grid = lower[:, None, :]
 
-    mask = (y_grid >= bm_grid) & (y_grid <= csi_grid)
+    # Frame-chunked so the second comparison's temporary is tens of MB and stays
+    # in cache, instead of being one more array the size of the output.
+    chunk = max(1, (64 << 20) // max(H * W, 1))
+    with np.errstate(invalid="ignore"):  # NaN comparisons are intentional
+        for start in range(0, T, chunk):
+            end = min(start + chunk, T)
+            band = mask[start:end]
+            np.greater_equal(y_grid, bm_grid[start:end], out=band)
+            band &= y_grid <= csi_grid[start:end]
 
-    # Handle NaN columns (leave as False everywhere)
-    valid = ~(np.isnan(upper) | np.isnan(lower))
-    mask = mask & valid[:, None, :]
     return mask
 
 

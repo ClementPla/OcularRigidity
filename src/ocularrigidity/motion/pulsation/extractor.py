@@ -67,6 +67,8 @@ class PulseExtractor:
         self._phase: PhaseTrack | None = None
         self._freq_override: float | None = None
 
+        self._bypassed_registered_video = None
+
     @staticmethod
     def _find(source, attr):
         """Walk a chain of trace-source decorators looking for ``attr``."""
@@ -200,7 +202,13 @@ class PulseExtractor:
 
     @property
     def registered_frames(self):
+        if self._bypassed_registered_video is not None:
+            return self._bypassed_registered_video
         return self.registered_video.registered_frames
+
+    @registered_frames.setter
+    def registered_frames(self, value):
+        self._bypassed_registered_video = value
 
     @property
     def registered_masks(self):

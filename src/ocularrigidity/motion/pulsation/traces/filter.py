@@ -1,9 +1,7 @@
 """Cardiac bandpass + NaN-aware spatial smoothing of a uniform-grid source.
 
-This used to live inside ``AbstractUniformTraceSource`` (the old
-``filtered_signal`` property). It is a stage of its own so a source can be fed
-to the decomposition raw, and so the band can be changed without rebuilding the
-signal map.
+A stage of its own, so a source can be fed to the decomposition raw and the band
+can be changed without rebuilding the signal map.
 
 Filtering runs on the *full* uniform grid rather than on ``source.traces``:
 ``filtfilt`` needs contiguous, evenly-spaced samples, and the kept-sample view
@@ -58,12 +56,12 @@ class BandPassFilterTraceSource(AbstractTraceSource):
         return self.source.timestamps_seconds
 
     @property
-    def gap_mask(self) -> np.ndarray:
-        return self.source.gap_mask
-
-    @property
     def fs(self) -> float:
         return self.source.fs
+
+    @property
+    def gap_mask(self) -> np.ndarray:
+        return self.source.gap_mask
 
     @property
     def interpolated_validity(self) -> np.ndarray:
@@ -81,7 +79,7 @@ class BandPassFilterTraceSource(AbstractTraceSource):
     # -- contract -------------------------------------------------------
     def _filter(self) -> np.ndarray:
         cfg = self.config
-        gap = self.gap_mask
+        gap = self.source.gap_mask
 
         # Gap samples are zero-filled and given zero weight: filtfilt needs a
         # continuous series, and the weights keep those samples from pulling
@@ -126,7 +124,7 @@ class BandPassFilterTraceSource(AbstractTraceSource):
             values=filtered[kept],
             uniform_time=self.uniform_time,
             kept_mask=kept,
-            gap_mask=self.gap_mask,
+            gap_mask=self.source.gap_mask,
             timestamps_seconds=self.timestamps_seconds,
             mixing=None,
             source_map=filtered,

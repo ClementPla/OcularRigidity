@@ -13,7 +13,11 @@ from typing import Literal, Optional
 import numpy as np
 
 from ocularrigidity.motion.projection._1d import project_into_separable_components
-from ocularrigidity.motion.pulsation.traces.base import AbstractTraceSource, Traces
+from ocularrigidity.motion.pulsation.traces.base import (
+    AbstractTraceSource,
+    AbstractUniformTraceSource,
+    Traces,
+)
 
 
 @dataclass
@@ -30,7 +34,7 @@ class DecompositionConfig:
     fun: str = "cube"
 
 
-class DecomposedTraceSource(AbstractTraceSource):
+class DecomposedTraceSource(AbstractUniformTraceSource):
     """Wraps another source and returns its ICA/PCA components as the traces.
 
     The mixing matrix and the sign convention live here because this is the only
@@ -44,11 +48,27 @@ class DecomposedTraceSource(AbstractTraceSource):
         source: AbstractTraceSource,
         config: DecompositionConfig | None = None,
     ):
-        super().__init__()
+        super().__init__(aligner=source.aligner)
         self.source = source
         self.config = config or DecompositionConfig()
+        self._mixing = None
 
     def compute(self) -> Traces:
+        components = self.raw_signal()
+        base = self.source
+
+        return Traces(
+            values=components,
+            uniform_time=base.uniform_time,
+            kept_mask=base.kept_mask,
+            gap_mask=base.gap_mask,
+            timestamps_seconds=base.timestamps_seconds,
+            mixing=self._mixing,
+            source_map=base.source_map,
+        )
+
+    def raw_signal(self) -> np.ndarray:
+        """The raw signal from the underlying source."""
         cfg = self.config
         base = self.source.traces
         components, mixing = project_into_separable_components(
@@ -69,16 +89,8 @@ class DecomposedTraceSource(AbstractTraceSource):
                 if np.isfinite(c) and c < 0:
                     components[:, k] *= -1
                     mixing[:, k] *= -1
-
-        return Traces(
-            values=components,
-            uniform_time=base.uniform_time,
-            kept_mask=base.kept_mask,
-            gap_mask=base.gap_mask,
-            timestamps_seconds=base.timestamps_seconds,
-            mixing=mixing,
-            source_map=base.source_map,
-        )
+        self._mixing = mixing
+        return components
 
     def reset(self) -> None:
         super().reset()
@@ -87,3 +99,8 @@ class DecomposedTraceSource(AbstractTraceSource):
     @property
     def notes_all(self) -> list[str]:
         return list(self.source.notes) + list(self.notes)
+
+    @property
+    def gap_mask(self) -> np.ndarray:
+        """Gap mask of the underlying source, propagated to the decomposed traces."""
+        return self.source.traces.gap_mask

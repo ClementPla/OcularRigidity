@@ -25,7 +25,115 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
     extract_boundaries_gpu,
 )
 import matplotlib.pyplot as plt
-import numpy as np
+
+
+def cache_paths_for(cache_dir: Path, video_id: Path) -> dict:
+    """Cache file locations for one video's registered frames, masks and transform."""
+    cache_dir = Path(cache_dir)
+    return {
+        "frames": cache_dir / "registered_frames" / video_id / "cube.mp4",
+        "masks": cache_dir / "registered_masks" / video_id / "mask.npz",
+        "transform": cache_dir / "registered_masks" / video_id / "transform.npz",
+    }
+
+
+def cache_meta_for(config: RegistrationConfig) -> dict:
+    """Registration parameters the cache is keyed on (validated on load)."""
+    c = config
+    return dict(
+        skip_first_n_frames=c.skip_first_n_frames,
+        drop_last_n_frames=c.drop_last_n_frames,
+        correct_transversal=int(c.correct_transversal),
+        correct_axial=int(c.correct_axial),
+        flatten_rpe=int(c.flatten_rpe),
+        fovea_correction_enabled=int(c.fovea_correction_enabled),
+        lateral_method=c.lateral_method,
+        max_lateral_shift=int(c.max_lateral_shift),
+        smooth_transversal=int(c.smooth_transversal),
+        smooth_transversal_sigma=float(c.smooth_transversal_sigma),
+        axial_refinement=int(c.axial_refinement),
+        max_axial_shift=int(c.max_axial_shift),
+        subpixel=int(c.subpixel),
+        crop_factor=float(c.crop_factor),
+        scale_factor=float(c.scale_factor),
+        transversal_bandpass=str(c.transversal_bandpass),
+        axial_bandpass=str(c.axial_bandpass),
+        # Which estimator produced the transform, and (for the learned one)
+        # from which weights. Two caches that differ only in this are not
+        # interchangeable, so the key has to carry it.
+        method=c.method,
+        registrator_checkpoint=(
+            str(c.registrator_checkpoint) if c.method == "learned" else ""
+        ),
+        # Both change the transform itself, not just how long it takes to get.
+        reference_selection=c.reference_selection,
+        probe_frames=int(c.probe_frames),
+        # Which pixels went in: the compressed mp4 is lossy against the raw
+        # cube.bin (mean |difference| ~11.7 grey levels), so a registration
+        # computed from one is not the same artifact as one from the other.
+        use_encoded_video=int(c.use_encoded_video),
+        filter_bad_columns=int(c.filter_bad_columns),
+    )
+
+
+def cache_is_valid(
+    cache_dir: Path, video_id: Path, config: RegistrationConfig
+) -> bool:
+    """Is there a cached registration for this video, matching ``config``?
+
+    Reads only the small transform.npz, so a batch script can ask this about a
+    whole cohort up front — which volumes to re-register is a planning decision,
+    and planning must not decode 4.7 GB per video to make it.
+    """
+    paths = cache_paths_for(cache_dir, video_id)
+    if not all(p.exists() for p in paths.values()):
+        return False
+    try:
+        data = np.load(paths["transform"])
+    except Exception:
+        return False
+    # Stale cache if it was produced with different registration params.
+    # Compare as strings so int and string keys (e.g. lateral_method) work.
+    # A key absent from an older cache is not compared, so caches written
+    # before newer keys (crop/scale/bandpass) were added stay valid.
+    return all(
+        str(data[k]) == str(v)
+        for k, v in cache_meta_for(config).items()
+        if k in data
+    )
+
+
+def read_cache_payload(
+    cache_dir: Path,
+    video_id: Path,
+    config: RegistrationConfig,
+    verbose: bool = False,
+) -> Optional[dict]:
+    """Decode a cached registration, or return None if there is no valid one.
+
+    Pure file IO and CPU decode — no GPU, no torch autograd, nothing tied to
+    this process — so a batch caller can run it in a DataLoader worker ahead of
+    time and hand the result to :meth:`VideoRegistrator.prime_from_cache`.
+    """
+    paths = cache_paths_for(cache_dir, video_id)
+    if not cache_is_valid(cache_dir, video_id, config):
+        return None
+    try:
+        data = np.load(paths["transform"])
+        frames = read_gray(paths["frames"])
+        masks = load_mask(paths["masks"])
+    except Exception as e:
+        if verbose:
+            print(f"Ignoring unreadable registration cache ({e})")
+        return None
+    if frames.shape[0] != masks.shape[0]:
+        return None
+    return {
+        "frames": frames,
+        "masks": masks,
+        "transform": {"dx": data["dx"], "dy": data["dy"]},
+        "path": paths["masks"].parent,
+    }
 
 
 class VideoRegistrator:
@@ -83,10 +191,8 @@ class VideoRegistrator:
         self._device = device
         self._overwrite_cache = overwrite_cache
         self._cq_cache = cq_cache
+        self._loaded_from_cache = False
 
-    # Convenience read-only views onto the config, for collaborators (the
-    # timeline aligner, pipeline results) that key off frame selection and the
-    # correction flags.
     @property
     def skip_first_n_frames(self) -> int:
         return self.config.skip_first_n_frames
@@ -124,66 +230,80 @@ class VideoRegistrator:
 
     def _cache_paths(self) -> dict:
         """Cache file locations for the registered frames, masks and transform."""
-        vid = self._video_id
-        return {
-            "frames": self.cache_dir / "registered_frames" / vid / "cube.mp4",
-            "masks": self.cache_dir / "registered_masks" / vid / "mask.npz",
-            "transform": self.cache_dir / "registered_masks" / vid / "transform.npz",
-        }
+        return cache_paths_for(self.cache_dir, self._video_id)
 
     def _cache_meta(self) -> dict:
         """Registration parameters the cache is keyed on (validated on load)."""
-        c = self.config
-        return dict(
-            skip_first_n_frames=c.skip_first_n_frames,
-            drop_last_n_frames=c.drop_last_n_frames,
-            correct_transversal=int(c.correct_transversal),
-            correct_axial=int(c.correct_axial),
-            flatten_rpe=int(c.flatten_rpe),
-            fovea_correction_enabled=int(c.fovea_correction_enabled),
-            lateral_method=c.lateral_method,
-            max_lateral_shift=int(c.max_lateral_shift),
-            smooth_transversal=int(c.smooth_transversal),
-            smooth_transversal_sigma=float(c.smooth_transversal_sigma),
-            axial_refinement=int(c.axial_refinement),
-            max_axial_shift=int(c.max_axial_shift),
-            subpixel=int(c.subpixel),
-            crop_factor=float(c.crop_factor),
-            scale_factor=float(c.scale_factor),
-            transversal_bandpass=str(c.transversal_bandpass),
-            axial_bandpass=str(c.axial_bandpass),
-        )
+        return cache_meta_for(self.config)
 
-    def _load_from_cache(self) -> bool:
-        """Populate registration results from cache. Returns True on a valid hit."""
-        paths = self._cache_paths()
-        if not all(p.exists() for p in paths.values()) or self._overwrite_cache:
-            return False
-        try:
-            data = np.load(paths["transform"])
-            # Stale cache if it was produced with different registration params.
-            # Compare as strings so int and string keys (e.g. lateral_method) work.
-            # A key absent from an older cache is not compared, so caches written
-            # before newer keys (crop/scale/bandpass) were added stay valid.
-            for k, v in self._cache_meta().items():
-                if k in data and str(data[k]) != str(v):
-                    return False
-            frames = read_gray(paths["frames"])
-            masks = load_mask(paths["masks"])
-        except Exception as e:
-            if self.verbose:
-                print(f"Ignoring unreadable registration cache ({e})")
-            return False
-        if frames.shape[0] != masks.shape[0]:
-            return False
+    def _adopt_cache_payload(self, payload: dict) -> None:
+        """Install a decoded cache payload as this registrator's result."""
+        frames, masks = payload["frames"], payload["masks"]
+        # A payload that travelled through a DataLoader arrives as tensors
+        # backed by shared memory; .numpy() views that buffer rather than
+        # copying another 4.7 GB, and keeps it alive for as long as we hold it.
+        if isinstance(frames, torch.Tensor):
+            frames = frames.numpy()
+        if isinstance(masks, torch.Tensor):
+            masks = masks.numpy()
 
         self._registered_frames = frames
         self._registered_masks = masks
-        self._transform = {"dx": data["dx"], "dy": data["dy"]}
+        self._transform = payload["transform"]
         bm, csi = extract_boundaries_gpu(masks, to_numpy=False)
         self._registered_lines = torch.stack([bm, csi], dim=1).cpu()
+
+    def prime_from_result(
+        self,
+        registered_frames,
+        registered_masks,
+        transform: dict,
+        raw_masks=None,
+    ) -> None:
+        """Install a registration computed elsewhere, leaving the cache writable.
+
+        The counterpart of :meth:`prime_from_cache`: that one adopts a payload
+        that *came from* the cache and must not be written back, this one
+        adopts a freshly computed result that must. It is how the fused
+        single-pass stage (:mod:`ocularrigidity.registration.fused`) hands its
+        output over — the registrator then behaves as if it had registered the
+        video itself, so :meth:`flush_cache` and every downstream consumer are
+        unchanged and the old registration path is never entered.
+        """
+        self._adopt_cache_payload(
+            {
+                "frames": registered_frames,
+                "masks": registered_masks,
+                "transform": transform,
+            }
+        )
+        if raw_masks is not None:
+            self._raw_masks = raw_masks
+        self._loaded_from_cache = False
+
+    def prime_from_cache(self, payload: dict) -> None:
+        """Adopt a cache payload read by :func:`read_cache_payload` elsewhere.
+
+        Lets a batch caller move the cache decode (~25 s of CPU per volume) into
+        a DataLoader worker and still get a registrator that behaves as if it
+        had loaded the cache itself — including not writing it back.
+        """
+        self._adopt_cache_payload(payload)
+        self._loaded_from_cache = True
+
+    def _load_from_cache(self) -> bool:
+        """Populate registration results from cache. Returns True on a valid hit."""
+        if self._overwrite_cache:
+            return False
+        payload = read_cache_payload(
+            self.cache_dir, self._video_id, self.config, verbose=self.verbose
+        )
+        if payload is None:
+            return False
+
+        self._adopt_cache_payload(payload)
         if self.verbose:
-            print(f"Loaded registration from cache: {paths['masks'].parent}")
+            print(f"Loaded registration from cache: {payload['path']}")
         return True
 
     def _save_to_cache(self) -> None:
@@ -318,9 +438,27 @@ class VideoRegistrator:
             self.compute_registration()
         return self._registered_lines
 
-    def compute_registration(self):
+    def flush_cache(self) -> None:
+        """Persist the computed registration, if there is a cache to write to.
+
+        Split out of :meth:`compute_registration` so a batch caller can run it
+        on a background thread. The HEVC encode and the mask compression are
+        seconds of CPU and subprocess work per volume, and none of it needs the
+        GPU that the next volume is waiting for. A registration that came *from*
+        the cache is not written back.
+        """
+        if self.cache_dir is not None and not self._loaded_from_cache:
+            self._save_to_cache()
+
+    def compute_registration(self, save_cache: bool = True):
+        """Register the video, reusing a cached result when one is valid.
+
+        ``save_cache=False`` computes without writing; the caller then owns the
+        write and must call :meth:`flush_cache` (typically on another thread).
+        """
         # Reuse a previously cached registration when available.
         if self.cache_dir is not None and self._load_from_cache():
+            self._loaded_from_cache = True
             return
 
         raw_masks = self.raw_masks
@@ -346,8 +484,8 @@ class VideoRegistrator:
             [torch.tensor(bm), torch.tensor(csi)], dim=1
         ).cpu()
 
-        if self.cache_dir is not None:
-            self._save_to_cache()
+        if save_cache:
+            self.flush_cache()
 
     def plot(self, which="registered", index=None):
         if which == "registered":

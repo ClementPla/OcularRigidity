@@ -8,7 +8,10 @@ from ocularrigidity.registration.axial.median_registration import (
 )
 
 from ocularrigidity.registration.layout import restore_layout, to_bchw, to_gray
-from ocularrigidity.registration.postprocess import filter_bad_ascans_per_bms
+from ocularrigidity.registration.postprocess import (
+    binarize_warped_mask,
+    filter_bad_ascans_per_bms,
+)
 from ocularrigidity.segmentation.postprocess.interfaces import (
     clean_boundaries,
     extract_boundaries_fast,
@@ -16,13 +19,13 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 from tqdm.auto import tqdm
 
 
-def _all_bm_boundaries(raw_masks, *, batch_size, device):
+def _all_bm_boundaries(raw_masks, *, device):
+    if isinstance(raw_masks, torch.Tensor):
+        raw_masks = raw_masks.cpu().numpy()
     """Cleaned BM boundary ``(T, W)`` of every frame, on ``device``."""
     bms = []
-    for start in range(0, len(raw_masks), batch_size):
-        chunk = raw_masks[start : start + batch_size].to(torch.float32).cpu().numpy()
-        bm, _ = clean_boundaries(*extract_boundaries_fast(chunk))
-        bms.append(torch.from_numpy(bm).to(device))
+    bm, _ = clean_boundaries(*extract_boundaries_fast(raw_masks))
+    bms.append(torch.from_numpy(bm).to(device))
     return torch.cat(bms, dim=0)
 
 
@@ -54,9 +57,27 @@ def register_videos(
     Columns whose BM is unreliable (``filter_bad_ascans_per_bms``) are zeroed in
     both frames and masks, across all frames.
     """
+    if verbose:
+        print(
+            f"Registering {len(raw_frames)} frames | "
+            f"correct_transversal={config.correct_transversal if config else 'default'} | "
+            f"correct_axial={config.correct_axial if config else 'default'} | "
+            f"flatten_rpe={config.flatten_rpe if config else 'default'} | "
+            f"axial_refinement={config.axial_refinement if config else 'default'}"
+        )
     with torch.inference_mode(), torch.no_grad():
         if config is None:
             config = RegistrationConfig()
+        if config.method != "classical":
+            # This function *is* the classical estimator. Running it under a
+            # config that says otherwise would produce a classical transform
+            # stamped with the learned method in its cache key — a mislabelled
+            # cache that nothing downstream could detect.
+            raise ValueError(
+                f'register_videos is the classical estimator, but config.method '
+                f'is "{config.method}". Use '
+                "ocularrigidity.registration.fused.segment_and_register instead."
+            )
         # Unpack once here so the body (and the call sites) stay config-driven.
         correct_transversal = config.correct_transversal
         correct_axial = config.correct_axial
@@ -105,7 +126,7 @@ def register_videos(
             if return_params:
                 return raw_masks, untouched, params
             return raw_masks, untouched
-        all_bms = _all_bm_boundaries(raw_masks, batch_size=batch_size, device=device)
+        all_bms = _all_bm_boundaries(raw_masks, device=device)
         ref_bm = all_bms[ref_idx]
 
         # --- Lateral (x) registration: estimated once, decoupled from the y warp ---
@@ -134,8 +155,13 @@ def register_videos(
         # BM level every column is warped onto: a scalar (flatten) or the ref curve.
         target_bm = torch.nanmean(ref_bm) if flatten_rpe else ref_bm.unsqueeze(0)
 
-        registered_masks_chunks = []
-        registered_frames_chunks = []
+        # One preallocated buffer per output, written a batch at a time.
+        # Collecting chunks and torch.cat-ing them at the end holds the whole
+        # volume twice — ~9 GB extra for a 3000-frame cube — and pays a full
+        # copy to concatenate. The displacements are (T, W) and stay a list.
+        n_channels = raw_frames.shape[1]
+        registered_masks = torch.empty((T, H, W), dtype=mask_dtype)
+        registered_frames = torch.empty((T, n_channels, H, W), dtype=frame_dtype)
         displacement_chunks = []
 
         for start in tqdm(
@@ -197,13 +223,10 @@ def register_videos(
                 padding_mode="zeros",
                 align_corners=True,
             )
-            registered_masks_chunks.append(reg[:, 0].to(mask_dtype).cpu())
-            registered_frames_chunks.append(
-                reg[:, 1:].to(frame_dtype).cpu()
-            )  # (t, C, H, W)
-
-        registered_masks = torch.cat(registered_masks_chunks, dim=0)
-        registered_frames = torch.cat(registered_frames_chunks, dim=0)
+            registered_masks[start:end] = binarize_warped_mask(
+                reg[:, 0], mask_dtype
+            ).cpu()
+            registered_frames[start:end] = reg[:, 1:].to(frame_dtype).cpu()
 
         params = None
         if return_params:
