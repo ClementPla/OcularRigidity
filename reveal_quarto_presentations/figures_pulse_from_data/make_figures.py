@@ -10,7 +10,7 @@ et les mettre en images.
 
 Entrees (ecrites par le script de batch, jamais recalculees ici) :
 
-    E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0/pulse_from_data/
+    E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0_flatten_choroid_xcorr/pulse_from_data/
         conditions.csv    1 ligne / condition
         methods.csv       1 ligne / (condition, methode)   <- les 7 pouls
         dmd_eigs.csv      1 ligne / (condition, variante BOPDMD, paire propre)
@@ -50,7 +50,7 @@ from plotly.subplots import make_subplots
 # --------------------------------------------------------------------------- #
 # Entrees / sorties
 # --------------------------------------------------------------------------- #
-DATA = Path("E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0/pulse_from_data")
+DATA = Path("E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0_flatten_choroid_xcorr/pulse_from_data")
 SORTIE = Path(__file__).parent
 
 # Condition representative : celle qui minimise l'ecart median normalise sur

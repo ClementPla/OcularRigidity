@@ -48,6 +48,9 @@ critere. Trois quantites le sont :
     du cycle, obtenue en repliant LES MASQUES avec la meme phase. C'est la
     grandeur dont depend le coefficient de rigidite : une phase qui se trompe
     d'instant moyenne des epaisseurs de phases differentes et RABOTE deltaY.
+    A 30 bins, un bin peut rester VIDE sur un enregistrement court ; il ne vaut
+    pas 0 px, il vaut NaN, et il est ecarte du crete-a-crete comme de
+    l'ajustement harmonique et des correlations (cf. ``filled()``).
   - ``mod_depth`` -- ecart-type inter-bin des intensites sur la ROI, rapporte a
     l'intensite moyenne : ce qui reste de modulation apres repliement.
 
@@ -98,7 +101,6 @@ import pandas as pd
 import torch
 
 from ocularrigidity.motion.one_cycle import (
-    fit_cardiac_amplitude,
     fold_video_numba_mean,
     fold_video_numba_median,
 )
@@ -124,14 +126,14 @@ from ocularrigidity.scripts.registration.astronauts import (
 # --------------------------------------------------------------------------- #
 PATH_GENERAL = Path("E:/SANSORI")
 SEGVAR_ROOT = Path("E:/NASA_Rigidity/SegmentationVariations")
-MASK_VARIANT = "model1_scale_1.0"
+MASK_VARIANT = "model1_scale_1.0_flatten_choroid_xcorr"
 FRAMES_SUBDIR = "registered_frames"
 MASKS_SUBDIR = "registered_masks"
 PULSE_SUBDIR = "pulse_from_data"  # <- d'ou viennent pouls ET phases
 OUTPUT_SUBDIR = "one_cycle_compare"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-OVERWRITE = False
+OVERWRITE = True  # les parametres de repliement ont change : tout est refait
 LIMIT = None
 
 # --- Les deux methodes comparees -------------------------------------------
@@ -150,10 +152,14 @@ LABELS[NULL_METHOD] = "shuffled phase (null)"
 NULL_SEED = 0
 
 # --- Repliement -------------------------------------------------------------
-N_BINS = 30  # demande : 30 bins
-N_CYCLE = 1  # UN cycle moyen sur tout l'enregistrement
+N_BINS = 10  # demande : 10 bins (~46 frames par bin sur un enregistrement median)
+# N_CYCLE cycles moyens : l'enregistrement est coupe en N_CYCLE tranches
+# temporelles consecutives, chacune repliee separement (NCycleReconstructor).
+# La VIDEO les montre bout a bout ; les METRIQUES restent definies sur un cycle
+# unique replie sur tout l'enregistrement (cf. cycle_1 dans process_condition).
+N_CYCLE = 5
 FOLD_METHOD = "median"  # median : insensible aux frames aberrantes
-OUTPUT_FPS = 30.0  # 30 bins a 30 fps = 1 s, soit ~la duree d'un vrai cycle
+OUTPUT_FPS = 10.0  # 10 bins a 10 fps = 1 s, soit ~la duree d'un vrai cycle
 LOOP_REPEATS = 3  # le cycle est ecrit 3x dans le fichier (lecture en boucle)
 CRF_SINGLE = 18  # videos par methode (archive, restent sur E:)
 CRF_COMPARE = 23  # video cote a cote (embarquee dans le site)
@@ -279,11 +285,31 @@ def fold(frames, phase_per_frame, good_per_frame):
     return fn(frames, phase_per_frame, good_per_frame, n_bins=N_BINS, verbose=False)
 
 
-def centered_roi(cube: np.ndarray, roi: np.ndarray) -> np.ndarray:
+def filled(counts: np.ndarray) -> np.ndarray:
+    """Bins REELLEMENT remplis.
+
+    Un bin vide n'est pas une mesure : le repliement y laisse une frame noire,
+    donc une epaisseur de 0 px. A 10 bins le cas n'existait pas (40 frames par
+    bin) ; a 30 il apparait sur les enregistrements courts, et un seul 0 suffit
+    a faire d'un crete-a-crete de 0,5 px un crete-a-crete de 30 px. Ces bins
+    sont donc ECARTES de toutes les metriques -- pas remplis, pas interpoles.
+    """
+    return np.asarray(counts) > 0
+
+
+def centered_roi(cube: np.ndarray, roi: np.ndarray,
+                 keep: np.ndarray | None = None) -> np.ndarray:
     """Pixels de la ROI, moyenne temporelle retiree -- soit exactement la part
     du cube qui DEPEND de la phase (l'anatomie statique est identique quelle que
-    soit la methode et gonflerait n'importe quelle correlation vers 1)."""
-    x = np.asarray(cube, dtype=np.float64)[:, roi]
+    soit la methode et gonflerait n'importe quelle correlation vers 1).
+
+    ``keep`` retire les bins vides, dont la frame noire est un artefact de
+    repliement et non un B-scan.
+    """
+    x = np.asarray(cube, dtype=np.float64)
+    if keep is not None:
+        x = x[keep]
+    x = x[:, roi]
     return x - x.mean(axis=0, keepdims=True)
 
 
@@ -296,22 +322,52 @@ def corr(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(a[ok], b[ok])[0, 1])
 
 
-def kymograph(cube: np.ndarray, cols: np.ndarray) -> np.ndarray:
+def kymograph(cube: np.ndarray, cols: np.ndarray,
+              keep: np.ndarray | None = None) -> np.ndarray:
     """Profil de profondeur (n_bins, H), moyenne sur les colonnes de la ROI,
     moyenne temporelle retiree. Moyenner ~700 colonnes retire l'essentiel du
     speckle, qui domine la comparaison pixel a pixel."""
-    x = np.asarray(cube, dtype=np.float64)[:, :, cols].mean(axis=2)
+    x = np.asarray(cube, dtype=np.float64)
+    if keep is not None:
+        x = x[keep]
+    x = x[:, :, cols].mean(axis=2)
     return x - x.mean(axis=0, keepdims=True)
 
 
-def thickness_curve(mask_cycle: np.ndarray, cols: np.ndarray) -> np.ndarray:
+def thickness_curve(mask_cycle: np.ndarray, cols: np.ndarray,
+                    counts: np.ndarray) -> np.ndarray:
     """Epaisseur moyenne (px) par bin, a partir des MASQUES replies.
 
     Le repliement par moyenne d'un masque booleen donne, pixel par pixel, sa
     frequence d'occupation dans le bin ; sa somme sur une colonne est donc la
     moyenne des epaisseurs des frames de ce bin -- pas une approximation.
+
+    Les bins vides valent NaN, et non 0 : aucune frame n'y a ete moyennee, donc
+    l'epaisseur y est INCONNUE. Tout ce qui suit (crete-a-crete, ajustement
+    harmonique, correlation moitie/moitie) les ignore.
     """
-    return np.asarray(mask_cycle, dtype=np.float64)[:, :, cols].sum(axis=1).mean(axis=1)
+    th = np.asarray(mask_cycle, dtype=np.float64)[:, :, cols].sum(axis=1).mean(axis=1)
+    th[~filled(counts)] = np.nan
+    return th
+
+
+def fit_cycle(y: np.ndarray) -> np.ndarray:
+    """Fondamental (1 harmonique) ajuste sur les bins RENSEIGNES, evalue partout.
+
+    ``motion.one_cycle.fit_cardiac_amplitude`` resout le meme systeme, mais sur
+    tous les points : un NaN y contaminerait l'ajustement entier. Ici les lignes
+    manquantes sont simplement retirees du systeme -- l'harmonique est definie
+    par tous les autres bins, et se prolonge sur ceux qui manquent.
+    """
+    y = np.asarray(y, dtype=np.float64)
+    ok = np.isfinite(y)
+    n = y.size
+    if ok.sum() < 4:
+        return np.full(n, np.nan)
+    t = np.arange(n) / n
+    X = np.stack([np.ones(n), np.cos(2 * np.pi * t), np.sin(2 * np.pi * t)], axis=1)
+    coeffs, *_ = np.linalg.lstsq(X[ok], y[ok], rcond=None)
+    return X @ coeffs
 
 
 def stack_videos(cube_a: np.ndarray, cube_b: np.ndarray) -> np.ndarray:
@@ -416,17 +472,28 @@ def process_condition(row) -> dict:
         good_f = extractor.good_per_frame
 
         # La video livree passe par NCycleReconstructor -- meme chemin de code
-        # que tous les autres one-cycle du depot.
+        # que tous les autres one-cycle du depot. Avec N_CYCLE > 1 elle contient
+        # N_CYCLE cycles bout a bout (N_CYCLE x N_BINS images), un par tranche
+        # temporelle de l'enregistrement.
         reconstructor = NCycleReconstructor(
             extractor,
             NCycleConfig(n_bins=N_BINS, n_cycle=N_CYCLE, fold_method=FOLD_METHOD,
                          verbose=False),
         )
-        cycles, counts = reconstructor.compute()
+        cycles_video, counts_video = reconstructor.compute()
 
         # Les diagnostics demandent des repliements que le reconstructeur
         # n'expose pas (les MASQUES, et chaque moitie separement) : ils passent
         # par la meme fonction de repliement, appelee directement.
+        #
+        # Ils portent tous sur UN cycle replie sur TOUT l'enregistrement, y
+        # compris quand la video en montre N_CYCLE : les metriques (split-half,
+        # deltaY, profondeur de modulation) sont definies sur un cycle unique, et
+        # les melanger avec les N_CYCLE x N_BINS images de la video comparerait
+        # des tableaux de longueurs differentes. `cycle_1` / `counts_1` sont donc
+        # la reference des mesures, `cycles_video` / `counts_video` celle de la
+        # video, et les deux ne coincident que si N_CYCLE vaut 1.
+        cycle_1, counts_1 = fold(frames, phase_f, good_f)
         mask_cycle, _ = fold_video_numba_mean(
             masks_f32, phase_f, good_f, n_bins=N_BINS, verbose=False)
         cycle_a, counts_a = fold(frames, phase_f, good_f & first_half)
@@ -436,35 +503,42 @@ def process_condition(row) -> dict:
         mask_b, _ = fold_video_numba_mean(
             masks_f32, phase_f, good_f & second_half, n_bins=N_BINS, verbose=False)
 
-        thick = thickness_curve(mask_cycle, cols)
-        thick_a = thickness_curve(mask_a, cols)
-        thick_b = thickness_curve(mask_b, cols)
-        fit, _ = fit_cardiac_amplitude(thick, n_harmonics=1)
-        cent = centered_roi(cycles, roi)
+        # Bins remplis. Les deux moities n'ont pas les memes trous : la
+        # correlation moitie/moitie ne porte que sur les bins renseignes DES
+        # DEUX COTES, sinon elle comparerait une frame noire a un B-scan.
+        keep = filled(counts_1)
+        keep_ab = filled(counts_a) & filled(counts_b)
+
+        thick = thickness_curve(mask_cycle, cols, counts_1)
+        thick_a = thickness_curve(mask_a, cols, counts_a)
+        thick_b = thickness_curve(mask_b, cols, counts_b)
+        fit = fit_cycle(thick)
+        cyc_roi = np.asarray(cycle_1, np.float64)[keep][:, roi]
         per_method[name] = {
             "extractor": extractor,
-            "cycles": cycles,
-            "counts": counts,
-            "centered": cent,
+            "cycle": cycle_1,
+            "cycles_video": cycles_video,
+            "counts": counts_1,
+            "counts_video": counts_video,
+            "keep": keep,
             "thickness": thick,
             "thickness_half_a": thick_a,
             "thickness_half_b": thick_b,
             "thickness_fit": fit,
             "phase_per_frame": phase_f,
             "good_per_frame": good_f,
-            "split_half_r_pix": corr(centered_roi(cycle_a, roi),
-                                     centered_roi(cycle_b, roi)),
-            "split_half_r_kymo": corr(kymograph(cycle_a, cols),
-                                      kymograph(cycle_b, cols)),
-            "split_half_r_thick": corr(thick_a - thick_a.mean(),
-                                       thick_b - thick_b.mean()),
+            "split_half_r_pix": corr(centered_roi(cycle_a, roi, keep_ab),
+                                     centered_roi(cycle_b, roi, keep_ab)),
+            "split_half_r_kymo": corr(kymograph(cycle_a, cols, keep_ab),
+                                      kymograph(cycle_b, cols, keep_ab)),
+            "split_half_r_thick": corr(thick_a - np.nanmean(thick_a),
+                                       thick_b - np.nanmean(thick_b)),
             "split_counts_min": int(min(counts_a.min(), counts_b.min())),
-            "deltaY_px": float(thick.max() - thick.min()),
-            "deltaY_fit_px": float(fit.max() - fit.min()),
-            "mod_depth": float(
-                np.asarray(cycles, np.float64)[:, roi].std(axis=0).mean()
-                / (np.asarray(cycles, np.float64)[:, roi].mean() + 1e-12)
-            ),
+            "n_bins_empty": int((~keep).sum()),
+            "deltaY_px": float(np.nanmax(thick) - np.nanmin(thick)),
+            "deltaY_fit_px": float(np.nanmax(fit) - np.nanmin(fit)),
+            "mod_depth": float(cyc_roi.std(axis=0).mean()
+                               / (cyc_roi.mean() + 1e-12)),
             "n_good": int(good_f.sum()),
             "notes": list(extractor.notes) + list(reconstructor.notes),
         }
@@ -475,14 +549,16 @@ def process_condition(row) -> dict:
                         - per_method[b]["phase_per_frame"])
     both = per_method[a]["good_per_frame"] & per_method[b]["good_per_frame"]
     z = np.exp(1j * dphi[both]).mean() if both.any() else np.nan + 0j
-    cycle_corr = corr(per_method[a]["centered"], per_method[b]["centered"])
+    keep_ab = per_method[a]["keep"] & per_method[b]["keep"]
+    cycle_corr = corr(centered_roi(per_method[a]["cycle"], roi, keep_ab),
+                      centered_roi(per_method[b]["cycle"], roi, keep_ab))
 
     # --- 6. Videos --------------------------------------------------------------
     out_dir = OUT_DIR / astro / moment / condition
     out_dir.mkdir(parents=True, exist_ok=True)
     cubes = {}
     for name in METHODS:
-        cube = np.tile(to_uint8(per_method[name]["cycles"]), (LOOP_REPEATS, 1, 1))
+        cube = np.tile(to_uint8(per_method[name]["cycles_video"]), (LOOP_REPEATS, 1, 1))
         cubes[name] = cube
         write_gray_mp4(cube, out_dir / f"one_cycle_{name}.mp4", OUTPUT_FPS,
                        crf=CRF_SINGLE)
@@ -507,6 +583,7 @@ def process_condition(row) -> dict:
     for name in METHODS:
         m = per_method[name]
         payload[f"counts_{name}"] = m["counts"]
+        payload[f"counts_video_{name}"] = m["counts_video"]
         payload[f"thickness_{name}"] = m["thickness"].astype(np.float32)
         payload[f"thickness_half_a_{name}"] = m["thickness_half_a"].astype(np.float32)
         payload[f"thickness_half_b_{name}"] = m["thickness_half_b"].astype(np.float32)
@@ -558,7 +635,8 @@ def process_condition(row) -> dict:
         "out_rel": rel, "status": "ok",
     }
     metric_keys = ("split_half_r_pix", "split_half_r_kymo", "split_half_r_thick",
-                   "deltaY_px", "deltaY_fit_px", "mod_depth", "n_good")
+                   "deltaY_px", "deltaY_fit_px", "mod_depth", "n_good",
+                   "n_bins_empty")
     for name in (*METHODS, NULL_METHOD):
         m = per_method[name]
         for key in metric_keys:
@@ -584,6 +662,7 @@ def process_condition(row) -> dict:
             "bin_min": int(m["counts"].min()), "bin_max": int(m["counts"].max()),
             "bin_cv": float(m["counts"].std() / (m["counts"].mean() + 1e-12)),
             "split_counts_min": m["split_counts_min"],
+            "n_bins_empty": m["n_bins_empty"],
             "out_rel": rel,
         })
         for b_i in range(N_BINS):
@@ -683,7 +762,9 @@ def main() -> None:
                 f"deltaY {c['deltaY_fit_px_1_fir']:.2f} vs "
                 f"{c['deltaY_fit_px_3a_mssa']:.2f} px  ·  "
                 f"dephasage {c['phase_offset_deg']:+.0f} deg "
-                f"(PLV {c['phase_plv']:.2f})  [{time.perf_counter() - t0:.0f} s]"
+                f"(PLV {c['phase_plv']:.2f})  ·  bins vides "
+                f"{c['n_bins_empty_1_fir']}/{N_BINS}"
+                f"  [{time.perf_counter() - t0:.0f} s]"
             )
 
         for key, (_, path) in tables.items():

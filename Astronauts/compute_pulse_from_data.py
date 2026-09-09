@@ -62,6 +62,7 @@ Lancer (kernel pyOR, depuis la racine du depot) :
 
 from __future__ import annotations
 
+import os
 import csv
 import time
 import traceback
@@ -77,6 +78,7 @@ from scipy.signal import hilbert, medfilt
 
 from pydmd import BOPDMD
 
+from ocularrigidity.scripts import batch_layout as layout
 from ocularrigidity.motion.filters._1d import spatio_temporal_filter
 from ocularrigidity.motion.projection._1d import project_into_separable_components
 from ocularrigidity.motion.pulsation import (
@@ -101,16 +103,18 @@ from ocularrigidity.scripts.registration.astronauts import load_ordered_oct_seri
 # --------------------------------------------------------------------------- #
 # Parametres
 # --------------------------------------------------------------------------- #
-PATH_GENERAL = Path("E:/SANSORI")
-SEGVAR_ROOT = Path("E:/NASA_Rigidity/SegmentationVariations")
-MASK_VARIANT = "model1_scale_1.0"
+# Surchargeables par l'environnement (cf. ``scripts/batch_layout``).
+PATH_GENERAL = layout.env_path("OR_PATH_GENERAL", "E:/SANSORI")
+SEGVAR_ROOT = layout.env_path("OR_SEGVAR_ROOT", "E:/NASA_Rigidity/SegmentationVariations")
+MASK_VARIANT = layout.env_str("OR_VARIANT", "model1_scale_1.0_flatten_choroid_xcorr")
 FRAMES_SUBDIR = "registered_frames"
 MASKS_SUBDIR = "registered_masks"
 OUTPUT_SUBDIR = "pulse_from_data"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-OVERWRITE = False  # True = retraiter les conditions deja presentes dans les CSV
-LIMIT = None  # int = ne traiter que les N premieres conditions (essai)
+OVERWRITE = bool(os.environ.get("OR_OVERWRITE"))  # True = retraiter les conditions deja presentes dans les CSV
+LIMIT = (int(os.environ["OR_LIMIT"]) if os.environ.get("OR_LIMIT")
+         else None)  # int = ne traiter que les N premieres conditions (essai)
 SAVE_TRACES = True  # .npz par condition, consomme par le generateur de figures
 
 # --- Entree : la ROI des deux notebooks -------------------------------------
@@ -180,6 +184,33 @@ def raw_timestamps_us(raw_dir: Path) -> np.ndarray:
     )
 
 
+def _load_hr_prior() -> dict:
+    """A priori de frequence cardiaque par slug, si ``OR_HR_PRIOR`` en designe un.
+
+    Sert la ou aucune FC n'a ete MESUREE. La cohorte SANS lit la sienne dans
+    ``visit_data.csv`` ; sans cet ancrage, la recherche du pic sur 20-240 BPM
+    se fixe sur une harmonique une fois sur deux -- on a mesure, sur l'etude de
+    repetabilite, des estimations de 32, 78 et 142 BPM pour le MEME oeil a douze
+    minutes d'intervalle.
+
+    Ce n'est PAS une mesure et le fichier ne pretend pas en etre une : la
+    colonne ``hr_source`` du CSV de sortie le distingue explicitement
+    (``prior`` contre ``visit_data`` contre ``svd``), de sorte qu'aucune table
+    en aval ne puisse confondre les trois.
+    """
+    chemin = os.environ.get("OR_HR_PRIOR")
+    if not chemin or not Path(chemin).exists():
+        return {}
+    df = pd.read_csv(chemin)
+    if "slug" not in df.columns or "hr_BPM" not in df.columns:
+        return {}
+    return {str(r.slug): float(r.hr_BPM) for r in df.itertuples()
+            if np.isfinite(r.hr_BPM)}
+
+
+HR_PRIOR = _load_hr_prior()
+
+
 def read_hr(path_condi: Path) -> float:
     path_heartbeat = path_condi / "Data Files" / "visit_data.csv"
     if not path_heartbeat.exists():
@@ -191,20 +222,17 @@ def read_hr(path_condi: Path) -> float:
 
 
 def iter_conditions():
-    """Toutes les conditions ``E:/SANSORI/<astro>/<...rigidity>/<condition>``."""
-    for path_astro in sorted(PATH_GENERAL.iterdir()):
-        if not path_astro.is_dir():
-            continue
-        for path_moment in sorted(path_astro.iterdir()):
-            if not path_moment.is_dir() or not path_moment.match("*rigidity"):
-                continue
-            for path_condi in sorted(path_moment.iterdir()):
-                if path_condi.is_dir():
-                    yield path_condi
+    """Toutes les conditions de l'arborescence en vigueur."""
+    return layout.iter_condition_dirs(PATH_GENERAL)
+
+
+def labels_of(path_condi: Path) -> tuple[str, str, str]:
+    """``(astro, moment, condition)`` -- etiquettes, cf. ``batch_layout``."""
+    return layout.labels_of(path_condi, PATH_GENERAL)
 
 
 def slug_of(astro: str, moment: str, condition: str) -> str:
-    return f"{astro}__{condition}"
+    return layout.slug_of(astro, condition)
 
 
 # --------------------------------------------------------------------------- #
@@ -524,9 +552,7 @@ def optimized_pulse(values, mixing, tt, rate_est, ctx: Ctx,
 # --------------------------------------------------------------------------- #
 def process_condition(path_condi: Path) -> dict:
     """Renvoie {'condition': row, 'methods': [...], 'dmd': [...], 'sweep': [...]}."""
-    astro = path_condi.parent.parent.name
-    moment = path_condi.parent.name
-    condition = path_condi.name
+    astro, moment, condition = labels_of(path_condi)
     slug = slug_of(astro, moment, condition)
 
     variant_root = SEGVAR_ROOT / MASK_VARIANT
@@ -553,6 +579,10 @@ def process_condition(path_condi: Path) -> dict:
 
     hr_measured = read_hr(path_condi)
     hr_source = "visit_data"
+    if not np.isfinite(hr_measured) and slug in HR_PRIOR:
+        # Ni mesuree, ni laissee a la SVD seule : ancree sur l'a priori fourni.
+        hr_measured = HR_PRIOR[slug]
+        hr_source = "prior"
     hr = hr_measured
 
     # --- 2. Traces + SVD ------------------------------------------------------
@@ -771,7 +801,11 @@ def process_condition(path_condi: Path) -> dict:
     f_pos = (np.sort(V_DMD["f_bpm"][V_DMD["f_bpm"] > 0])
              if V_DMD is not None else np.array([]))
     row = {
-        "slug": slug, "astro": astro, "moment": moment, "condition": condition,
+        "slug": slug,
+        # Le chemin REEL des donnees brutes. Sur l'arborescence plate il ne se
+        # deduit pas du triplet (astro, moment, condition), qui n'y est qu'une
+        # etiquette : les lots en aval le relisent dans ce CSV.
+        "path": str(path_condi), "astro": astro, "moment": moment, "condition": condition,
         "n_frames": int(T), "n_pixels": int(N),
         "duree_s": float(t[-1] - t[0]), "fs_Hz": float(ctx.fs),
         "n_uniform": int(u_time.size),
@@ -884,6 +918,12 @@ def main() -> None:
     # donc rien a nettoyer ailleurs.
     if OVERWRITE:
         done = set()
+        # Vider AUSSI les lignes deja chargees : ne remettre que ``done`` a zero
+        # fait retraiter chaque condition mais laisse l'ancienne ligne en place,
+        # et les tables ressortent avec deux lignes par condition -- l'ancienne
+        # et la nouvelle. Sans cela, un lot relance avec d'autres reglages
+        # produit un CSV ou les deux jeux de resultats coexistent en silence.
+        rows = {k: [] for k in rows}
     else:
         done = {r["slug"] for r in rows["condition"] if r.get("status") == "ok"}
         n_retry = len(rows["condition"]) - len(done)
@@ -902,8 +942,8 @@ def main() -> None:
     t_start = time.perf_counter()
     n_ok = n_skip = n_fail = 0
     for i, path_condi in enumerate(conditions, 1):
-        astro = path_condi.parent.parent.name
-        slug = slug_of(astro, path_condi.parent.name, path_condi.name)
+        astro, moment, condition = labels_of(path_condi)
+        slug = slug_of(astro, moment, condition)
         if slug in done:
             n_skip += 1
             continue
@@ -917,8 +957,8 @@ def main() -> None:
             print(f"        ECHEC : {exc}")
             traceback.print_exc()
             rows["condition"].append({
-                "slug": slug, "astro": astro, "moment": path_condi.parent.name,
-                "condition": path_condi.name, "status": f"echec : {exc}",
+                "slug": slug, "astro": astro, "moment": moment,
+                "condition": condition, "status": f"echec : {exc}",
             })
         else:
             n_ok += 1

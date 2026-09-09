@@ -1,0 +1,396 @@
+---
+title: "Prediction of SANS : strain"
+subtitle: "Le strain rétinien mesuré par les démons, dans ses trois agrégats et ses cinq bandes, contre les deux marqueurs de SANS — en corrélation, puis par classe de gonflement, hommes et femmes séparés"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Trois pages posent la même question à trois familles de marqueurs :
+**[rigidité](sans-prediction-rigidity.qmd)**, **[strain](sans-prediction-strain.qmd)**
+(celle-ci) et **[viscosité](sans-prediction-viscosity.qmd)**. Le strain est la
+grandeur pour laquelle les 103 heures de recalage démons ont été dépensées :
+c'est ici qu'on regarde ce qu'elle prédit.
+
+## Les issues et les marqueurs
+
+**Six issues, deux marqueurs de SANS** (voir [Methods](sans-methods.qmd)) : le
+**gonflement rétinien**, $\Delta TRT_x = TRT250_x(\text{après}) - TRT250_x(\text{avant})$
+pour les quatre quadrants (S, I, N, T) plus leur moyenne — 12 sujets ont à la
+fois l'issue et un marqueur mesuré avant le vol —, et l'**aplatissement du
+globe**, $\Delta AL = AL(\text{après}) - AL(\text{avant})$,
+la variation de longueur axiale — 14 sujets.
+
+Les marqueurs sont les **trois agrégats du strain rétinien** — moyenne, médiane
+et p95 signé, définis sur la page [Stress–strain](sans-stress-strain.qmd) — dans
+les **cinq bandes** latérales, déclinés par **quatre régularisations σ** et
+**deux styles de référence**. Soit 15 marqueurs et **120 variantes**, chacune
+corrélée aux six issues : **720 corrélations** sur la vue « avant le vol ».
+
+L'épaisseur de la bande, `CT_region_um`, n'est **pas** un strain et a migré vers
+la page [rigidité](sans-prediction-rigidity.qmd), où elle voisine avec les autres
+mesures d'épaisseur. C'est le seul changement de périmètre par rapport à la carte
+d'avant la refonte.
+
+::: {.callout-important}
+## Ce qu'une q-valeur change ici
+
+Trois corrections de Benjamini-Hochberg sont publiées dans
+`sans_correlations.csv` : `pearson_q` sur les 37 872 tests de la table,
+`pearson_q_famille` dans la famille de prédicteurs, et
+**`pearson_q_categorie`** dans **(catégorie, vue, issue)** — ici, les **120
+tentatives** du strain contre *une* issue. C'est la dernière que la carte et les
+tables signalent, et c'est la plus indulgente des trois : elle ne corrige ni les
+six issues, ni les trois catégories.
+:::
+
+## Vue d'ensemble
+
+Une case par (marqueur, issue), une grille par (σ, référence). Le **cadre vert**
+signale un marqueur assez répétable — **ICC(A,1) ≥ 0,45** — atteignant
+**$|r| ≥ 0{,}20$** contre cette issue-là : **53 cases sur 720**, 7 %.
+
+{{< include figures_sans_predictors/p4str_heatmap.qmd >}}
+
+Aucune astérisque : aucune case ne passe la q-valeur de sa catégorie.
+
+## Ce que le taux de fausses découvertes laisse
+
+{{< include figures_sans_predictors/p4str_q_vs_r.qmd >}}
+
+Le nuage est **entièrement à droite du trait**. La plus petite q-valeur vaut
+**0,083** (ΔTRT S), la médiane 0,82, et par issue le minimum va de 0,08 à 0,34 —
+*zéro* tentative sur 720 descend sous 0,05. La correction du miroir (2 septembre
+2026) a divisé ce minimum par deux sans le faire passer : aligner les bandes des
+deux yeux resserre les corrélations, cela ne les crée pas.
+
+La forme en crochet est mécanique et il ne faut rien y lire : les 15 marqueurs
+sont mesurés sur les **mêmes douze sujets** (quatorze contre le ΔAL), donc à
+effectif constant $p$ ne dépend que de $|r|$, et la q-valeur aussi. Le nuage est une *courbe*, repliée
+autour de $r = 0$ ; seule sa position raconte quelque chose, et elle ne franchit
+jamais le trait.
+
+Les **99 corrélations** à $p < 0{,}05$, pour 36 attendues sous $H_0$, ne
+survivent pourtant à aucune correction. Ce compte a **augmenté** avec le miroir
+(54 avant), ce qui était attendu : tant que « la bande +2 » mélangeait les deux
+côtés de la rétine, une corrélation propre à un côté était diluée par l'autre.
+Elle ressort aujourd'hui — et reste très loin du seuil corrigé. Le $|r|$ maximal
+atteint **0,81**.
+
+## Ce que le ΔAL ajoute
+
+Le second marqueur de SANS (voir [Methods](sans-methods.qmd)) : ΔAL =
+AL(après) − AL(avant), l'aplatissement du globe, sur **14 sujets**. La colonne
+ΔAL des cartes ci-dessus n'ajoute **aucune astérisque**.
+
+| | valeur | attendu sous $H_0$ |
+|:--|--:|--:|
+| tentatives | 120 | — |
+| $|r|$ maximal | 0,73 | — |
+| $p < 0{,}05$ | 13 | 6,0 |
+| $q < 0{,}05$ dans la catégorie | **0** | — |
+| $q$ minimum | 0,342 | — |
+
+Deux fois le taux du hasard en corrélations brutes — le même ordre que contre
+les ΔTRT (99 pour 36) — et **rien qui survive** : le $q$ minimum, 0,342, est le
+plus haut des six issues.
+
+Le détail ferme la porte plus sûrement que le compte. Les quatre plus fortes
+corrélations sont la médiane du strain à la **colonne +2** ($r = +0{,}73$,
+$\sigma = 5$), puis le p95 aux colonnes **−1** et **−2** ($-0{,}65$ et
+$-0{,}62$, $\sigma = 12$) : **des signes opposés sur des bandes voisines de la
+même rétine, à des régularisations différentes**. Un gradient physiologique ne
+se comporte pas ainsi ; un tirage de 120 variantes fortement corrélées entre
+elles, si.
+
+## Le strain par classe de gonflement rétinien
+
+Les cartes de chaleur ci-dessus traitent le ΔTRT comme une variable **continue**
+et en tirent un $r$. On le découpe ici en **classes** et l'on compare les
+moyennes du strain de l'une à l'autre : même question, autre estimateur — et
+surtout des **points visibles**. Avec douze yeux, un $r$ de 0,5 peut n'être
+qu'un sujet mal placé ; un nuage le montre, un coefficient le cache.
+
+::: {.callout-important}
+## La troisième classe est vide, et c'est un résultat
+
+Les seuils sont **20 et 50 µm**. Or le ΔTRT le plus élevé de toute la cohorte
+vaut **35,0 µm** (quadrant S), et 26,5 µm en moyenne des quadrants :
+**personne n'atteint 50 µm**. La classe « ≥ 50 µm » est tracée quand même,
+vide — la montrer vide dit quelque chose sur la cohorte, la retirer laisserait
+croire qu'on a comparé trois groupes. Les tests portent donc, en pratique, sur
+**deux** classes.
+
+Le **ΔAL** est hors de cette section : il se mesure en millimètres (−0,21 à
+0,00) et tomberait en entier dans la classe « < 20 ». C'est une question
+d'unité, pas un oubli.
+:::
+
+Les marqueurs sont pris à **σ = 10** — une seule régularisation, pour que
+30 boxplots restent lisibles ; les 90 autres variantes restent dans les tables
+plus bas. La vue est celle d'**avant le vol**, comme partout sur cette page.
+Vingt-deux yeux ont un strain avant le vol ; **douze** l'ont *et* un ΔTRT, soit
+**neuf astronautes**.
+
+| issue | < 20 µm | 20 – 50 µm | ≥ 50 µm |
+|:--|--:|--:|--:|
+| ΔTRT moyen | 8 | 4 | 0 |
+| ΔTRT S | 9 | 3 | 0 |
+| ΔTRT I | 8 | 4 | 0 |
+| ΔTRT N | 8 | 4 | 0 |
+| ΔTRT T | 10 | 2 | 0 |
+
+### Les boxplots
+
+Trois agrégats × deux références par figure, cinq bandes par panneau, trois
+classes par bande. Les points sont **bleus pour les hommes et roses pour les
+femmes** — l'œil sert ici de contrôle : si une classe entière était d'une seule
+couleur, la comparaison des moyennes comparerait des sexes autant que des
+gonflements.
+
+L'**étoile** au-dessus d'une bande résume le **$t$ de Welch** entre les deux
+classes peuplées de cette bande — « < 20 µm » contre « 20 – 50 µm » —, selon la
+convention usuelle : `***` pour $p < 0{,}001$, `**` pour $p < 0{,}01$, `*` pour
+$p < 0{,}05$. Le survol donne la $p$ exacte.
+
+::: {.callout-warning}
+## Ces étoiles portent la $p$ **brute**, pas la $q$ corrigée
+
+C'est ce qu'une étoile veut dire partout ailleurs, et l'inverse serait un piège.
+Mais sur cette page il y a **150 paires** testées : à ce régime, 7 ou 8 étoiles
+sont attendues par pur hasard. Il y en a **19** — et **aucune** ne survit à
+Benjamini-Hochberg, dont le minimum sur ces mêmes tests vaut $q = 0{,}24$.
+
+Une étoile signale donc une paire qui passerait le seuil nominal *si elle avait
+été la seule testée*. Ce n'est pas le cas.
+:::
+
+##### ΔTRT moyen
+
+{{< include figures_sans_predictors/p4str_box_delta_TRT_moyen.qmd >}}
+
+##### ΔTRT S
+
+{{< include figures_sans_predictors/p4str_box_delta_TRT_S.qmd >}}
+
+##### ΔTRT I
+
+{{< include figures_sans_predictors/p4str_box_delta_TRT_I.qmd >}}
+
+##### ΔTRT N
+
+{{< include figures_sans_predictors/p4str_box_delta_TRT_N.qmd >}}
+
+##### ΔTRT T
+
+{{< include figures_sans_predictors/p4str_box_delta_TRT_T.qmd >}}
+
+### Comparer les moyennes, avec et sans le sexe
+
+Trois colonnes de $p$, deux questions.
+
+La première est celle des étoiles : le **$t$ de Welch** entre les deux classes
+peuplées, pris paire par paire. Welch plutôt que Student parce que les effectifs
+sont déséquilibrés (8 contre 4) et que l'égalité des variances n'est pas
+testable à cette taille : ne pas la supposer est le choix par défaut.
+
+Les deux autres répondent à « le sexe explique-t-il l'écart ? », et viennent du
+**même estimateur à un terme près** :
+
+$$\text{strain} \sim 1 + \text{classe}
+\qquad\text{puis}\qquad
+\text{strain} \sim 1 + \text{classe} + \text{sexe}$$
+
+La classe entre comme un **rang** (0, 1, 2) et non comme des indicatrices :
+avec deux classes peuplées c'est exactement le contraste des deux moyennes, et
+le jour où la troisième se remplira ce sera un test de tendance monotone — ce
+qu'on veut d'un gonflement croissant. La seule chose qui change entre ces deux
+colonnes-là est le terme de sexe : c'est ce qui rend leur écart lisible.
+
+Le premier modèle, `strain ~ 1 + classe`, **est** le $t$ de Student de la paire.
+Il diffère du Welch par la seule hypothèse de variance commune — et cet écart
+n'est pas anodin, voir plus bas.
+
+::: {.callout-note}
+## Le sexe est déséquilibré entre les classes, mais la correction tient
+
+Sur le ΔTRT nasal, la classe « < 20 µm » compte **6 hommes pour 2 femmes** et la
+classe « 20 – 50 µm » **1 homme pour 3 femmes**. De quoi craindre une
+colinéarité qui ferait exploser l'écart-type du coefficient de classe et rendrait
+la colonne ajustée vide de sens.
+
+Mesuré, ce n'est pas le cas : $|r(\text{classe}, \text{sexe})|$ plafonne à
+**0,53** et le facteur d'inflation de la variance reste entre **1,0 et 1,4**
+(médiane 1,3). La colonne ajustée teste donc bien quelque chose. Le VIF est
+publié test par test dans les tables — pour que ce soit vérifiable plutôt qu'à
+croire, et pour qu'il alerte si la cohorte change.
+:::
+
+**Le résultat, en un tableau :**
+
+| | $t$ de Welch<br>(les étoiles) | modèle<br>sans le sexe | modèle<br>avec le sexe | attendu sous $H_0$ |
+|:--|--:|--:|--:|--:|
+| tests | 150 | 150 | 150 | — |
+| $p < 0{,}05$ | **19** | **12** | **13** | 7,5 |
+| $q < 0{,}05$ (BH sur 150) | **0** | **0** | **0** | — |
+| $q$ minimum | 0,239 | 0,523 | 0,422 | — |
+| $p$ minimum | 0,0016 | 0,005 | 0,008 | — |
+
+**Corriger pour le sexe ne change rien à la conclusion, et à peine aux
+comptes** — 13 comparaisons nominales au lieu de 12, un $q$ minimum légèrement
+plus bas. Dans les trois lectures : entre 1,6 et 2,5 fois le taux du hasard en
+$p$ brutes, et **aucun survivant** après Benjamini-Hochberg.
+
+Les 19 étoiles se répartissent en **16 `*` et 3 `**`, aucune `***`**, et par
+issue : 6 sur 30 pour le ΔTRT S, 4 pour le ΔTRT I, 3 pour le nasal, le temporal
+et la moyenne. La plus forte est le **p95 signé de la colonne +2 en référence
+locale contre le ΔTRT S** — $t = +4{,}28$, $p = 0{,}0016$ — qui remonte à
+$q = 0{,}24$ une fois les 150 paires corrigées.
+
+Trois garde-fous, qui vont tous dans le même sens :
+
+* **L'hypothèse de variance commune porte une partie du compte.** Welch, qui ne
+  la fait pas, trouve **19** paires à $p < 0{,}05$ ; Student, qui la fait, en
+  trouve **12** — et les deux se contredisent sur **13 des 150**. À 8 yeux
+  contre 4, le choix de l'estimateur de variance déplace le résultat autant que
+  les données. C'est aussi pourquoi les étoiles sont posées sur le Welch : entre
+  deux tests qui ne s'accordent pas, on affiche le moins exigeant en hypothèses,
+  pas celui qui arrange le compte.
+* **Les deux yeux d'un même astronaute ne sont pas indépendants.** Les tests
+  ci-dessus les comptent comme deux observations, par convention du panel. En
+  moyennant les deux yeux — sept astronautes en médiane —, le nombre de
+  comparaisons à $p < 0{,}05$ **tombe de 12 à 6**, c'est-à-dire au taux du
+  hasard exactement. La moitié du signal brut ne tenait qu'à la duplication des
+  yeux.
+* **Quatre yeux d'un côté.** La classe « 20 – 50 µm » compte 2 à 4 yeux selon
+  l'issue. Un $t$ calculé sur un tel effectif est extrêmement sensible à un seul
+  point — c'est précisément pourquoi les points sont tracés : chaque étoile doit
+  pouvoir être confrontée au nuage qui la produit.
+
+### Les tables
+
+Moyenne du strain par classe, puis le $t$ de Welch de la paire avec ses
+étoiles, et enfin la pente par classe et ses deux tests de modèle. Le **VIF** de
+la dernière colonne dit ce que la correction du sexe a coûté en précision.
+
+{{< include figures_sans_predictors/p4str_box_tab_delta_TRT_moyen.qmd >}}
+
+{{< include figures_sans_predictors/p4str_box_tab_delta_TRT_S.qmd >}}
+
+{{< include figures_sans_predictors/p4str_box_tab_delta_TRT_I.qmd >}}
+
+{{< include figures_sans_predictors/p4str_box_tab_delta_TRT_N.qmd >}}
+
+{{< include figures_sans_predictors/p4str_box_tab_delta_TRT_T.qmd >}}
+
+## La répétabilité achète-t-elle de la corrélation ?
+
+Chaque point est un couple (marqueur, bande, issue), placé selon la
+**répétabilité du marqueur** (ICC(A,1) sur les réplicats d'acquisition) et la
+**corrélation obtenue**. Si un marqueur mieux mesuré corrélait mieux, le nuage
+s'ouvrirait en entonnoir vers la droite.
+
+{{< include figures_sans_predictors/p4str_r_vs_icc.qmd >}}
+
+::: {.callout-important}
+## Le quadrant utile est quasi vide
+
+$r(|r|, ICC) = -0{,}112$ — nul, et si quoi que ce soit du mauvais signe. Trois
+chiffres ferment la question :
+
+* **aucun** des 720 couples n'atteint un ICC de 0,75 ; le maximum est $+0{,}66$
+  et la médiane $+0{,}16$ ;
+* **13,2 %** dépassent le seuil de significativité $|r| > 0{,}58$ à $n = 12$ ;
+* et **un seul sur 720** cumule un ICC supérieur à 0,5 *et* un $|r|$
+  significatif — 0,14 %, contre 23 % sur la page rigidité.
+
+Cela ferme la porte de sortie « signal réel noyé dans du bruit de mesure » : si
+c'était le cas, les marqueurs les mieux mesurés en montreraient une trace. Ils
+n'en montrent qu'une, sur 720. Pour comparaison, la page
+[rigidité](sans-prediction-rigidity.qmd) donne $r(|r|, ICC) = +0{,}44$ et 23 %
+de couples dans ce quadrant — **160 fois** la proportion mesurée ici.
+:::
+
+## La même question, battement par battement
+
+Le second ICC — celui des **one-cycles d'une même vidéo** (page
+[Repeatability](sans-repeatability.qmd#une-autre-définition-du-réplicat-les-one-cycles-dune-même-vidéo))
+— couvre les 120 variantes du strain, avec une incertitude bien moindre :
+76 cibles au lieu de douze sujets.
+
+{{< include figures_sans_predictors/p4str_r_vs_icc_oc.qmd >}}
+
+Le résultat ne bouge pas : $r(|r|, ICC) = -0{,}079$, et **3 points sur 720** dans
+le quadrant utile. Deux précautions sur l'abscisse, détaillées sur la page
+Repeatability : elle porte l'ICC de la paire 1v2, deux battements *consécutifs*,
+que le voisinage flatte — l'ICC(1) sur tous les one-cycles, au survol, est plus
+bas ; et elle qualifie la valeur d'**un** battement quand le marqueur corrélé est
+leur médiane sur trois à neuf.
+
+## Le compte, avant toute interprétation
+
+| | nombre | attendu sous $H_0$ |
+|:--|--:|--:|
+| corrélations calculées (vue « avant », six issues) | 720 | — |
+| $p < 0{,}05$ | 99 | 36 |
+| $q < 0{,}05$ dans la catégorie | **0** | — |
+| $q < 0{,}05$ dans la famille | 0 | — |
+| $q < 0{,}05$ sur les 37 872 tests | 0 | — |
+
+## Les tables, référence locale
+
+{{< include figures_sans_predictors/p4str_tab_local_s5.qmd >}}
+
+{{< include figures_sans_predictors/p4str_tab_local_s10.qmd >}}
+
+{{< include figures_sans_predictors/p4str_tab_local_s12.qmd >}}
+
+{{< include figures_sans_predictors/p4str_tab_local_s15.qmd >}}
+
+## Les tables, référence globale
+
+{{< include figures_sans_predictors/p4str_tab_global_s5.qmd >}}
+
+{{< include figures_sans_predictors/p4str_tab_global_s10.qmd >}}
+
+{{< include figures_sans_predictors/p4str_tab_global_s12.qmd >}}
+
+{{< include figures_sans_predictors/p4str_tab_global_s15.qmd >}}
+
+## Ce que la page conclut
+
+Le strain rétinien ne prédit pas le gonflement post-vol, et l'échec ne vient pas
+d'un manque de puissance déguisé : il est cohérent avec tout ce que les pages
+précédentes ont mesuré. Le strain ne retrouve pas la dilatation choroïdienne dans
+l'intervalle physiologique ([Stress–strain](sans-stress-strain.qmd)), ne se répète
+ni d'une acquisition à l'autre ni d'un battement au suivant
+([Repeatability](sans-repeatability.qmd)), et sa corrélation avec l'issue ne
+dépasse jamais ce que 720 tests sur douze sujets donnent par hasard.
+
+**Le découpage en classes de gonflement dit la même chose, par un autre chemin.**
+Comparer les moyennes du strain entre « < 20 µm » et « 20 – 50 µm » donne
+12 tentatives à $p < 0{,}05$ sur 150 pour 7,5 attendues, et **aucune** ne
+survit à Benjamini-Hochberg — que l'on corrige pour le sexe ou non. En ramenant
+les deux yeux d'un astronaute à une seule observation, ce compte tombe **à 6,
+soit exactement le hasard**. Deux estimateurs, un seul verdict.
+
+Les trois agrégats se comportent de la même façon : ni la moyenne, ni la médiane,
+ni le p95 signé — la mesure de queue, censée capter les déformations locales
+fortes — ne se détache. Voir la page [Repeatability](sans-repeatability.qmd) pour
+le classement complet, où le p95 est le plus mal mesuré des trois.
+
+## Reproduire
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_demons_strain.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_sans_predictors.py
+```
+
+```bash
+python reveal_quarto_presentations/figures_sans_predictors/make_figures.py
+```
+
+::: {.source-note}
+Corrélations calculées par `Astronauts/compute_sans_predictors.py` (Pearson et Spearman, trois q-valeurs de Benjamini-Hochberg : globale, par famille et par catégorie) ; cartes, nuages et tables générés par `figures_sans_predictors/make_figures.py`, qui ne fait que lire `sans_correlations.csv`, `repeatability.csv` et `repeatability_one_cycles.csv`. Tous les chiffres cités sont repris de `figures_sans_predictors/resume.txt`.
+:::

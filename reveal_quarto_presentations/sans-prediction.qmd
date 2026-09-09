@@ -1,0 +1,409 @@
+---
+title: "Prediction of SANS"
+subtitle: "Corrélations de Pearson et de Spearman entre chaque ΔTRT et les marqueurs candidats — strain par bande, pentes CT et ΔCT, chacun dans ses trois agrégats — pour chaque régularisation et chaque style de référence"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+## L'issue et les marqueurs
+
+Le SANS se manifeste par un épaississement rétinien post-vol. L'issue est donc
+
+$$\Delta\mathrm{TRT}_x = \mathrm{TRT250}_x(\text{après vol}) - \mathrm{TRT250}_x(\text{avant vol})$$
+
+pour les quatre quadrants $x \in \{S, I, N, T\}$ plus leur moyenne, lue dans
+`sansori_db.db`. **12 à 18 sujets** — un sujet est un couple (astronaute, œil) — possèdent les
+deux mesures nécessaires, selon que le marqueur survit ou non au portail de
+validité.
+
+Les marqueurs candidats sont ceux que les pages précédentes ont produits :
+
+* le **strain rétinien** de chacune des cinq bandes latérales ;
+* la **pente du strain contre l'épaisseur** ($CT$) de la bande ;
+* la **pente du strain contre la dilatation** ($\Delta CT$) de la bande.
+
+Chacun des trois est décliné dans les **trois agrégats** du strain — moyenne,
+médiane et p95 signé, définis sur la page
+[Stress–strain](sans-stress-strain.qmd). Les deux premiers résument un *centre*,
+le troisième une *queue* : si les plus fortes déformations locales portaient un
+signal que le centre noie, c'est ici qu'il apparaîtrait.
+
+Soit quarante-cinq marqueurs, déclinés par régularisation et par style de
+référence.
+Les prédicteurs sont agrégés par sujet en moyennant les réplicats, et la vue
+retenue ici est celle d'**avant le vol** — c'est la seule qui répond à la
+question « peut-on prédire ».
+
+::: {.callout-important}
+## Ce qu'une q-valeur change ici
+
+Quarante-cinq marqueurs × 5 issues × 4 σ × 2 références font 1 800 tests sur 12 à
+18 sujets, et l'ensemble du panel de l'étude en fait plusieurs dizaines de
+milliers. À ce régime, des $r$ de 0,7 apparaissent par pur hasard : sur 1 800
+tests indépendants sans aucun effet réel, une centaine passent $p < 0{,}05$.
+
+Tripler le nombre d'agrégats **durcit** mécaniquement la correction pour tout le
+reste du panel : c'est le prix de la question posée, et il est payé par les
+autres prédicteurs autant que par les nouveaux.
+
+Les tables ci-dessous portent en gras les corrélations dont la **q-valeur de
+Benjamini-Hochberg dans leur famille** (`pearson_q_famille`) descend sous 0,05.
+La colonne `pearson_q` de `sans_correlations.csv` donne la version stricte,
+corrigée sur la table entière ; `pearson_q_strain` en donne une troisième, encore
+plus indulgente — corrigée parmi les 360 tentatives d'une même issue seulement.
+C'est celle que trace le nuage [q contre r](#ce-que-le-taux-de-fausses-découvertes-laisse)
+placé sous la carte, et aucune des 1 800 tentatives n'y passe 0,05.
+
+Chaque cellule y porte quatre nombres : **$r$ de Pearson / $
+ho$ de Spearman /
+ICC(A,1) / CV intra**. Les deux derniers qualifient le marqueur seul — ils ne
+dépendent pas de l'issue et se répètent donc à l'identique sur toute la ligne.
+Ils sont là pour qu'aucune corrélation ne se lise sans la fiabilité de ce qu'elle
+corrèle.
+:::
+
+## Vue d'ensemble
+
+Huit tables se parcourent mal. La carte donne la même information d'un coup :
+une case par (marqueur, issue), une grille par (σ, référence).
+
+Le **cadre vert** y reprend le critère du repérage vert des tables, appliqué à la
+case plutôt qu'à la ligne : le marqueur est assez répétable — **ICC(A,1) ≥ 0,45** —
+*et* il atteint **$|r| ≥ 0{,}20$** contre cette issue-là. **137 cases sur 1 800**
+y parviennent, 7,6 %. Elles appartiennent aux mêmes 49 lignes que les tables
+verdissent ; le cadre dit en plus *laquelle* des cinq issues fait verdir la ligne.
+L'ICC de chaque case se lit au survol.
+
+{{< include figures_sans_predictors/p4_heatmap.qmd >}}
+
+## Ce que le taux de fausses découvertes laisse
+
+L'astérisque de la carte marque une q-valeur, mais ne dit ni de combien le seuil
+est raté, ni sur quelle famille il a été calculé. La figure suivante répond aux
+deux : la **q-valeur devient l'abscisse**, et la famille de correction est celle
+de la question posée — les **360 tentatives d'une même issue** (45 marqueurs × 4 σ
+× 2 références). Un graphique par ΔTRT, 1 800 points en tout, les mêmes que la
+carte ci-dessus.
+
+C'est la **plus indulgente** des trois corrections que le lot calcule, et
+délibérément : elle ne corrige pas le fait d'avoir essayé les cinq issues, ni les
+trois vues, ni le reste du panel. La colonne `pearson_q_strain` de
+`sans_correlations.csv` la porte ; `pearson_q_famille` (l'astérisque de la carte)
+corrige sur une famille plus large, `pearson_q` sur les 31 560 tests. Si rien ne
+passe *ici*, rien ne passe nulle part.
+
+Le trait rouge plein marque $q = 0{,}05$ ; les pointillés, le seuil nominal
+$|r| > 0{,}58$ à $n = 12$, celui qu'on lirait sans correction.
+
+{{< include figures_sans_predictors/p4_q_vs_r.qmd >}}
+
+**Le nuage est entièrement à droite du trait.** La plus petite q-valeur du panel
+vaut **0,50** (ΔTRT T), la médiane **0,91**, et par issue le minimum va de 0,50 à
+0,75 — *zéro* tentative sur 1 800 descend sous 0,05. Les **71 couples (3,9 %)**
+qui dépassent le seuil nominal, dont un $|r|$ de **0,81**, sont exactement ce que
+360 tests sur douze sujets produisent en l'absence de tout effet réel : le
+hasard en donnerait 5 %, on en observe 3,9 %.
+
+La forme en crochet est **mécanique**, et il ne faut rien y lire d'autre. Les 45
+marqueurs sont mesurés sur les **mêmes douze sujets** : à effectif constant, $p$
+ne dépend que de $|r|$, et la q-valeur, qui croît avec $p$ dans une famille
+donnée, en dépend donc elle aussi et d'elle seule. Le
+nuage est donc une *courbe*, repliée autour de $r = 0$, et sa position est la
+seule chose qu'elle raconte. Elle ne franchit jamais le trait rouge, et elle en
+reste très loin.
+
+Le code de couleur ferme la dernière porte de sortie : aucun des trois groupes de
+marqueurs n'occupe les $|r|$ extrêmes tout seul. Le strain rétinien, la pente
+$CT \rightarrow$ strain et la pente $\Delta CT \rightarrow$ strain se mêlent le
+long de la courbe, et les deux styles de référence aussi. Il n'y a pas un
+sous-ensemble de marqueurs qui aurait été noyé dans les autres.
+
+## La répétabilité achète-t-elle de la corrélation ?
+
+Toute cette section repose sur une hypothèse jamais énoncée : **un marqueur mieux
+mesuré devrait mieux corréler.** C'est ce qui justifie d'avoir passé la page
+[Repeatability](sans-repeatability.qmd) avant celle-ci. La figure suivante la met
+à l'épreuve — c'est le seul endroit où les deux moitiés du travail se rencontrent.
+
+Même grille que les cartes ci-dessus, mais chaque point y est un couple
+(marqueur, bande, issue), placé selon la **répétabilité du marqueur** en abscisse
+et la **corrélation obtenue** en ordonnée. Si l'hypothèse tient, le nuage
+s'ouvre en entonnoir vers la droite : plus l'ICC monte, plus les $|r|$ élevés
+deviennent possibles.
+
+{{< include figures_sans_predictors/p4_r_vs_icc.qmd >}}
+
+::: {.callout-important}
+## Le quadrant utile est vide
+
+Sur les 1 800 couples, la corrélation entre $|r|$ et l'ICC vaut $-0{,}122$ —
+nulle, et si quoi que ce soit, du mauvais signe. Il n'y a pas d'entonnoir : les
+$|r|$ les plus élevés se rencontrent aussi bien à ICC nul qu'à ICC élevé.
+
+Trois chiffres suffisent à fermer la question :
+
+* **presque aucun marqueur** n'atteint un ICC de 0,75 — 1,4 % y parviennent, le
+  maximum est $+0{,}86$ et la médiane $+0{,}14$ ;
+* **3,9 %** des couples dépassent le seuil de significativité
+  ($|r| > 0{,}58$ pour $n = 12$) — le taux du hasard, à la décimale près ;
+* et **0,17 %** cumulent un ICC supérieur à 0,5 *et* un $|r|$ significatif — trois
+  couples sur 1 800, tous portés par le même marqueur. Le
+  quadrant supérieur droit, celui des marqueurs à la fois reproductibles et
+  corrélés, est **vide**.
+
+Cela ferme aussi une porte de sortie. On aurait pu espérer que le résultat
+négatif vienne d'un bruit de mesure noyant un vrai signal — auquel cas les
+marqueurs les mieux mesurés en montreraient au moins une trace. Ils n'en
+montrent aucune.
+:::
+
+## La même question, battement par battement
+
+La figure précédente utilise l'ICC des **réplicats d'acquisition** — deux
+enregistrements du même œil dans la même séance. La page
+[Repeatability](sans-repeatability.qmd#une-autre-définition-du-réplicat-les-one-cycles-dune-même-vidéo)
+en produit un second, sur des réplicats bien plus nombreux : les **one-cycles
+d'une même vidéo**, 394 battements sur 76 vidéos. La question se repose donc,
+avec un ICC dont l'incertitude est bien moindre — et cette fois **un graphique
+par ΔTRT**.
+
+Le jeu de prédicteurs n'est pas tout à fait le même, et il faut le savoir avant
+de comparer les deux figures : les **pentes poolées** de la carte n'ont pas d'ICC
+par one-cycle — elles sont ajustées sur tous les couples (one-cycle, bin) d'une
+vidéo et n'existent pas à l'échelle du battement —, non plus que `pouls` et
+`rigidite`. En revanche les pentes **par one-cycle**, absentes de la carte, en
+ont un. Restent **1 114 prédicteurs** dans quatre familles : `strain`, `pente`,
+`ct_pouls` et `qc`.
+
+{{< include figures_sans_predictors/p4_r_vs_icc_oc.qmd >}}
+
+::: {.callout-note}
+## Deux précautions sur l'abscisse
+
+**L'abscisse est l'ICC de la paire 1v2**, deux battements *consécutifs*, pour
+rester comparable à la figure précédente. La page Repeatability montre que cette
+paire-là est flattée par le voisinage : l'ICC(1) calculé sur *tous* les
+one-cycles est plus bas, souvent beaucoup, et il se lit au survol de chaque
+point. Quand les deux divergent, c'est le second qu'il faut croire.
+
+**L'ICC porte sur la valeur d'un seul battement**, alors que le prédicteur
+corrélé est leur **médiane sur 3 à 9 one-cycles** : moyenner réduit le bruit.
+C'est donc un plancher sur l'ingrédient, pas l'ICC de la valeur publiée — ce qui
+ne rend la conclusion ci-dessous que plus difficile à contourner.
+:::
+
+**Le résultat ne bouge pas d'un pouce.** La corrélation entre $|r|$ et l'ICC par
+battement vaut **+0,001** sur les 5 570 points, et par issue elle va de $-0{,}09$
+(ΔTRT N) à $+0{,}06$ (ΔTRT T) — nulle dans les cinq panneaux, sans même la
+régularité d'un signe. Les nuages sont des **taches**, pas des entonnoirs : les
+$|r|$ élevés se rencontrent aussi bien à ICC nul qu'à ICC élevé, et les colonnes
+verticales visibles à gauche sont les pentes, empilées sur un ICC de $-0{,}00$.
+
+Les comptes disent la même chose autrement : **6,7 %** des prédicteurs dépassent
+un ICC de 0,5 et **5,7 %** dépassent le seuil nominal $|r| > 0{,}58$ — le taux du
+hasard. Leur intersection contient **47 points sur 5 570 (0,84 %)**, quand
+l'indépendance en prédirait 0,38 % : deux fois le hasard, sur un effectif où cela
+représente une vingtaine de points de plus. Ce n'est pas un signal, c'est
+l'ordre de grandeur du bruit.
+
+La lecture reste donc celle de la section précédente, et elle est maintenant
+appuyée sur un ICC estimé sur 76 cibles au lieu d'une douzaine : **la
+reproductibilité n'achète pas de corrélation**, et l'hypothèse « il y a un signal,
+noyé dans le bruit de mesure » ne survit à aucune des deux définitions du
+réplicat.
+
+## Le compte, avant toute interprétation
+
+Sur les quarante-cinq marqueurs demandés, déclinés par régularisation, par
+référence et par vue, **5 400 corrélations** sont calculables. Elles produisent :
+
+| | nombre | attendu sous $H_0$ |
+|:--|--:|--:|
+| $p < 0{,}05$ | **186** | 270 |
+| $q < 0{,}05$ dans la famille | **0** | — |
+| $q < 0{,}05$ sur toute la table | **0** | — |
+
+Le $|r|$ maximal atteint 0,81. Il faut lire la première ligne deux fois : les
+marqueurs produisent **moins** de corrélations nominalement significatives que le
+hasard n'en produirait. Il n'y a pas de signal faible à débusquer — il n'y a rien.
+
+**Et l'agrégat n'y change rien**, ce qui est le point de cette révision :
+
+| agrégat | $p < 0{,}05$ | $|r|$ max | ICC médian |
+|:--|--:|--:|--:|
+| moyenne | 3,5 % | 0,77 | $+0{,}17$ |
+| médiane | 4,2 % | 0,81 | $+0{,}14$ |
+| p95 signé | 4,2 % | 0,76 | $+0{,}13$ |
+
+Les trois agrégats sont au taux du hasard, à moins d'un point l'un de l'autre. Le
+p95 n'apporte **aucune** corrélation que les deux mesures de centre n'auraient
+pas, et il les paie d'un ICC plus bas.
+
+Le même compte sur le panel complet de l'étude (31 560 corrélations, tous
+prédicteurs confondus) donne 1 300 résultats à $p < 0{,}05$, soit 4,1 % pour
+5,0 % attendus, et zéro après correction globale.
+
+::: {.callout-note}
+## Le repérage vert, et ce qu'il ne dit pas
+
+Dans les huit tables, un marqueur est écrit **en vert** quand il remplit les deux
+conditions à la fois : un **ICC(A,1) d'au moins 0,45**, et un $|r|$ d'au moins
+**0,20** contre au moins une des cinq issues. **49 lignes sur 360** y
+parviennent — 13,6 %, la même proportion qu'avant l'ajout des agrégats. Ce sont
+ces mêmes lignes que les cartes ci-dessus encadrent en vert, case par case : 137
+cases sur 1 800.
+
+Trois précautions de lecture, dans l'ordre d'importance.
+
+**Le vert ne veut pas dire « prédictif ».** Sur 12 à 18 sujets, le seuil de
+significativité est $|r| = 0{,}58$ ; $0{,}20$ en est très loin. Aucune de ces 49
+lignes ne passe la correction de Benjamini-Hochberg, et le gras — qui, lui,
+marque $q < 0{,}05$ — reste absent de toutes les tables.
+
+**C'est l'ICC qui fait le tri, pas la corrélation.** La quasi-totalité des lignes
+atteignent déjà $|r| \geq 0{,}20$ quelque part — c'est le nombre d'issues qui le
+garantit, cinq tirages suffisant presque toujours à en produire un. Le seuil
+d'ICC, lui, élimine près de neuf lignes sur dix. Le vert signifie donc, en pratique : *assez reproductible pour
+qu'on regarde sa corrélation*.
+
+**Le seuil de 0,45 reste bas.** Un biomarqueur se juge à 0,75. À 0,45, le bruit
+de mesure représente encore plus de la moitié de la variance. Les 49 lignes sont
+les moins mauvaises du panel, pas des candidates.
+
+Leur répartition par bande et par agrégat est à relire dans les tables : elle a
+changé à chaque révision du jeu de données, et la page
+[Repeatability](sans-repeatability.qmd) explique pourquoi il ne faut pas en
+faire un résultat.
+:::
+
+## Les tables, référence locale
+
+{{< include figures_sans_predictors/p4_tab_local_s5.qmd >}}
+
+{{< include figures_sans_predictors/p4_tab_local_s10.qmd >}}
+
+{{< include figures_sans_predictors/p4_tab_local_s12.qmd >}}
+
+{{< include figures_sans_predictors/p4_tab_local_s15.qmd >}}
+
+## Les tables, référence globale
+
+{{< include figures_sans_predictors/p4_tab_global_s5.qmd >}}
+
+{{< include figures_sans_predictors/p4_tab_global_s10.qmd >}}
+
+{{< include figures_sans_predictors/p4_tab_global_s12.qmd >}}
+
+{{< include figures_sans_predictors/p4_tab_global_s15.qmd >}}
+
+## Ce que la section conclut
+
+Le lot a abouti sur **104 conditions sur 104**, 876 one-cycles et 38 496
+recalages — 103,1 h de calcul comprimées en 10,69 h — dont **394 one-cycles sur
+76 vidéos** survivent au portail de validité. Il ne trouve pas de
+prédicteur du SANS, et les trois pages précédentes disent assez précisément *où*
+la chaîne casse. C'est ce diagnostic qui est utilisable, pas le résultat brut.
+
+**Le recalage converge, mais il ne mesure pas la dilatation.** Avant le
+portail, il semblait trouver la bonne direction : $r \approx +0{,}18$ entre
+dilatation mesurée et strain, stable aux quatre régularisations. Sur les
+one-cycles **retenus**, ce coefficient devient **négatif** ($-0{,}04$ à
+$-0{,}12$). La relation vivait entièrement dans les one-cycles dont la mesure
+d'épaisseur avait échoué, où l'erreur de segmentation gonfle à la fois le ΔCT lu
+et la déformation à ajuster — une corrélation d'erreur partagée, pas de
+physiologie. Le jacobien, lui, reste positif partout dès σ ≥ 10.
+
+**L'échelle ne va pas non plus.** Même sans filtrage, les démons ne récupéraient
+que 4 à 6 % de l'amplitude imposée par la géométrie, et la régularisation ajoute
+un biais négatif qui dépasse le signal restant. Une pulsation de 3 µm sur une
+choroïde de 410 µm est une déformation de moins de 1 %, mesurée sur du speckle
+dont le carnet a montré qu'il offre 3,5 fois moins de structure axiale dans la
+choroïde que dans la rétine. Aucun réglage de σ ne contourne cela : à σ faible
+les démons ajustent le bruit, à σ fort ils rabotent le signal.
+
+**Et l'agrégat n'y change rien non plus.** Le p95 a été ajouté précisément pour
+tester l'échappatoire « le signal est dans la queue, pas dans le centre » — les
+plus fortes déformations locales suivraient la dilatation même quand la moyenne,
+tirée vers le bas par le biais de régularisation, ne la suit pas. Elle ne tient
+pas : le p95 corrèle au ΔTRT exactement comme la moyenne — au taux du hasard — et
+il se mesure trois fois moins bien (ICC médian $+0{,}05$ contre $+0{,}21$, CV
+528 % contre 288 %). La queue de la distribution n'est pas un endroit où le
+signal se serait réfugié ; c'est l'endroit où le champ de déplacement est le
+moins contraint.
+
+**Le repliement à six bins est trop court.** La page
+[Pulse comparison](sans-pulse-comparison.qmd) le chiffre : sur 54 points la
+relation CT–pouls est franche dans **67,5 %** des one-cycles, sur six bins elle
+ne l'est plus que dans **12,4 %** — à peine au-dessus des 5 % du hasard. C'est
+pourtant sur ces six bins que le strain est mesuré. Le repliement jette
+l'essentiel de la preuve que la vidéo contient.
+
+**Et la répétabilité n'y change rien.** La corrélation entre $|r|$ et l'ICC des
+marqueurs vaut $-0{,}122$ sur 1 800 couples : trois couples sur 1 800 cumulent un
+ICC supérieur à 0,5 et un $r$ significatif, quand le hasard seul en donnerait
+déjà autant. Ce n'est donc pas un signal réel noyé
+dans du bruit de mesure — les marqueurs les mieux mesurés n'en montrent pas
+davantage que les autres.
+
+**Et rien de tout cela ne se répète.** La page
+[Repeatability](sans-repeatability.qmd) donne un ICC(A,1) médian de **+0,22** et
+un CV intra-sujet médian de **280 %**, avec **27,7 %** des prédicteurs dont la
+variance inter-sujets est négative — jusqu'à 45,8 % au centre du champ.
+
+### Trois pistes, par coût croissant
+
+1. **Moins de bins, plus de battements.** Passer de 6 bins × 6 battements à 3
+   bins × 20 battements garderait le contraste extrême du cycle en multipliant
+   par trois le nombre de frames moyennées par bin. Le lot coûterait *moins*
+   cher, pas plus.
+2. **Mesurer le strain là où il y a de la structure.** La rétine offre 3,5 fois
+   plus de gradient axial que la choroïde ; un recalage contraint à la rétine,
+   dont on déduirait le déplacement de l'interface choroïdienne, poserait un
+   problème mieux conditionné que la déformation d'un speckle sans texture.
+3. **Augmenter $n$.** Dix-huit sujets ne permettent de détecter, à 80 % de
+   puissance et sans correction, que des $r$ supérieurs à 0,6 environ. Un
+   résultat négatif à cette taille ne réfute pas l'hypothèse : il dit que la
+   cohorte est trop petite pour la tester.
+
+### Le résultat positif, qu'on ne cherchait pas
+
+L'**épaisseur choroïdienne** est à la fois le paramètre le plus reproductible de
+tout le panel (ICC(A,1) = 0,97) et le mieux corrélé au gonflement rétinien
+post-vol ($r = -0{,}76$ contre ΔTRT nasal, $q$ famille $< 0{,}05$). Elle ne
+demande ni démons, ni repliement, ni phase cardiaque — seulement la
+segmentation. C'est la piste que ces 105 h de calcul désignent.
+
+## Reproduire
+
+Quatre scripts, dans cet ordre. Le premier est le seul coûteux — **10,69 h** sur
+dix processus × deux fils ITK.
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_demons_strain.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_ct_pulse_traces.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_sans_predictors.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe reveal_quarto_presentations/figures_sans_predictors/make_figures.py
+```
+
+Pour rouvrir une condition et regénérer ses cartes de strain — le lot ne conserve
+aucun champ de déplacement, ce serait ~250 Go — éditer la constante `SLUG` en
+tête de `Astronauts/replay_demons_strain.py` puis :
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/replay_demons_strain.py
+```
+
+::: {.source-note}
+Corrélations calculées par `Astronauts/compute_sans_predictors.py` (Pearson et
+Spearman, q-valeurs de Benjamini-Hochberg globales et par famille) ; tables et
+carte générées par `figures_sans_predictors/make_figures.py`, qui ne fait que
+lire `sans_correlations.csv`. Tous les chiffres cités sont repris de `figures_sans_predictors/resume.txt`.
+:::

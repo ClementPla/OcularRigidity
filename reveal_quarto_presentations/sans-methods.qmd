@@ -1,0 +1,707 @@
+---
+title: "Methods"
+subtitle: "La chaîne complète, de la vidéo B-scan brute aux corrélations avec les deux marqueurs de SANS — gonflement rétinien et aplatissement du globe : chaque étape, chaque paramètre, et la raison de chaque choix"
+# La page portait jusqu'ici des diagrammes mermaid et des tables markdown
+# seulement. Elle a maintenant une figure Plotly (p4_issues) : sans cet
+# en-tete, le <div> est ecrit mais aucun script ne le dessine.
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Cette page décrit l'expérience assez précisément pour qu'on puisse la **refaire**
+ou la **contester**. Les quatre autres pages de la section rapportent des
+résultats et ne redonnent que le strict nécessaire ; tout ce qui est répété
+ailleurs est ici sous sa forme complète, avec les valeurs numériques et les
+raisons.
+
+Rien n'y est illustré : les figures sont sur les pages de résultats. En
+contrepartie, chaque paramètre y est donné avec sa valeur exacte et le nom de la
+constante qui le porte dans le code, de façon qu'un lecteur puisse ouvrir le
+script et retrouver la ligne.
+
+::: {.callout-note}
+## Ce que la chaîne suppose déjà fait
+
+Trois étapes précèdent cette expérience et ne sont pas refaites ici. Elles ont
+leurs propres pages :
+
+* la **segmentation** de la choroïde par U-Net, dont la variante utilisée est
+  `model1_scale_1.0_flatten_choroid_xcorr` ;
+* le **recalage** des vidéos, dont cette variante est la sortie — c'est elle qui
+  fournit `registered_frames/…/cube.mp4` et `registered_masks/…/mask.npz` ;
+* l'**extraction du pouls**, dont on reprend la méthode `1_fir` et sa phase,
+  telles qu'écrites dans `pulse_from_data/traces/<slug>.npz`.
+
+L'expérience commence donc à une vidéo **déjà recalée**, **déjà segmentée**, et
+munie d'une **phase cardiaque par image**. Elle ne re-recale rien.
+
+Les réglages du Spectralis eux-mêmes — cadence, champ, EDI, ART, échelles,
+qualité d'image — ne sont pas repris ici : ils sont sur la page
+[Acquisition parameters](sans-acquisition-parameters.qmd), lue directement dans
+les exports XML.
+:::
+
+## Vue d'ensemble
+
+Six étapes, dont les sections numérotées ci-dessous donnent le détail.
+
+```{mermaid}
+flowchart TD
+    A["<b>vidéo recalée + masques + phase</b><br/>104 conditions · 28 sujets"]
+    B["<b>§2—3 · repliement et géométrie</b><br/>6 battements → 6 bins · bin de référence<br/>rétine, crop, 5 bandes latérales"]
+    C["<b>§4 · démons</b><br/>bin mobile → référence · 4 σ × 2 références<br/>38 496 recalages · ε_yy = ∂u_y/∂y"]
+    D["<b>§5—6 · résumé du strain</b><br/>3 agrégats par bande<br/>pentes ε ~ CT et ε ~ ΔCT"]
+    E["<b>§7—8 · tri puis agrégation</b><br/>portail : 4 critères, sans voir le strain<br/>→ 1 valeur par sujet × moment"]
+    F["<b>§9a · répétabilité</b><br/>ICC(A,1), CV intra"]
+    G["<b>§9b · prédiction</b><br/>r et ρ contre ΔTRT et ΔAL, q de BH"]
+    A --> B --> C --> D --> E
+    E --> F
+    E --> G
+```
+
+Quatre scripts exécutent cette chaîne, dans cet ordre :
+
+| script | ce qu'il fait | coût |
+|:--|:--|--:|
+| `compute_demons_strain.py` | tout ce qui précède le portail | **10,69 h** |
+| `compute_ct_pulse_traces.py` | les traces CT / pouls, pour la page 1 | 2,3 min |
+| `compute_sans_predictors.py` | portail, agrégation, ICC, corrélations | 17,3 min |
+| `figures_sans_predictors/make_figures.py` | les figures et les tables du site | 15 s |
+
+## 1. Les données
+
+**La cohorte.** 104 conditions traitées, appartenant à **14 astronautes** et
+**28 sujets** (un sujet est un couple astronaute × œil). Une condition est une
+acquisition : `E:/SANSORI/<NN_id>/<…>_rigidity/<…_OD|OS…>/`. Certains sujets ont
+jusqu'à **cinq réplicats** de la même séance (`…_OD1`, `…_OD2`, …) ; ce sont eux
+qui rendent la répétabilité mesurable.
+
+Une vidéo dure **48,8 s** en médiane, soit **459 images** à une fréquence
+cardiaque médiane de **67 BPM** — une cinquantaine de battements.
+
+**Les entrées, fichier par fichier :**
+
+| source | ce qu'on y lit |
+|:--|:--|
+| `registered_frames/<…>/cube.mp4` | les images recalées |
+| `registered_masks/<…>/mask.npz` | les masques de choroïde recalés |
+| `pulse_from_data/traces/<slug>.npz` | pouls `1_fir`, phase, base de temps, FC |
+| `RawImages/` (export XML Spectralis) | horodatages et **échelle du pixel** |
+| `Data Files/visit_data.csv` | FC, PIO et OPA de la visite (pour $k$) |
+| `sansori_db.db` | longueur axiale (`Biometry`) et **TRT250** par quadrant. La longueur axiale y sert **deux fois** : comme *entrée* du $k$ de Sayah, et comme *issue*, par sa variation entre les deux visites |
+
+**Les issues cliniques** sont au nombre de six, et couvrent **deux signes
+distincts du SANS**.
+
+Le **gonflement rétinien** post-vol, en cinq déclinaisons :
+
+$$\Delta\mathrm{TRT}_x = \mathrm{TRT250}_x(\text{après}) - \mathrm{TRT250}_x(\text{avant})$$
+
+pour les quatre quadrants $x \in \{S, I, N, T\}$ plus leur moyenne. Renseigné
+pour **18 sujets** sur 28.
+
+L'**aplatissement du globe**, mesuré par la variation de longueur axiale entre
+les deux visites :
+
+$$\Delta\mathrm{AL} = \mathrm{AL}(\text{après}) - \mathrm{AL}(\text{avant})$$
+
+lue sous la description `Biometry`, présente aux seuls moments *avant* et
+*après*. Renseignée pour **20 sujets** — deux de plus que le TRT.
+
+Même convention de signe pour les six : **après − avant**. Le $\Delta$AL
+est donc *négatif* quand le globe s'aplatit, ce qui est le cas de toutes les
+valeurs observées. Il n'est délibérément pas retourné : sur une carte de
+chaleur, la couleur d'une case doit vouloir dire la même chose dans les six
+colonnes. Dans les deux cas, un delta à moitié renseigné n'est pas un delta et
+vaut `NaN`.
+
+### Les deux marqueurs disent-ils la même chose ?
+
+Question préalable à tout le reste : si le $\Delta$AL et le $\Delta$TRT mesuraient le
+même phénomène, en ajouter un ne ferait que multiplier les tests. Ils sont donc
+tracés l'un contre l'autre, sans aucun prédicteur OCT.
+
+{{< include figures_sans_predictors/p4_issues.qmd >}}
+
+Ils vont dans le même sens — plus le globe s'aplatit, plus la rétine gonfle —
+mais **le nuage reste large**, et la relation ne tient que sur un quadrant : le
+nasal, à $r = -0{,}54$ et $p = 0{,}033$, qui ne survit d'ailleurs pas à une
+correction sur les 15 paires d'issues ($q = 0{,}061$). La page
+[Marker relationships](sans-marker-relationships.qmd) détaille cette matrice, la
+répartition de chaque ΔTRT par tranche, et ce que la base contient réellement
+patient par patient. Les deux issues sont donc gardées au même rang plutôt que
+fusionnées, et la
+q-valeur par catégorie est calculée **à issue fixée** : ajouter le $\Delta$AL ne
+durcit pas la correction des cinq $\Delta$TRT déjà publiés (elle durcit
+en revanche `pearson_q` et `pearson_q_famille`, qui comptent toute la table).
+
+::: {.callout-warning}
+## La longueur axiale est des deux côtés de l'équation pour le $k$ de Sayah
+
+$k$ et $\Delta V$ sont **calculés à partir** de la longueur axiale du
+moment considéré (§8). Les corréler à $\Delta\mathrm{AL}$, qui
+contient $\mathrm{AL}(\text{avant})$, fait donc partager cette
+même valeur aux deux membres de la vue « avant le vol ».
+
+Ils sont **néanmoins gardés** dans le panel : les retirer pour une seule issue
+casserait l'uniformité du décompte de Benjamini-Hochberg d'une colonne à
+l'autre. La conséquence pratique est mesurée et faible — elle est chiffrée sur
+la page [rigidité](sans-prediction-rigidity.qmd).
+:::
+
+::: {.callout-warning}
+## L'échelle du pixel se lit dans le XML, jamais dans la constante du dépôt
+
+`ScaleY` et `ScaleX` sont écrits par le Spectralis pour **chaque** B-scan, et
+c'est cette valeur qui fait foi : **3,900 µm/px** en axial, 12,100 µm/px en
+latéral sur ces acquisitions.
+
+La constante `consts.AXIAL_PIXEL_SIZE_MM` du dépôt vaut exactement la **moitié**
+— elle vise un autre mode d'acquisition, à 1024 lignes au lieu de 496. L'utiliser
+diviserait par deux toute épaisseur et tout déplacement, sans que rien ne
+plante. Le script lit donc le XML, et **écrit une note** dans `conditions.csv`
+dès que l'écart dépasse 5 % : les 104 conditions portent cette note.
+:::
+
+## 2. Le repliement en one-cycles
+
+Une pulsation choroïdienne fait 1 à 2 % de l'épaisseur, soit environ **4 µm** sur
+une choroïde de 410 µm — à peine plus d'un pixel. Une seule image ne la montre
+pas ; c'est le moyennage par phase qui la fait émerger.
+
+### La phase, et où tombe le maximum
+
+La phase par image est **reprise du lot d'extraction** (méthode `1_fir`), pas
+recalculée. Mais sa **référence** est mesurée plutôt que supposée : le pouls est
+replié sur une grille fine de **60 bins** (`PHASE_PROBE_BINS`) et l'on relève la
+position de son maximum. La convention de Hilbert placerait théoriquement le pic
+en 0 ; le rééchantillonnage et les conventions de signe du lot peuvent l'avoir
+déplacé, et supposer sans vérifier décalerait tout le repliement.
+
+La phase est ensuite recentrée, **plus un demi-bin** : le repliement affecte les
+images par $\lfloor \phi \cdot n_{bins} \rfloor$, donc un bin *commence* à une
+frontière. Le demi-bin fait de cette frontière un centre, et le **bin 0 couvre
+alors le maximum** du pouls, le bin 3 son minimum. La paire bin 0 → bin 3 est
+ainsi l'extension maximale du cycle *par construction*.
+
+### Des battements réels, pas une durée divisée
+
+Les images sont groupées par **6 battements** (`N_CYCLE`), comptés sur la
+**phase déroulée** — jamais en divisant la durée par une fréquence nominale, qui
+supposerait une FC constante. Chaque groupe donne **un one-cycle**, et une vidéo
+en produit **9** en médiane.
+
+Chaque one-cycle est replié en **6 bins** de phase (`N_BINS`), par la **médiane**
+des images du bin (`FOLD_METHOD`). Un cycle à chaque bord de l'enregistrement est
+écarté (`EDGE_CYCLES = 1.0`), là où le FIR a son transitoire.
+
+### Égalisation par A-scan
+
+Chaque A-scan de chaque bin est égalisé, **par rangs et exactement**, sur
+l'A-scan de même indice de l'image moyenne de la vidéo : la valeur de rang $i$
+prend la valeur de rang $i$ de la référence.
+
+L'opération change les **niveaux**, pas la **géométrie** — l'ordre des intensités
+le long de l'A-scan est préservé, donc aucune structure n'est déplacée. Elle
+annule la dispersion du niveau moyen d'un bin à l'autre, que les démons
+prendraient sinon pour du mouvement.
+
+### Recalage des bins entre eux
+
+Deux passes, avant toute mesure :
+
+| passe | ce qui est recalé | méthode |
+|:--|:--|:--|
+| intra-bin | les images d'un même bin | NCC en $x$ contre la **moyenne du groupe**, 2 itérations, ±16 px, sous-pixel par ajustement parabolique |
+| inter-bin | les six bins repliés entre eux | la même, plus un $dy$ par A-scan |
+
+La référence est la **moyenne du groupe, refaite à chaque itération** — c'est
+elle qui s'affine, et c'est tout l'intérêt d'itérer. Le déplacement est rendu
+**relatif** ($dx \leftarrow dx - \overline{dx}$) pour que le groupe ne dérive pas
+en bloc, et il n'est **appliqué qu'une fois**, à la fin, aux images d'origine :
+les passes intermédiaires ne servent qu'à estimer.
+
+Le $dy$ vient d'un recalage par A-scan contre la médiane temporelle
+(`register_ascans_to_median`), bande **0,02–0,5** cycle/px, déplacement borné à
+**±7 px**. Il est estimé sur la copie **déjà recalée en $x$** — une médiane floue
+donnerait un $dy$ faux — puis composé avec le $dx$ dans l'unique interpolation
+finale.
+
+## 3. Géométrie : épaisseur, référence, rétine, bandes
+
+### L'épaisseur choroïdienne par bin
+
+$CT$ est la somme du masque par colonne, moyennée sur les **colonnes
+exploitables** : celles où la choroïde existe dans toutes les images, restreintes
+à la plage **12,5 %–87,5 %** de la largeur (`COL_FRAC`). C'est la règle du lot
+one-cycle, reprise telle quelle pour que cette épaisseur soit *la même grandeur*
+que le ΔY de la cohorte.
+
+Un bin **vide vaut `NaN`, jamais 0** : un seul zéro transformerait un
+crête-à-crête de 0,5 px en 30 px.
+
+### Les deux références
+
+C'est le choix qui décide du sens de tout le reste, et les deux variantes sont
+calculées **côte à côte** :
+
+| cas | image fixe | ce que ça coûte, ce que ça gagne |
+|:--|:--|:--|
+| `local` | le bin de **choroïde la plus fine de ce one-cycle** | insensible à la dérive lente de l'œil ; mais la référence est bruitée — un bin ne contient que quelques images |
+| `global` | la **moyenne** des bins les plus fins de **tous** les one-cycles | référence bien moins bruitée, strains comparables d'un cycle à l'autre ; mais elle absorbe la dérive |
+
+Dans le cas `local`, les cinq autres bins sont mobiles. Dans le cas `global`, les
+**six** le sont, y compris le bin de référence local : contre la référence
+commune, il porte la dérive d'un one-cycle à l'autre, ce qui est précisément
+l'information que ce cas apporte.
+
+Un one-cycle unique fait dégénérer le cas `global` sur le cas `local`, plus un
+recalage du bin de référence sur lui-même — champ nul, strain nul — qui
+fausserait les agrégats. Le cas `global` est donc **sauté** sous deux one-cycles.
+
+### Rétine, crop, bandes
+
+La rétine est segmentée sur la référence globale, sans modèle : seuil d'**Otsu**
+(256 bins) sur l'image, ouverture morphologique 3×3, puis tout ce qui est clair
+**au-dessus** du sommet de la choroïde. La limite supérieure de cette région sert
+d'**ILM**, lissée par un filtre médian de 15 colonnes.
+
+Le **crop** va de l'ILM la plus haute au bas de la choroïde, avec 20 px de marge
+de chaque côté (`CROP_MARGIN`) : le vitré et la sclère n'apportent aucune
+structure à recaler et coûtaient 40 % du temps des démons. Il en reste **272
+lignes** en médiane, sur 496.
+
+La rétine est enfin découpée en **cinq bandes de largeur égale**. Leur index
+désigne un côté de la **rétine**, pas un côté de l'image : pour un œil **droit**
+il croît vers la gauche de la B-scan (+2 à gauche, −2 à droite, convention du
+carnet) ; pour un œil **gauche**, dont la B-scan est le miroir de celle de l'œil
+droit, la numérotation est **inversée** (+2 à droite de l'image). Sans ce miroir,
+agréger « la bande +2 » sur la cohorte mélangerait les deux côtés de la rétine, et
+une éventuelle asymétrie naso-temporale s'annulerait d'elle-même. La correspondance
+est faite par `column_label(k, eye)` dans `compute_demons_strain.py` ; la colonne
+`k` des tables reste, elle, l'index **géométrique** de la bande dans l'image.
+L'épaisseur *de la bande* est calculée sur les seules
+colonnes exploitables de cette bande : une bande fine et une bande épaisse ne
+partagent pas la même épaisseur de départ, et c'est justement ce qu'on veut
+pouvoir lire.
+
+## 4. Le recalage déformable et le strain
+
+Chaque bin mobile est recalé sur l'image fixe par les **démons de SimpleITK**,
+variante `FastSymmetricForcesDemons`.
+
+| paramètre | valeur | pourquoi |
+|:--|:--|:--|
+| pyramide | 2 niveaux, `shrink` (2, 1) | le niveau `shrink = 4` du carnet rattrapait de grands déplacements ; les champs mesurés font 2 à 7 px, dans la plage de capture du niveau 2. Le retirer coûte 20 % du temps et ne change pas le champ |
+| lissage de pyramide | σ (1,0 ; 0,0) | |
+| itérations | (75, 100) | |
+| **`displacement_sigma`** | **5, 10, 12, 15** | régularisation élastique — c'est **elle qu'on balaie**, et la stabilité d'un résultat à travers le balayage fait partie du résultat |
+| `update_sigma` | 0 | pas de régularisation fluide |
+| `max_step_length` | 2,0 px | |
+| appariement d'histogramme | activé, 1024 niveaux, 7 points | |
+| seuil d'intensité | 0,001 | |
+| arrêt anticipé | désactivé | pour que toutes les paires reçoivent le même nombre d'itérations |
+
+Le champ $u$ suit la convention ITK — $\mathrm{warped}(x) = \mathrm{moving}(x + u(x))$,
+donc $u$ va du fixe vers le mobile. Le strain axial en découle directement :
+
+$$\varepsilon_{yy} = \frac{\partial u_y}{\partial y}$$
+
+calculé par différences centrées sur l'axe des lignes, **sans lissage
+supplémentaire** (`STRAIN_SIGMA = 0`) : la régularisation est déjà dans
+`displacement_sigma`, et en ajouter une seconde raboterait deux fois. Il est
+**sans dimension**, $u_y$ et $y$ partageant l'échelle axiale, et la convention de
+signe fait qu'un $\varepsilon_{yy} > 0$ signifie *plus épais dans l'image mobile*.
+
+Chaque recalage produit aussi trois diagnostics : le **jacobien** du champ (une
+valeur négative signale une transformation repliée sur elle-même, donc sans sens
+physique), $|u|_{max}$, et la RMS avant/après sur le tissu.
+
+**Le compte** : 876 one-cycles × 5 ou 6 bins mobiles × 4 σ × 2 références font
+**38 496 recalages**.
+
+## 5. Les trois agrégats du strain
+
+Le strain d'une bande est une **carte** ; il en faut un résumé, et ce résumé est
+un choix. Trois sont calculés au même rang, partout où le strain intervient :
+
+| agrégat | colonne | ce qu'il mesure |
+|:--|:--|:--|
+| moyenne | `strain_retine` | un **centre** |
+| médiane | `strain_retine_med` | un **centre**, robuste aux pixels aberrants |
+| **p95 signé** | `strain_retine_p95` | une **queue** |
+
+Le p95 est le 95ᵉ percentile de la **magnitude** $|\varepsilon_{yy}|$, rendu
+**avec le signe** du pixel qui l'atteint : si la plus grande magnitude est
+négative, le p95 est négatif. Le rang est pris **au plus proche, sans
+interpolation** — interpoler entre deux pixels de signes opposés ne voudrait rien
+dire — de sorte que le p95 est toujours la valeur d'un pixel réel.
+
+Sa raison d'être : les deux premiers agrégats mesurent un centre, et la page
+[Stress–strain](sans-stress-strain.qmd) établit que le centre de la distribution
+du strain est dominé par le biais négatif de la régularisation. Le p95 teste
+l'échappatoire — *les plus fortes déformations locales suivent-elles la
+dilatation, même quand le centre ne la suit pas ?*
+
+::: {.callout-note}
+## Le strain choroïdien n'est pas un marqueur
+
+Toute l'analyse porte sur le strain **rétinien** : c'est la rétine dont le
+gonflement définit le SANS.
+
+Le strain **choroïdien** ne subsiste qu'à un seul endroit, la
+[validation](sans-stress-strain.qmd#validation-le-strain-retrouve-t-il-une-dilatation-connue),
+et par nécessité : la référence étant le bin de choroïde la plus fine, seule la
+choroïde possède une dilatation *connue*, donc une valeur de strain attendue à
+laquelle comparer la mesure. Il y sert de **contrôle de méthode**. Il est absent
+des bandes, des pentes et des prédicteurs.
+
+L'**épaisseur** choroïdienne, elle, reste partout : c'est l'abscisse de toute
+l'analyse, pas un strain.
+:::
+
+## 6. Les pentes
+
+Le strain seul ne dit pas s'il *suit* quelque chose. Chaque agrégat est donc
+ajusté linéairement contre quatre abscisses :
+
+| abscisse | question posée |
+|:--|:--|
+| `dCT_region_um` | le strain suit-il la **dilatation** de sa bande ? |
+| `CT_region_um` | le strain dépend-il de l'**épaisseur** de sa bande ? |
+| `dCT_um`, `CT_um` | les mêmes, avec l'épaisseur du **champ entier** |
+
+Et selon **deux estimateurs** :
+
+* **par one-cycle** — un ajustement par (one-cycle, cas, σ, bande, abscisse,
+  agrégat), soit 5 ou 6 points chacun. La pente d'un seul one-cycle n'est pas un
+  résultat ; c'est leur distribution qui en est un ;
+* **poolée** — un ajustement par condition, sur tous les couples (one-cycle, bin),
+  avec sa p-valeur. C'est ce que tracent les volcanos.
+
+::: {.callout-important}
+## Pourquoi les deux estimateurs, et pas seulement le plus stable
+
+À l'intérieur d'un one-cycle, $\Delta CT = CT - CT_{\text{réf}}$ où la référence
+est une **constante** : les deux ajustements sont mathématiquement le même, seule
+l'ordonnée change. La distinction « suit-il le gonflement » / « dépend-il de
+l'épaisseur » n'a donc de sens qu'en **poolant** les one-cycles, où la référence
+varie d'un cycle à l'autre.
+
+La page [Stress–strain](sans-stress-strain.qmd) montre que la dégénérescence
+**survit quand même** au pooling — les pentes poolées diffèrent de 0,6 % — et ce
+constat n'est vérifiable que parce que les deux versions sont publiées.
+:::
+
+## 7. Le portail de validité des one-cycles
+
+Presque la moitié des one-cycles sont écartés, sur **quatre critères** :
+
+| critère | seuil | garde |
+|:--|:--|--:|
+| pulsatilité $\|\Delta CT\| / CT$ | < 5 % | 79,6 % |
+| phase valide : $p$ de la corrélation CT / pouls, support **temporel** | < 0,05 | 67,5 % |
+| images dans le bin le plus pauvre | ≥ 5 | 83,4 % |
+| jacobien non replié, évalué à σ ≥ 10 | ≤ 0 % de pixels | 100 % |
+| **les quatre** | | **48,2 %** |
+
+Une condition tombant sous **3 one-cycles valides** est écartée en entier : il
+reste **394 one-cycles sur 76 vidéos**, soit 17 336 recalages.
+
+::: {.callout-important}
+## Aucun critère ne regarde le strain, et c'est ce qui rend le filtrage légitime
+
+Écarter les one-cycles dont le strain s'écarte des autres fabriquerait la
+cohérence qu'on prétend ensuite mesurer, et ce degré de liberté échapperait
+entièrement à la correction de Benjamini-Hochberg. Les quatre critères sont donc
+calculables **sans avoir vu une seule carte de strain** : trois portent sur les
+masques et sur la phase, le quatrième sur la régularité de la transformation.
+
+Deux détails comptent :
+
+**Le critère de phase est lu en $p$, pas en $r$ signé.** Le signe du pouls est
+fixé arbitrairement par la décomposition SVD et n'est comparable ni d'une
+condition à l'autre, ni d'un one-cycle au suivant.
+
+**Le jacobien est évalué à σ ≥ 10 seulement.** À σ = 5 il se replie sur jusqu'à
+1,5 % des pixels ; faire dépendre le portail de σ donnerait un jeu de one-cycles
+*différent par σ*, et l'on ne pourrait plus comparer les σ entre eux. Le portail
+doit rester le même pour toutes les variantes — c'est pourquoi ce critère est
+inerte en pratique.
+:::
+
+## 8. Des recalages aux prédicteurs
+
+Deux agrégations successives, et elles n'utilisent pas le même estimateur :
+
+**Des one-cycles à la condition — la médiane.** Sur une condition courte, un
+one-cycle peut n'avoir que 4 images par bin ; son strain est alors une valeur
+aberrante qu'il ne faut pas laisser tirer la condition entière.
+
+**Des réplicats au sujet — la moyenne.** À ce niveau, les réplicats sont 1 à 5
+mesures du même œil dans la même séance, **déjà débruitées** par la médiane
+précédente : la moyenne est l'estimateur naturel de leur valeur commune.
+
+Chaque prédicteur existe alors en trois **vues** : `before` (peut-on prédire ?),
+`after` (le paramètre a-t-il bougé comme la rétine ?) et leur différence.
+
+Le panel final compte **2 113 prédicteurs distincts**, répartis en sept familles :
+
+| famille | ce qu'elle contient |
+|:--|:--|
+| `strain` | les trois agrégats par bande, plus `CT_region_um` |
+| `pente` | pentes et coefficients $r$, estimateur **par one-cycle** |
+| `pente_pool` | les mêmes, estimateur **poolé** |
+| `ct_pouls` | corrélations et covariances CT / pouls, deux supports |
+| `qc` | jacobien, $\|u\|_{max}$, gain de RMS — contrôle du recalage |
+| `pouls` | qualité de l'extraction du pouls (témoin) |
+| `rigidite` | $k$ de Sayah, $\Delta CT$, $CT$, $\Delta V$ — le panel historique |
+
+Les deux dernières ne passent pas par les démons. Elles sont là comme **échelle
+de lecture** : si des indicateurs de qualité de signal prédisent le SANS mieux
+que le strain, c'est un avertissement, pas un résultat.
+
+::: {.callout-note}
+## Un détail qui évite de gonfler le nombre de tests
+
+`CT_region_um` est une mesure sur les **masques** : elle ne dépend pas de σ. La
+publier dans la boucle des σ la répéterait à l'identique quatre fois, ce qui
+durcirait la correction de Benjamini-Hochberg pour tout le monde sans apporter la
+moindre information. Elle n'est donc écrite qu'**une fois** par (condition, cas,
+bande).
+:::
+
+## 9. Les statistiques
+
+### Répétabilité : deux réplicats, trois échelles de temps
+
+**L'ICC** porte sur les réplicats d'une **même séance**. Trois variantes sont
+rapportées ensemble, comme le recommandent Liljequist et coll. (2019) : ICC(1,1)
+suppose les réplicats interchangeables, **ICC(A,1)** mesure l'accord *absolu*,
+ICC(C,1) la *consistance* des rangs. C'est ICC(A,1) qui est tracé — pour un
+biomarqueur, ce qui compte est de retrouver la même **valeur**, pas seulement le
+même rang. Un ICC(C,1) très supérieur à ICC(A,1) signale un biais systématique
+entre réplicats.
+
+`pingouin` exigeant un plan **équilibré**, l'ICC est calculé une **paire** à la
+fois (réplicat 1 vs 2, 1 vs 3, …), chacune restreinte aux sujets qui possèdent
+bien les deux. Le rang du réplicat sert de « rater » — l'ordre alphabétique du
+nom de condition, jamais le chiffre du nom.
+
+**Les composantes de variance** viennent d'une ANOVA à un facteur sur le plan
+**déséquilibré**, tous les réplicats à la fois. Elles donnent ce que l'ICC ne
+donne pas : l'écart-type de répétabilité *dans l'unité du paramètre*, le
+coefficient de répétabilité $2{,}77 \times sd_{intra}$ (Bland & Altman) et le
+**CV intra-sujet**.
+
+$\sigma^2_{inter}$ est estimée par $(MS_B - MS_W)/n_0$, une différence qui peut
+sortir **négative** quand la dispersion entre sujets est plus petite que le bruit
+de mesure. Elle est laissée telle quelle plutôt que ramenée à zéro : c'est
+exactement le cas qu'il faut voir — le paramètre ne sépare alors pas les sujets,
+et lui corréler une issue n'a pas de sens.
+
+**La seconde définition du réplicat : le one-cycle.** Un battement replié est
+lui aussi une mesure répétée — deux one-cycles d'une même vidéo sont deux mesures
+du même œil dans la même seconde. La cible n'est alors plus le sujet mais la
+**vidéo**, et le rang du one-cycle sert de « rater ». Cette lecture est publiée
+dans `repeatability_one_cycles.csv`, à partir du panel non agrégé
+`predictors_one_cycle.csv`, avec exactement les mêmes estimateurs que ci-dessus
+(mêmes trois ICC par paire, mêmes composantes de variance sur le plan
+déséquilibré) et une colonne `cible` qui vaut `condition`. Trois familles en sont
+structurellement absentes : `pente_pool`, `pouls` et `rigidite` n'existent qu'à
+l'échelle de la vidéo. Le nombre de paires y est borné à quatre (1v2 à 1v5) :
+au-delà, une paire ne porte plus que quelques vidéos.
+
+Les deux définitions ne mesurent **pas** la même chose et aucune ne remplace
+l'autre. Entre deux acquisitions il y a l'œil, la séance et la dérive du
+matériel ; entre deux battements, il n'y a que le battement. L'ICC par one-cycle
+est un **plancher de bruit** — un paramètre qui échoue déjà là ne peut rien
+réussir plus loin — et la page
+[Repeatability](sans-repeatability.qmd#une-autre-définition-du-réplicat-les-one-cycles-dune-même-vidéo)
+montre que l'accord y dépend surtout de l'**écart entre les deux battements
+comparés**, ce qui interdit de lire la seule paire 1v2.
+
+**La stabilité avant/après le vol** est une troisième répétabilité, à une tout
+autre échelle : le même œil du même astronaute, à plusieurs mois d'intervalle
+avec un vol au milieu. Elle ne remplace pas l'ICC et une valeur basse y est
+ambiguë — un paramètre de *trait* doit rester corrélé, un paramètre qui *répond*
+au vol doit se décorréler. Seul l'ICC, mesuré à court terme, sépare les deux.
+
+### Corrélations et correction
+
+Pearson **et** Spearman sont rapportés pour chaque couple (prédicteur, vue) contre
+chaque issue : sur 12 à 18 sujets, un seul point extrême suffit à fabriquer un
+Pearson élevé, et l'écart entre les deux le révèle. Moins de 4 sujets appariés,
+et la corrélation n'est pas calculée.
+
+**Trois corrections de Benjamini-Hochberg** sont calculées, de la plus stricte à
+la plus indulgente, et il faut les trois :
+
+* `pearson_q` — sur **toute** la table, les 37 872 tests. C'est la lecture
+  conservatrice, et la seule honnête si l'on considère que l'étude a réellement
+  essayé tous ces prédicteurs sans hypothèse préalable ;
+* `pearson_q_famille` — à l'intérieur de chaque famille. Le décompte global est
+  dominé par les milliers de variantes de pente, fortement redondantes entre
+  elles ; les y noyer pénaliserait injustement les quatre prédicteurs de la
+  famille `rigidite`, qui constituent une hypothèse ancienne et étroite ;
+* `pearson_q_categorie` — à l'intérieur de **(catégorie, vue, issue)**. Le panel
+  se lit en **trois catégories**, une page de prédiction chacune, et c'est à
+  cette échelle-là que la question est réellement posée :
+
+  | catégorie | ce qu'elle contient | tests par (vue, issue) |
+  |:--|:--|--:|
+  | `rigidite` | le $k$ de Sayah et ses entrées, les métriques CT / pouls, l'épaisseur de chaque bande | 22 |
+  | `strain` | les trois agrégats du strain rétinien, bande par bande | 120 |
+  | `viscosite` | les pentes du strain et leurs coefficients $r$, deux estimateurs, quatre abscisses | 1 920 |
+
+  Elle ne corrige ni les six issues, ni les trois vues, ni les trois catégories
+  entre elles : c'est le prix d'un graphique lisible par ΔTRT et par page, et
+  cela en fait la lecture **la plus favorable aux marqueurs**. Deux familles
+  n'ont pas de catégorie et ne sont affichées nulle part — `qc` (paramètres de
+  recalage) et `pouls` (qualité de l'extraction du pouls) — leur colonne
+  `categorie` est vide et la q-valeur vaut `NaN`. Le découpage est défini par
+  `categorie_de` dans `compute_sans_predictors.py`, dupliqué en `CATEGORIES_P4`
+  dans `figures_sans_predictors/make_figures.py` — les deux doivent bouger
+  ensemble.
+
+  **Une catégorie petite est une correction douce.** Les 22 tests de la rigidité
+  sont en outre fortement redondants — la même épaisseur relue sur cinq bandes et
+  deux références —, ce qui rend sa q-valeur anti-conservatrice. C'est dit sur la
+  page concernée, la seule où des tests la franchissent.
+
+**L'écart entre les colonnes dit exactement combien l'ampleur du balayage a
+coûté.** Une corrélation qui ne passe que le seuil par famille est une piste, pas
+un résultat ; une corrélation qui ne passe même pas `pearson_q_categorie` — la
+plus douce des trois — n'est rien du tout. Sur les trois catégories, seule
+`rigidite` en compte, et aucune ne passe la correction stricte.
+
+::: {.callout-warning}
+## L'ordre de grandeur du problème de tests multiples
+
+Le panel produit **37 872 corrélations**. À ce régime, des $r$ de 0,7 apparaissent
+par pur hasard, et l'on attend environ 1 578 résultats à $p < 0{,}05$ **sans
+aucun effet réel**.
+
+C'est pourquoi aucun $r$ n'est lu seul sur ces pages, et pourquoi le nombre de
+corrélations nominalement significatives est systématiquement comparé à ce que le
+hasard donnerait — un compte *inférieur* au hasard, comme celui qu'on observe,
+est aussi informatif qu'un compte supérieur.
+:::
+
+## 10. Coût de calcul
+
+Le lot des démons est la seule étape coûteuse : **10,69 h** de temps écoulé pour
+**103,1 h** de calcul cumulé, sur 10 processus × 2 fils ITK.
+
+Ce partage n'est pas arbitraire. Le passage à l'échelle des fils de SimpleITK est
+plat au-delà de 8 sur une image de cette taille, alors que le débit se lit par
+**processus** : 1 × 20 fils donne 0,047 recalage/s, 2 × 8 en donne 0,126, 5 × 4 en
+donne 0,296 et **10 × 2 en donne 0,468**. Un fil de plus ne sert presque à rien,
+un processus de plus sert pleinement.
+
+Sous dix processus concurrents, un recalage coûte **8,7 s** contre 5,4 s en
+isolation à deux fils : la contention mémoire coûte 60 %, et c'est déjà pris en
+compte dans le choix ci-dessus.
+
+Deux précautions rendent le lot exploitable :
+
+* la **préparation** d'une condition culmine à ~2 Go, la phase des démons à
+  150 Mo seulement. Dix préparations simultanées partiraient en swap au démarrage,
+  quand les dix workers démarrent ensemble : un sémaphore
+  (`MAX_CONCURRENT_PREP = 3`) l'empêche, pour un coût nul — la préparation ne
+  pèse que 1 % du temps d'une condition ;
+* les tables sont **réécrites après chaque condition terminée**. Le lot est
+  interruptible et reprend où il s'est arrêté, et une condition en échec ne
+  l'arrête jamais.
+
+**Aucun champ de déplacement n'est conservé** — ce serait environ 250 Go. Pour
+rouvrir une condition et régénérer ses cartes de strain, `replay_demons_strain.py`
+rejoue la chaîne sur une condition en gardant cette fois les champs, le jacobien
+et les images recalées.
+
+## 11. Ce que la méthode ne fait pas
+
+Les limites suivantes sont **assumées par construction**, et il faut les avoir en
+tête avant de lire un résultat de cette section.
+
+**Elle mesure le strain sur six points.** Le repliement à 6 bins est le support de
+toute la mesure, et la page [Pulse comparison](sans-pulse-comparison.qmd) montre
+que la relation CT–pouls y est à peine au-dessus du hasard, alors qu'elle est
+franche sur le support temporel. Le repliement jette l'essentiel de la preuve que
+la vidéo contient.
+
+**Elle ne teste pas si les démons *peuvent* mesurer 1 %.** Une pulsation de 3 µm
+sur 410 µm est une déformation de moins de 1 %, sur du speckle dont la choroïde
+offre 3,5 fois moins de structure axiale que la rétine. La validation mesure ce
+que la chaîne retrouve d'une dilatation connue, mais elle ne sépare pas « les
+démons n'y arrivent pas » de « le signal n'est pas dans les données ».
+
+**Elle n'a pas la puissance de conclure au négatif.** Dix-huit sujets ne
+permettent de détecter, à 80 % de puissance et sans correction, que des $r$
+supérieurs à 0,6 environ. Un résultat négatif à cette taille ne réfute pas
+l'hypothèse : il dit que la cohorte est trop petite pour la tester.
+
+**Elle fixe la segmentation.** Toute la chaîne repose sur une variante de masque
+unique. Une erreur de segmentation systématique se propagerait à l'épaisseur, au
+portail et au strain sans qu'aucun contrôle interne ne la voie — et la
+[validation](sans-stress-strain.qmd#validation-le-strain-retrouve-t-il-une-dilatation-connue)
+montre précisément que là où la segmentation échoue, l'erreur gonfle *à la fois*
+le ΔCT lu et la déformation ajustée.
+
+## Reproduire
+
+Dans cet ordre, depuis la racine du dépôt, avec le noyau `pyOR` :
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_demons_strain.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_ct_pulse_traces.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_sans_predictors.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe reveal_quarto_presentations/figures_sans_predictors/make_figures.py
+```
+
+Le premier accepte `OVERWRITE` (tout refaire) et `LIMIT` (les $N$ premières
+conditions, pour un essai). **`OVERWRITE = True` écrase les cinq CSV** : les
+sauvegarder avant, et remettre la constante à `False` ensuite, faute de quoi la
+reprise après interruption ne fonctionne plus.
+
+### Les tables produites
+
+Sous `SegmentationVariations/<variante>/demons_strain/` :
+
+| table | une ligne par | lignes |
+|:--|:--|--:|
+| `conditions.csv` | condition : statut, échelles, crop, temps par étape | 104 |
+| `one_cycles.csv` | (condition, one-cycle) : bin de référence, CT, CT / pouls | 876 |
+| `bins.csv` | (…, cas, σ, bin) : CT, ΔCT, diagnostics, strain | 38 496 |
+| `regions.csv` | (…, bande) : CT et ΔCT de la bande, les trois agrégats | 192 480 |
+| `slopes.csv` | (…, abscisse, agrégat) : pente, ordonnée, $r$ | 420 000 |
+
+Sous `sans_predictors/` : `predictors.csv` (format long), `repeatability.csv`,
+`repeatability_one_cycles.csv` et `predictors_one_cycle.csv` (les one-cycles
+comme réplicats), `sans_correlations.csv` — qui porte les trois q-valeurs
+décrites plus haut —,
+`pooled_slopes.csv`, `outcomes.csv` — les six issues seules, une ligne par
+sujet, sans les prédicteurs —, `one_cycle_filter.csv` — **la seule
+définition du portail**, que les figures relisent pour porter exactement le même
+jeu de one-cycles que les prédicteurs —, `stability.csv`, `subject_values.csv`,
+`rigidity_cache.csv` et `summary.json`.
+
+`subject_values.csv` mérite une mention : il donne, pour chaque prédicteur et
+chaque sujet, la valeur avant, après, leur différence et les six issues. Avec une
+douzaine de points, un seul sujet extrême suffit à fabriquer une corrélation, et
+il faut pouvoir le voir.
+
+::: {.source-note}
+Paramètres et valeurs repris de `Astronauts/compute_demons_strain.py`,
+`compute_ct_pulse_traces.py` et `compute_sans_predictors.py` ; chiffres de
+cohorte et de coût lus dans `demons_strain/conditions.csv` et
+`figures_sans_predictors/resume.txt`.
+:::

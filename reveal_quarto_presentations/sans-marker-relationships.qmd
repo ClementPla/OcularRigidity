@@ -1,0 +1,176 @@
+---
+title: "Prediction of SANS : marker relationships"
+subtitle: "Les issues cliniques seules — comment les ΔTRT se tiennent entre eux et avec le ΔAL, comment ils se répartissent, et ce que la base contient vraiment"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Les trois pages de prédiction —
+**[rigidité](sans-prediction-rigidity.qmd)**, **[strain](sans-prediction-strain.qmd)**,
+**[viscosité](sans-prediction-viscosity.qmd)** — corrèlent des **marqueurs OCT** à
+des **issues cliniques**. Celle-ci ne regarde que les issues : aucun strain,
+aucune segmentation, rien qui vienne de la chaîne de traitement. Uniquement ce
+que `sansori_db.db` contient.
+
+Elle a été écrite en dernier, et elle aurait dû l'être en premier. Les quatre
+quadrants du TRT sont traités comme quatre issues distinctes dans tout le panel ;
+la première figure montre qu'ils ne le sont pas.
+
+## Les six issues, les unes contre les autres
+
+Rappel des définitions (voir [Methods](sans-methods.qmd)) : cinq mesures de
+**gonflement rétinien**, $\Delta TRT_x = TRT250_x(\text{après}) -
+TRT250_x(\text{avant})$ pour les quatre quadrants plus leur moyenne, et une
+mesure d'**aplatissement du globe**, $\Delta AL = AL(\text{après}) -
+AL(\text{avant})$.
+
+{{< include figures_sans_predictors/p5_corr_issues.qmd >}}
+
+**Les quadrants se groupent deux par deux.** Sur les six paires
+quadrant × quadrant, deux se détachent nettement et survivent à la correction :
+
+* **ΔTRT I × ΔTRT T** — $r = +0{,}82$, $q < 0{,}001$ ;
+* **ΔTRT S × ΔTRT N** — $r = +0{,}74$, $q = 0{,}001$.
+
+Les quatre autres restent entre $+0{,}42$ et $+0{,}53$ et ne passent pas
+($q \geq 0{,}054$). Autrement dit : l'axe **inférieur–temporal** et l'axe
+**supérieur–nasal** bougent chacun d'un bloc, mais les deux axes ne bougent pas
+ensemble. La médiane des six paires vaut $+0{,}48$.
+
+::: {.callout-important}
+## Ce que cela change pour les pages de prédiction
+
+Le $q$ « par catégorie » publié sur les trois pages de prédiction est calculé **à
+issue fixée** : il corrige le nombre de marqueurs essayés, jamais le fait d'en
+avoir essayé cinq (puis six). Cette figure dit pourquoi ce choix est
+défendable — et où il s'arrête.
+
+**Défendable** : cinq issues corrélées à $+0{,}42$ à $+0{,}84$ ne sont pas cinq
+tests indépendants. Les corriger ensemble comme s'ils l'étaient serait
+excessivement conservateur.
+
+**Où cela s'arrête** : le résultat central de la section — l'épaisseur
+choroïdienne contre le **ΔTRT nasal**, page
+[rigidité](sans-prediction-rigidity.qmd) — se lit maintenant autrement. Le
+quadrant nasal n'est pas un quadrant quelconque parmi cinq : il est à
+$r = +0{,}74$ de son voisin supérieur. Qu'il « sorte seul » demande donc une
+explication que la seule dépendance entre quadrants ne donne pas.
+:::
+
+**Le ΔAL ne suit aucun quadrant de façon convaincante.** Sa plus forte liaison
+est avec le ΔTRT nasal — $r = -0{,}54$, $p = 0{,}033$ — mais sur les 15 paires
+corrigées ensemble, $q = 0{,}061$ : **elle ne passe pas**. Viennent ensuite le
+quadrant supérieur ($-0{,}45$) et la moyenne ($-0{,}43$), puis plus rien
+($-0{,}19$ et $-0{,}18$). Le signe est cohérent — plus le globe s'aplatit, plus
+la rétine gonfle — mais la relation est faible et ne tient que sur un axe.
+
+C'est ce qui justifie de garder le ΔAL comme **issue séparée** plutôt que de le
+fondre dans un score unique : il n'est pas redondant avec le gonflement rétinien.
+
+{{< include figures_sans_predictors/p5_tab_corr.qmd >}}
+
+## Comment les ΔTRT se répartissent
+
+Les tranches demandées sont **0 – 20 µm**, **20 – 50 µm** et **≥ 50 µm**.
+
+::: {.callout-warning}
+## Une quatrième tranche est indispensable : le TRT **diminue** parfois
+
+Huit yeux sur les 90 (5 issues × 18 yeux) ont un ΔTRT **négatif** — la rétine
+s'est amincie après le vol, pas épaissie. Trois sur le quadrant nasal, trois sur
+le temporal, un sur le supérieur, un sur la moyenne ; le quadrant inférieur est
+le seul où tout le monde gonfle.
+
+Ces yeux n'appartiennent à aucune des trois tranches demandées. Les ranger dans
+« 0 – 20 » les compterait comme des gonflements faibles alors que ce sont des
+amincissements ; les laisser tomber les ferait disparaître sans trace, et les
+effectifs affichés ne sommeraient plus à 18. Une tranche **« < 0 µm »** est donc
+ajoutée en tête.
+
+Symétriquement, la tranche **« ≥ 50 µm » est vide** sur les cinq issues : le
+maximum de la cohorte est 35,0 µm. Elle est affichée quand même, vide.
+:::
+
+{{< include figures_sans_predictors/p5_hist_tranches.qmd >}}
+
+**Le quadrant nasal est le plus étalé** : 3 yeux sous 0, 9 entre 0 et 20, et
+**6 au-dessus de 20 µm** — le plus gros contingent de la tranche haute. Le
+temporal est le plus tassé (2 seulement au-dessus de 20), l'inférieur le plus
+uniformément positif (aucun négatif). Cette dispersion inégale explique en partie
+pourquoi les corrélations de la section se comportent différemment d'un quadrant
+à l'autre : à effectif égal, une issue étalée donne mécaniquement des $r$ plus
+stables qu'une issue tassée.
+
+{{< include figures_sans_predictors/p5_tab_tranches.qmd >}}
+
+## Ce que la base contient, patient par patient
+
+Une ligne par astronaute, les deux yeux dans la même cellule. Cette mise en page
+est possible parce que **le manque est toujours au niveau de l'astronaute** :
+sur les quatorze, aucun n'a un œil renseigné et l'autre pas.
+
+{{< include figures_sans_predictors/p5_tab_donnees.qmd >}}
+
+Sur **14 astronautes** :
+
+* **8 sont complets** — les quatre quadrants avant et après, plus la longueur
+  axiale aux deux visites ;
+* **3 n'ont rien du tout** (n° 03, 07 et 14) : aucune mesure clinique dans la
+  base. Deux d'entre eux n'ont pas non plus de `Code` dans la table
+  `Astronauts`, ce qui est cohérent — ils n'ont jamais été appariés à des
+  mesures ;
+* **3 sont partiels**, et de deux façons différentes :
+  * n° **09** : le TRT complet, **pas de longueur axiale** (2 cases sur 10) ;
+  * n° **10** et **13** : la longueur axiale, **aucun TRT** (8 cases sur 10).
+
+::: {.callout-note}
+## D'où viennent les effectifs cités partout ailleurs
+
+Ce tableau explique les nombres qui reviennent dans toute la section :
+
+| | astronautes | yeux |
+|:--|--:|--:|
+| dossiers OCT sur `E:/SANSORI` | 14 | 28 |
+| avec un ΔTRT | 9 | 18 |
+| avec un ΔAL | 10 | 20 |
+| avec **les deux** | 8 | 16 |
+
+Le ΔAL couvre **deux yeux de plus** que le ΔTRT, et ce ne sont pas les mêmes
+sujets : les astronautes 10 et 13 n'entrent que dans les analyses de ΔAL, le
+n° 09 seulement dans celles de ΔTRT. Une comparaison directe des deux marqueurs
+porte donc sur 16 yeux, pas sur 18 ni sur 20.
+:::
+
+## Ce que la page conclut
+
+Trois choses, dont deux qui auraient dû être connues avant de lancer le panel.
+
+1. **Les cinq ΔTRT ne sont pas cinq issues indépendantes.** Deux axes, pas
+   quatre quadrants. Toute lecture qui compte « une issue sur cinq a marché »
+   surestime le nombre d'essais indépendants — dans les deux sens : la
+   correction est moins nécessaire qu'il n'y paraît, mais un résultat isolé sur
+   un quadrant est moins isolé qu'il n'y paraît aussi.
+2. **Le ΔAL apporte une information distincte.** Faiblement lié au gonflement
+   nasal, indépendant des trois autres quadrants, et mesuré sur un jeu de sujets
+   partiellement différent. Le garder séparé était le bon choix.
+3. **La moitié de la cohorte OCT n'a pas d'issue exploitable.** 28 yeux
+   segmentés et recalés, 16 utilisables pour comparer les deux marqueurs. C'est
+   la contrainte dominante de toute la section, avant toute question de méthode.
+
+## Reproduire
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_sans_predictors.py
+```
+
+```bash
+python reveal_quarto_presentations/figures_sans_predictors/make_figures.py
+```
+
+::: {.source-note}
+Tout sur cette page vient de `sans_predictors/outcomes.csv` (une ligne par sujet,
+les six issues et les valeurs brutes des deux visites), écrit par
+`Astronauts/compute_sans_predictors.py` à partir de la table `Measurements` de
+`E:/SANSORI/sansori_db.db`. Matrice, histogrammes et tables générés par
+`figures_sans_predictors/make_figures.py` ; chiffres cités repris de
+`figures_sans_predictors/resume.txt`, clés `p5_*`.
+:::

@@ -173,3 +173,54 @@
   opacity: 0.75;
   margin: 0.75rem 0 1.5rem 0;
 }
+
+/* Marqueurs signales dans les tables de « Prediction of SANS » : |r| >= 0,2
+   avec au moins une issue ET ICC(A,1) >= 0,45. Le vert de la palette des
+   figures, pour que le site reste d'une seule couleur d'accent. Un poids plus
+   fort plutot qu'une couleur seule : la couleur seule ne passe pas le critere
+   d'accessibilite, et elle se lit mal sur le theme clair. */
+/* `!important` et selecteur descendant : Bootstrap pose la couleur du texte sur
+   les CELLULES (`.table > :not(caption) > * > *`), ce qui l'emporte sur une
+   simple classe -- meme piege que pour `.table-scroll` ci-dessus. Sans cela le
+   vert ne s'applique pas du tout dans les tables. */
+.marqueur-retenu,
+td .marqueur-retenu,
+th .marqueur-retenu {
+  color: #1e8a55 !important;
+  font-weight: 600 !important;
+}
+
+/* Donnee clinique absente de sansori_db.db (page « Marker relationships »).
+   Meme piege Bootstrap que ci-dessus, d'ou le selecteur descendant et le
+   `!important`. Le rouge seul ne suffit pas a signaler l'information : la
+   cellule porte aussi le mot « manquant », pour rester lisible en niveaux de
+   gris, a l'impression et pour un lecteur daltonien. */
+.donnee-manquante,
+td .donnee-manquante,
+th .donnee-manquante {
+  color: #e5534b !important;
+  font-weight: 600 !important;
+}
+
+/* Diagrammes mermaid (page « Methods ») sur le THEME SOMBRE.
+   Le theme mermaid par defaut de Quarto ecrit les libelles en #375a7f, un bleu
+   sombre pose sur le fond #222 du theme darkly : le contraste tombe autour de
+   2:1, donc illisible. Les figures Plotly du site resolvent le meme probleme en
+   ecrivant leur texte en gris clair ; on aligne mermaid dessus.
+   `fill` autant que `color` : les libelles sont des <span> dans un
+   <foreignObject> quand le navigateur le supporte, et des <text> SVG sinon. */
+body.quarto-dark svg[id^="mermaid"] .nodeLabel,
+body.quarto-dark svg[id^="mermaid"] .edgeLabel,
+body.quarto-dark svg[id^="mermaid"] .cluster-label,
+body.quarto-dark svg[id^="mermaid"] text {
+  color: #c9c9c9 !important;
+  fill: #c9c9c9 !important;
+}
+
+/* Le fond des etiquettes d'aretes est opaque et clair par defaut : il ferait
+   une tache blanche sur le theme sombre. */
+body.quarto-dark svg[id^="mermaid"] .edgeLabel rect,
+body.quarto-dark svg[id^="mermaid"] .labelBkg {
+  fill: #222 !important;
+  background-color: #222 !important;
+}

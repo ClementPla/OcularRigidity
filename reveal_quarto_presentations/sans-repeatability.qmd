@@ -1,0 +1,569 @@
+---
+title: "Repeatability"
+subtitle: "Ce que les réplicats disent de la reproductibilité des paramètres issus des démons — d'abord les acquisitions répétées du même œil dans la même séance, puis les one-cycles d'une même vidéo — par agrégat du strain, par régularisation, par référence, par bande et pente par pente"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Un paramètre qui ne se mesure pas deux fois pareil ne peut rien prédire, quelle
+que soit la corrélation qu'il affiche. Cette page vient donc **avant** la
+prédiction du SANS, pas après.
+
+Elle ne porte que sur le **strain rétinien** — dans ses **trois agrégats** :
+moyenne, médiane et p95 signé, définis sur la page
+[Stress–strain](sans-stress-strain.qmd) — et seulement sur les one-cycles
+retenus par le [portail de validité](sans-pulse-comparison.qmd#le-portail-de-validité-des-one-cycles) —
+394 sur 876, répartis sur 76 vidéos. Le strain choroïdien a été retiré de toute
+l'analyse ; il ne subsiste qu'à la
+[validation](sans-stress-strain.qmd#validation-le-strain-retrouve-t-il-une-dilatation-connue),
+comme contrôle de méthode. L'**épaisseur** choroïdienne, elle, reste partout :
+c'est l'abscisse de l'analyse.
+
+## Ce qui sert de réplicat
+
+Deux définitions du réplicat sont calculées et publiées côte à côte. Celle-ci
+d'abord — l'acquisition répétée — puis, plus bas, le
+[one-cycle](#une-autre-définition-du-réplicat-les-one-cycles-dune-même-vidéo),
+qui prend pour cible la vidéo plutôt que le sujet.
+
+Plusieurs conditions sont des acquisitions répétées du **même œil dans la même
+séance** — `..._OD1`, `..._OD2`, jusqu'à cinq pour certains sujets. Rien ne les
+distingue que le bruit de mesure : ni la physiologie, ni le moment, ni l'œil. Un
+sujet est ici un couple (dossier astronaute, œil), jamais le code clinique, pour
+ne pas perdre les sujets absents de la base.
+
+Le rang du réplicat sert de « rater » (ordre alphabétique du nom de condition,
+donc `OD1` → 0, `OD2` → 1). Le chiffre du nom n'est jamais lu.
+
+::: {.callout-note}
+## Deux mesures qui ne disent pas la même chose
+
+**L'ICC** est une répétabilité *relative* : la part de variance attribuable aux
+différences entre sujets. Trois variantes sont calculées et rapportées ensemble,
+comme le recommandent Liljequist et coll. (2019) — ICC(1,1) suppose les réplicats
+interchangeables, **ICC(A,1)** mesure l'accord *absolu*, ICC(C,1) la *consistance*
+des rangs. C'est ICC(A,1) qui est tracé : pour un biomarqueur, ce qui compte est
+de retrouver la même **valeur**, pas seulement le même rang. `pingouin` exigeant
+un plan équilibré, il est calculé une **paire** à la fois, chacune restreinte aux
+sujets qui possèdent bien les deux réplicats.
+
+**Le CV intra-sujet** est une répétabilité *absolue* : l'écart-type du bruit de
+mesure rapporté à la valeur mesurée, issu de l'ANOVA à un facteur sur le plan
+déséquilibré — tous les réplicats à la fois, cette fois.
+
+Les deux sont nécessaires, et sur cette page elles ne désignent jamais le même
+gagnant. Un ICC élevé sur une cohorte très dispersée peut cacher une
+répétabilité absolue médiocre ; un CV honnête sur un paramètre qui ne varie pas
+entre sujets ne sert à rien.
+:::
+
+## Une boîte par régularisation et par référence
+
+{{< include figures_sans_predictors/p3_icc_cv.qmd >}}
+
+{{< include figures_sans_predictors/tab_repeat.qmd >}}
+
+## Ce que les boîtes montrent
+
+**La régularisation change peu, et dans le bon sens.** Avec la référence locale,
+l'ICC médian monte de $+0{,}09$ à σ = 5 jusqu'à $+0{,}15$ à σ = 10, puis n'en
+bouge plus ($+0{,}15$ à σ = 15), pendant que le CV descend de 364 % à 255 % —
+cohérent avec le contrôle de la page
+[Stress–strain](sans-stress-strain.qmd), où σ = 5 laisse les démons ajuster le
+speckle.
+
+**Le style de référence, lui, ne fait plus d'arbitrage : il perd.** Les deux
+références donnent désormais le même ICC ($+0{,}05$ à $+0{,}19$ pour la globale,
+$+0{,}09$ à $+0{,}15$ pour la locale), mais la globale a un CV nettement pire
+(406 à 481 % contre 255 à 364 %). L'avantage d'ICC qu'elle avait dans les
+versions précédentes de cette page a disparu en même temps qu'on a ajouté les
+agrégats : moyenner les bins de référence réduit le bruit de la référence, mais
+introduit la dérive lente de l'œil dans la mesure, et il ne reste que le second
+effet.
+
+Car dans les deux cas le verdict tient en deux chiffres. L'**ICC(A,1) médian**
+vaut $+0{,}13$, très en dessous du seuil de 0,75 au-delà duquel on parle d'une
+bonne reproductibilité. Le **CV intra-sujet médian atteint 359 %** : l'écart
+entre deux mesures du même œil vaut plus de trois fois la valeur mesurée.
+
+Par contraste, les paramètres qui ne passent pas par les démons ont un ICC(A,1)
+médian de $+0{,}42$, dont **17,1 %** dépassent 0,75. L'épaisseur choroïdienne, en
+particulier, atteint **0,99** au centre du champ. La segmentation est
+reproductible ; c'est l'étape de recalage déformable qui détruit la
+répétabilité.
+
+## L'agrégat du strain
+
+La moyenne et la médiane résument un **centre**, le p95 une **queue**. Rien
+n'oblige les trois à se mesurer aussi bien : le centre du strain est dominé par
+le biais négatif de la régularisation, et l'on pourrait aussi bien soutenir que
+la queue en souffre moins — elle est loin du biais — ou davantage — elle est
+faite des pixels les moins contraints du champ.
+
+Chaque boîte réunit tous les prédicteurs issus des démons portant cet agrégat :
+strain par bande, pentes par one-cycle et pentes poolées — 1 360 valeurs d'ICC
+chacun.
+
+{{< include figures_sans_predictors/p3_agregats.qmd >}}
+
+::: {.callout-important}
+## Le p95 est le plus mal mesuré des trois
+
+| agrégat | ICC(A,1) médian | CV intra médian | variance inter < 0 |
+|:--|--:|--:|--:|
+| moyenne | $+0{,}20$ | 300 % | 28,3 % |
+| médiane | $+0{,}16$ | 297 % | 31,2 % |
+| **p95 signé** | $+0{,}05$ | **533 %** | **42,4 %** |
+
+L'ICC et la fraction de variances dégénérées concordent : tous deux désignent le
+p95 comme le pire et la moyenne comme le moins mauvais. Le p95 perd les trois
+quarts de l'ICC de la moyenne et **presque double** son CV ; la moyenne et la
+médiane, elles, ont désormais le même CV à trois points près — c'est l'ICC qui
+les sépare. Sur le p95, **plus de deux prédicteurs sur cinq** qui en dérivent
+ne séparent pas les sujets du tout.
+
+L'explication est mécanique, et elle était prévisible : le p95 est la valeur d'**un
+seul pixel** — celui dont la magnitude occupe le rang 95 %. Une moyenne sur
+quelques dizaines de milliers de pixels moyenne aussi leur bruit ; un quantile
+extrême ne moyenne rien. Il hérite en outre des pixels les moins contraints du
+champ, ceux que la page [Stress–strain](sans-stress-strain.qmd) signale comme
+vivant dans les zones sans texture.
+
+Cela ne dit encore rien de sa valeur prédictive — un paramètre bruité peut porter
+un signal — mais cela fixe le plafond de ce qu'on peut en attendre. La page
+[Prediction of SANS](sans-prediction-rigidity.qmd) — en trois pages : [rigidité](sans-prediction-rigidity.qmd), [strain](sans-prediction-strain.qmd) et [viscosité](sans-prediction-viscosity.qmd) — tranche la seconde question.
+:::
+
+## Bande par bande
+
+La région est jusqu'ici une dimension **cachée** : chaque boîte mélange les cinq
+bandes latérales. Rien n'oblige pourtant les cinq bandes à se répéter aussi bien.
+
+{{< include figures_sans_predictors/p3_regions_icc.qmd >}}
+
+{{< include figures_sans_predictors/p3_regions_cv.qmd >}}
+
+{{< include figures_sans_predictors/tab_repeat_regions.qmd >}}
+
+::: {.callout-important}
+## Le centre est la pire bande, pas la meilleure
+
+L'ICC médian par bande vaut $+0{,}22$, $+0{,}13$, $+0{,}04$, $+0{,}13$ et
+$+0{,}13$ de la bande **+2** à la bande **−2**. La bande +2 mène, le **centre**
+s'effondre, et les trois autres sont **indiscernables** — à trois centièmes près,
+c'est-à-dire à rien.
+
+La fraction de prédicteurs à **variance inter-sujets négative** — ceux qui ne
+séparent pas les sujets du tout — le confirme brutalement : **24,8 %** sur la
+bande +2, mais **44,9 %** au centre. Près d'un prédicteur central sur deux ne
+distingue pas un astronaute d'un autre.
+
+C'est contre-intuitif : le centre est la zone où la choroïde est la plus épaisse
+et où le recalage devrait être le mieux contraint. Une explication tient à la
+fovéa — la dépression fovéale y écrase la rétine, réduisant justement l'épaisseur
+de tissu sur laquelle le strain est intégré, donc le rapport signal sur bruit du
+gradient axial. Elle reste une hypothèse : rien ici ne la teste.
+:::
+
+::: {.callout-warning}
+## Ce classement a changé trois fois, et c'est un avertissement
+
+Avant le portail de validité, le centre arrivait **premier** ($+0{,}22$) et la
+bande −1 dernière. Avant le retrait du strain choroïdien, la lecture était encore
+différente — une dégradation monotone de gauche à droite. Et le **miroir de la
+numérotation pour l'œil gauche**, appliqué le 2 septembre 2026, a de nouveau
+rebattu les cartes : la bande +2 tombe de $+0{,}29$ à $+0{,}22$, la bande −1 de
+$+0{,}17$ à $+0{,}13$, et les trois bandes non centrales se rejoignent.
+
+Ce dernier changement n'est pas du même ordre que les deux premiers : il corrige
+une **erreur** — avant lui, « la bande +2 » désignait deux côtés opposés de la
+rétine selon l'œil. Les classements d'avant ne sont donc pas des variantes
+également valides, ils étaient faux. Mais il reste un avertissement : aucun de
+ces écarts n'excède ce que l'incertitude d'estimation des ICC autorise sur 12 à
+18 sujets. **Le classement des bandes n'est pas un résultat** — sauf pour le
+centre, seul rang stable à travers les quatre lectures. Ce qui tient d'un jeu à
+l'autre est le niveau général : un ICC médian autour de 0,15, très en dessous de
+l'exploitable.
+:::
+
+**L'ICC et le CV ne désignent pas la même bande.** Le CV est le plus bas sur la
+bande −1 (304 %), le plus haut sur les bandes **+2** (406 %) et **−2** (394 %) —
+l'inverse du classement par ICC pour la première. Les deux bandes extrêmes ont
+plus de dispersion entre sujets, ce qui remonte l'ICC de la première sans
+améliorer sa précision absolue.
+
+**La référence globale rattrape certaines bandes et en abîme d'autres, sans
+règle.** Son ICC passe de $+0{,}08$ à $+0{,}17$ sur la bande +1 et de $+0{,}09$ à
+$+0{,}22$ sur la bande −1 ; mais il tombe de $+0{,}24$ à $+0{,}20$ sur la bande
++2, de $+0{,}19$ à $+0{,}08$ sur la bande −2, et de $+0{,}08$ à $-0{,}03$ au
+centre. Elle gagne sur les deux bandes intermédiaires et perd sur les deux
+extrêmes — un motif qu'aucune propriété de la mesure ne prédit, et dont
+l'amplitude reste dans le bruit d'estimation.
+
+## Pente par pente, bande par bande
+
+Les figures précédentes mettent dans la même boîte tout ce que les démons
+produisent. Rien ne garantit pourtant que la pente contre l'**épaisseur** et la
+pente contre la **dilatation** se répètent aussi bien, ni que l'épaisseur *de la
+bande* vaille l'épaisseur *globale*. Ce sont ces pentes-là qui servent de
+marqueurs aux trois pages [Prediction of SANS](sans-prediction-strain.qmd).
+
+La grille croise les quatre abscisses et les cinq bandes — vingt cases — en
+gardant dans chacune l'identité de boîte du reste de la page, σ × référence.
+Chaque boîte ne réunit alors que **douze valeurs** (2 moments × 2 estimateurs ×
+3 agrégats) : les points sont tracés en clair par-dessus, et ce sont eux qu'il
+faut lire. L'agrégat s'y lit **au survol**. Les mélanger dans la même boîte est
+voulu :
+cette figure répond à « la bande et l'abscisse changent-elles quelque chose »,
+pas à « quel agrégat choisir » — c'est la section précédente et le tableau des
+$\eta^2$ qui répondent à celle-là.
+
+{{< include figures_sans_predictors/p3_pentes_icc.qmd >}}
+
+{{< include figures_sans_predictors/p3_pentes_cv.qmd >}}
+
+{{< include figures_sans_predictors/tab_repeat_pentes.qmd >}}
+
+**Un seul écart survit à tous les changements de jeu de données : la pente par
+one-cycle bat la pente poolée.** $+0{,}17$ contre $+0{,}10$ d'ICC médian, 298 %
+contre 502 % de CV. On attendrait
+qu'un ajustement sur tous les couples (one-cycle, bin) d'une condition soit plus
+stable qu'une médiane d'ajustements à cinq points. Il l'est moins, parce qu'il
+incorpore la variance de l'épaisseur **entre** one-cycles — dont la page
+[Stress–strain](sans-stress-strain.qmd) a montré qu'elle ne porte aucun signal.
+Moyenner des ajustements bruités vaut mieux que d'ajuster sur du bruit
+supplémentaire.
+
+**Le choix de l'abscisse, en revanche, ne compte plus.** Les quatre valeurs
+d'ICC médian tiennent dans $[+0{,}11\ ;\ +0{,}19]$ — l'avantage que l'abscisse
+locale avait avant filtrage a disparu.
+
+**Sept cases sur quarante dépassent un ICC de 0,40**, et elles se regroupent sur
+une seule bande : la **+2**, avec l'estimateur par one-cycle et l'abscisse de la
+bande, atteint $+0{,}62$ — la meilleure valeur de toute la page. Les quatre pires
+cases sont toutes des pentes **poolées** sur les bandes −2 et −1, à ICC négatif.
+Même $+0{,}62$ reste sous le seuil de 0,75, et une seule case sur quarante ne
+fait pas une méthode.
+
+### L'effet global de chaque réglage
+
+La grille de vingt panneaux montre tout, ce qui empêche de voir ce qui compte.
+La figure suivante répond à la seule question qui décide d'un réglage : **de
+combien l'ICC bouge-t-il quand on change ce réglage, tous les autres
+confondus ?**
+
+L'**amplitude** est l'écart entre la médiane du meilleur niveau et celle du pire :
+le gain qu'on peut espérer en choisissant bien. Le $\eta^2$ est la part de
+variance des ICC que le réglage explique : la place qu'il occupe *face au bruit*.
+
+{{< include figures_sans_predictors/p3_pentes_effets.qmd >}}
+
+{{< include figures_sans_predictors/tab_pentes_effets.qmd >}}
+
+::: {.callout-important}
+## Deux réglages comptent, cinq ne comptent pas
+
+Sur les 1 920 valeurs d'ICC :
+
+| réglage | amplitude | $\eta^2$ |
+|:--|--:|--:|
+| **bande de rétine** | $+0{,}208$ | **3,55 %** |
+| **agrégat du strain** — moyenne / médiane / p95 | $+0{,}127$ | **3,10 %** |
+| régularisation | $+0{,}094$ | 0,99 % |
+| estimateur — par one-cycle / poolée | $+0{,}072$ | 0,99 % |
+| référence locale / globale | $+0{,}058$ | 0,81 % |
+| **portée** de l'abscisse (bande / global) | $+0{,}038$ | 0,35 % |
+| **CT ou ΔCT** | $+0{,}024$ | 0,05 % |
+
+La bande et l'agrégat pèsent à eux deux plus que les cinq autres réunis, et
+l'agrégat talonne désormais la bande : **le choix du résumé de la carte de strain
+compte presque autant que la bande, et davantage que la régularisation, la
+référence et l'abscisse prises ensemble.** Le miroir de la numérotation a
+rapproché les deux : l'effet « bande » perd un tiers de son $\eta^2$ (5,24 % →
+3,55 %) une fois les côtés de la rétine correctement alignés — une partie de ce
+qu'on lisait comme un effet de bande était un mélange des deux côtés.
+
+Et le chiffre qui prime reste ailleurs : un modèle additif reprenant les **sept**
+réglages n'explique que **9,8 %** de la variance des ICC. Près de neuf dixièmes
+de la dispersion ne viennent d'aucun choix de traitement — c'est le bruit
+d'estimation de l'ICC lui-même, sur 12 à 18 sujets.
+
+**Aucun réglage ne rachète la méthode.** Choisir la meilleure bande, le meilleur
+agrégat et le meilleur estimateur simultanément ferait gagner environ 0,3 d'ICC
+sur une médiane de 0,15 — on arriverait autour de 0,45, encore loin des 0,75
+attendus, et sans garantie que ce gain survive à une autre cohorte.
+:::
+
+::: {.callout-warning}
+## Sur les pentes, le sens de l'effet « référence » s'est inversé deux fois
+
+Avant le portail, les pentes donnaient l'avantage à la référence **locale**
+($+0{,}230$ contre $+0{,}180$) ; après filtrage c'est la **globale** qui passait
+devant ($+0{,}251$ contre $+0{,}196$) ; avec les trois agrégats c'est de nouveau
+la **locale** ($+0{,}167$ contre $+0{,}128$), et le miroir de la numérotation ne
+change pas ce dernier sens ($+0{,}156$ contre $+0{,}099$).
+
+Un effet dont le signe s'inverse à chaque changement du jeu de données n'est pas
+un effet : son $\eta^2$ de **0,81 %** — cinquième des sept réglages — dit
+exactement cela. Il ne faut donc rien conclure du choix de la référence pour les
+pentes, dans un sens comme dans l'autre.
+:::
+
+::: {.callout-note}
+## Un détail qui en dit long sur la précision de ces ICC
+
+Par one-cycle, les pentes contre $CT$ et contre $\Delta CT$ donnent le même ICC
+bande par bande — c'est la dégénérescence expliquée sur la page
+[Stress–strain](sans-stress-strain.qmd) : les deux ajustements *sont* le même.
+
+Poolées, elles s'écartent, alors que les valeurs de pente elles-mêmes ne
+diffèrent que de **0,6 %** en médiane. Qu'une perturbation inférieure au pourcent
+déplace l'ICC est une mesure de l'incertitude qui pèse dessus. À ce niveau, les
+écarts inférieurs à ~0,1 entre cases ne doivent pas être interprétés.
+:::
+
+## Une autre définition du réplicat : les one-cycles d'une même vidéo
+
+Tout ce qui précède prend pour réplicat une **acquisition répétée** — `..._OD1`
+contre `..._OD2`, quelques minutes d'intervalle. C'est la bonne définition pour
+un biomarqueur, mais elle est chère : seuls les sujets qui possèdent deux
+acquisitions comptent, ce qui laisse une douzaine de cibles.
+
+Un one-cycle est un **battement replié**. Deux one-cycles d'une même vidéo sont
+deux mesures du même œil, dans la même seconde, sur le même enregistrement : rien
+ne devrait les distinguer qu'un battement de l'autre et le bruit de la chaîne.
+Ils font donc un second jeu de réplicats, beaucoup plus nombreux — **394
+one-cycles sur 76 vidéos**, contre une poignée de couples d'acquisitions. La
+cible n'est plus le sujet mais la **vidéo**, et la question devient :
+
+> la valeur publiée pour une vidéo est-elle stable d'un battement à l'autre ?
+
+::: {.callout-important}
+## Ce que cet ICC n'est pas
+
+**Ce n'est pas une version mieux dotée de l'ICC précédent.** Entre deux vidéos il
+y a l'œil, la séance et la dérive de l'acquisition ; entre deux one-cycles, il
+n'y a que le battement. Le bruit mesuré ici est donc *plus petit* et la cible
+*plus facile* à séparer : cet ICC est un **plancher**, pas un verdict. Un
+paramètre qui échoue déjà ici ne peut rien réussir plus loin ; un paramètre qui
+réussit ici n'a encore rien prouvé.
+
+Les deux tables restent publiées côte à côte —`repeatability.csv` pour les
+réplicats d'acquisition, `repeatability_one_cycles.csv` pour les one-cycles — et
+la section précédente n'a pas bougé.
+
+**Trois familles manquent, et c'est structurel** : les pentes *poolées*
+(`pente_pool`) sont ajustées sur tous les couples (one-cycle, bin) d'une vidéo et
+n'existent pas par one-cycle — leur version par one-cycle porte déjà un nom,
+c'est la famille `pente` ; les métriques de `pouls` et le $k$ de Sayah sont
+produits sur la série temporelle entière. Restent **1 122 prédicteurs** :
+`strain`, `pente`, `ct_pouls` et `qc`.
+:::
+
+{{< include figures_sans_predictors/p3_oc_icc_cv.qmd >}}
+
+{{< include figures_sans_predictors/tab_repeat_oc.qmd >}}
+
+## Les pentes ne survivent pas au battement suivant
+
+Sur les 1 115 variantes, l'ICC(A,1) médian entre deux one-cycles consécutifs vaut
+**+0,02** [−0,07 – +0,13] : **44,8 %** sont *négatifs*, 5,3 % dépassent 0,5 et
+2,2 % dépassent 0,75. Le détail par famille est net :
+
+* les **pentes** sont à **+0,00**, et **0,6 %** seulement dépassent 0,5. Elles ne
+  se répètent pas d'un battement au suivant — bien avant qu'on leur demande de
+  séparer des sujets ;
+* le **strain** par bande tient à **+0,21** hors épaisseur, ce qui reste sous
+  tout seuil utilisable ;
+* le **contrôle qualité** (+0,55) et les métriques **CT / pouls** (+0,57) sont
+  les seuls à se tenir — ce sont aussi les seuls qui ne passent pas par le champ
+  de déformation ;
+* et **`CT_region_um`, l'épaisseur choroïdienne de la bande, vaut +0,98** — son
+  minimum sur toutes les variantes est +0,97, avec un CV intra-vidéo de **2,9 %**
+  contre 557 % pour l'ensemble du panel. Le même paramètre qui domine déjà les
+  deux autres répétabilités, et la seule mesure de cette page qui se comporte
+  comme un instrument.
+
+## L'accord vient du voisinage, pas de la stabilité
+
+Le chiffre ci-dessus compare les one-cycles **1 et 2**, c'est-à-dire deux
+battements *consécutifs*. Si une vidéo possédait une valeur, l'écart entre les
+deux battements comparés ne changerait rien. Il change tout.
+
+{{< include figures_sans_predictors/p3_oc_paires.qmd >}}
+
+Pour le strain à référence **globale**, l'ICC passe de **+0,46** (battements 1 et
+2) à **+0,02** (1 et 3) sur *exactement les mêmes 76 vidéos*, puis à **−0,35**
+(1 et 4). Le +0,46 n'était donc pas de la stabilité : c'était du **voisinage**.
+Et un ICC franchement négatif à distance 3 n'est pas du bruit — c'est la
+signature d'une **dérive monotone** au fil de l'enregistrement, qui place le
+premier et le dernier battement de part et d'autre de la moyenne de la vidéo.
+
+C'est aussi ce qui réconcilie les deux colonnes de la table : l'ICC(1) calculé
+sur **tous** les one-cycles à la fois vaut **+0,06** pour le strain à référence
+locale et **−0,07** à référence globale, là où la paire 1v2 affichait +0,01 et
++0,46. Pour des réplicats échangeables — et des battements le sont — c'est la
+version « tous les one-cycles » qu'il faut lire. **Le strain n'a pas de valeur
+par vidéo.**
+
+::: {.callout-warning}
+## La référence globale partage son point de comparaison
+
+L'écart entre les deux styles de référence à la paire 1v2 (+0,46 contre +0,01)
+ne dit pas que la référence globale mesure mieux. Elle mesure **autre chose** :
+tous les one-cycles d'une vidéo y sont comparés au *même* bin de référence, celui
+de la médiane temporelle de la vidéo entière. Ils partagent donc une composante,
+et cette composante commune se retrouve telle quelle dans l'ICC. La référence
+locale, elle, donne à chaque one-cycle sa propre référence : rien n'est partagé,
+et il ne reste que ce que le battement porte vraiment — **+0,01**.
+
+C'est le même piège que celui déjà signalé plus haut sur le sens de l'effet
+« référence », qui s'est inversé trois fois. Ici il est mécanique et il a une
+cause identifiable.
+:::
+
+## Les deux définitions ne classent pas les mêmes paramètres
+
+{{< include figures_sans_predictors/p3_oc_vs_repliques.qmd >}}
+
+Sur les **1 114 prédicteurs** présents dans les deux tables, la corrélation entre
+les deux ICC vaut **+0,09** — nulle. Le nuage ne suit pas la diagonale : 42,2 %
+des prédicteurs obtiennent un ICC *plus élevé* entre battements qu'entre
+acquisitions, les autres l'inverse, sans structure.
+
+Ce n'est pas contradictoire, c'est le signe que les deux mesures répondent bien à
+deux questions distinctes. La médiane passe de **+0,13** (réplicats
+d'acquisition) à **+0,02** (one-cycles) : la source de bruit dominante n'est
+donc **pas** le passage d'une acquisition à l'autre. Elle est déjà là, entière,
+d'un battement au suivant.
+
+## Une troisième répétabilité : avant contre après le vol
+
+Les deux définitions du réplicat qui précèdent restent dans la même séance —
+quelques minutes pour l'une, moins d'une seconde pour l'autre. Il existe une
+question à une tout autre échelle de temps : le même œil du **même astronaute**,
+mesuré avant puis après le vol, avec plusieurs mois et un séjour orbital au
+milieu.
+
+Chaque paramètre est corrélé à lui-même entre les deux moments, en Pearson et en
+Spearman, sur les **18 sujets** qui ont les deux mesures après le portail.
+
+::: {.callout-important}
+## Ce que cette corrélation mesure, et ce qu'elle ne mesure pas
+
+Elle **ne remplace pas l'ICC**, et une valeur basse y est ambiguë de deux façons :
+un paramètre de **trait** — une propriété stable de l'œil — doit rester corrélé,
+et s'il ne l'est pas c'est qu'il est mal mesuré ; mais un paramètre qui **répond
+réellement au vol** doit au contraire se décorréler, et cela ne dit rien contre
+lui.
+
+Une corrélation avant/après nulle ne tranche donc pas seule entre « c'est du
+bruit » et « ça a changé avec le vol ». C'est l'**ICC**, mesuré à court terme,
+qui sépare les deux — d'où la dernière figure, qui croise les deux mesures.
+:::
+
+Toutes les variations sont déclinées : famille de paramètres, régularisation,
+style de référence et bande de rétine.
+
+{{< include figures_sans_predictors/p3_stabilite.qmd >}}
+
+{{< include figures_sans_predictors/tab_stabilite.qmd >}}
+
+::: {.callout-warning}
+## Le portail a effacé cette preuve-là
+
+Avant filtrage, cette analyse portait sur 26 sujets et donnait **24,0 %** de
+prédicteurs à $p < 0{,}05$ et **12,1 %** survivant à Benjamini-Hochberg —
+nettement au-dessus du hasard. C'était le seul endroit de la section où quelque
+chose passait la correction.
+
+Après filtrage, il reste 18 sujets, **14,9 %** à $p < 0{,}05$ et **4,4 %** à
+$q < 0{,}05$ — c'est-à-dire **au niveau du hasard**.
+
+Deux lectures possibles. Soit les 26 sujets d'avant portaient un vrai signal que
+le filtrage a détruit par perte de puissance ; soit ce signal venait des
+one-cycles aberrants eux-mêmes, la même erreur de segmentation se retrouvant
+avant et après le vol chez le même œil. La seconde est la plus économique, et
+elle rejoint celle de la
+[validation](sans-stress-strain.qmd#validation-le-strain-retrouve-t-il-une-dilatation-connue),
+où la corrélation positive vivait elle aussi entièrement dans les one-cycles
+écartés. Mais avec $n$ qui tombe de 26 à 18, la question ne peut pas être
+tranchée ici.
+:::
+
+La seule famille qui tienne est **rigidité** ($r = +0{,}56$, 75 % à $p < 0{,}05$) —
+l'épaisseur choroïdienne, $\Delta CT$ et $k$, des grandeurs anatomiques que les
+démons ne touchent pas. Le **strain** est à $-0{,}103$, et sa ligne à 20 % de
+significatifs est trompeuse : elle vient entièrement de `CT_region_um`,
+l'épaisseur de bande classée dans cette famille par héritage de nommage. Les
+trois agrégats y sont à zéro de la même façon — le p95 ne se décorrèle pas moins
+que la moyenne, il ne se corrèle simplement à rien.
+
+### Les deux répétabilités, croisées
+
+Un panneau par **catégorie de paramètre**, et la couleur porte la
+**régularisation** — le seul réglage des démons qu'il reste à choisir. Les
+familles de service (`qc`, `pouls`, `ct_pouls`), qui mesurent la chaîne de
+traitement et non l'œil, sont écartées de cette figure ; elles restent dans les
+boîtes et le tableau ci-dessus. Le niveau gris réunit ce qui ne passe pas par les
+démons : les quatre paramètres de `rigidité` et l'épaisseur de bande
+`CT_region_um`, rangée dans `strain` par héritage de nommage.
+
+{{< include figures_sans_predictors/p3_stabilite_vs_icc.qmd >}}
+
+Un paramètre situé **en haut à droite** est stable aux deux échelles : bien
+mesuré et propre à l'œil. **En bas à droite** — ICC élevé, corrélation
+avant/après faible — il est bien mesuré mais a changé, ce qui serait le profil
+d'un marqueur de SANS. **À gauche**, ICC faible, il n'y a rien à interpréter.
+
+Les deux mesures se correspondent à $r = +0{,}12$ sur les 2 054 prédicteurs des
+quatre catégories. Mais **74,7 %** d'entre eux restent **à gauche et au centre** :
+ni un ICC supérieur à 0,5, ni une corrélation avant/après significative.
+
+**Les quatre panneaux ne se ressemblent pas.**
+
+| catégorie | prédicteurs | $r$ des deux répétabilités | ICC médian | ni l'un ni l'autre |
+|:--|--:|--:|--:|--:|
+| strain | 130 | $+0{,}45$ | $+0{,}19$ | 71,5 % |
+| pente | 960 | $+0{,}20$ | $+0{,}12$ | 71,9 % |
+| pente_pool | 960 | $+0{,}02$ | $+0{,}19$ | 78,1 % |
+| rigidité | 4 | $+0{,}42$ | $+0{,}56$ | 25,0 % |
+
+La correspondance entre les deux échelles de temps est portée par le **strain**
+($+0{,}45$) et s'effondre sur les **pentes poolées** ($+0{,}02$), qui sont
+pourtant la famille au meilleur ICC médian des trois issues des démons : elles se
+répètent un peu mieux d'une acquisition à l'autre sans que cela dise rien de ce
+qu'elles valent d'un vol à l'autre. La ligne `rigidité` ne compte que quatre
+prédicteurs et ne se lit pas comme une corrélation — c'est le coin supérieur droit
+du nuage, pas une mesure.
+
+**La régularisation ne trie rien dans ces panneaux.** Les couleurs se mélangent
+partout ; c'est cohérent avec le $\eta^2$ de 0,81 % que la section précédente lui
+attribue sur l'ICC des pentes. Le seul écart lisible est celui des pentes poolées,
+dont l'ICC médian monte de $+0{,}12$ à σ = 5 jusqu'à $+0{,}25$ à σ = 15 sans que
+la corrélation avant/après suive.
+
+::: {.callout-warning}
+## Des variances inter-sujets négatives
+
+L'ANOVA à un facteur estime $\sigma^2_{inter}$ par $(MS_B - MS_W)/n_0$, une
+différence qui peut sortir **négative** quand la dispersion entre sujets est plus
+petite que le bruit de mesure. Elle est laissée telle quelle plutôt que ramenée à
+zéro : **34,0 %** des prédicteurs du strain rétinien sont dans ce cas, et
+jusqu'à **44,9 %** au centre du champ.
+
+Ces paramètres ne séparent pas les sujets. Leur corréler une issue clinique n'a
+pas de sens, quel que soit le $r$ obtenu.
+
+À noter : cette proportion **augmente à chaque révision** — 21,6 % avant le
+portail, 27,7 % après, 34,0 % depuis l'ajout des agrégats — et le miroir de la
+numérotation ne l'a pas bougée. La hausse est entièrement imputable au p95
+(42,4 % de variances négatives à lui seul, contre 28,3 % pour la moyenne).
+Filtrer a resserré la dispersion entre sujets autant que le bruit de mesure.
+:::
+
+::: {.source-note}
+Répétabilité calculée par `Astronauts/compute_sans_predictors.py` (ICC via
+`pingouin.intraclass_corr`, composantes de variance par ANOVA à un facteur sur le
+plan déséquilibré, stabilité avant/après par Pearson et Spearman) ; figures et
+tables générées par `figures_sans_predictors/make_figures.py`. Toutes les analyses portent sur les one-cycles retenus par le portail de validité.
+:::

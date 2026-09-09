@@ -80,8 +80,23 @@ def read_root(source) -> ET.Element:
     try:
         with _open_xml(source) as f:
             tree = ET.parse(f)
-    except (OSError, ET.ParseError) as exc:
+    except OSError as exc:
         raise OSError(f"Failed to read XML file {source!r}: {exc}") from exc
+    except ET.ParseError:
+        # Certains exports HEYEX ne portent AUCUNE declaration ``<?xml ...?>``
+        # et sont ecrits en cp1252 : le premier nom accentue (« Belanger ») fait
+        # alors echouer le parseur, qui suppose de l'UTF-8 -- et le fichier est
+        # illisible avant meme d'avoir ete regarde.
+        #
+        # On relit en FORCANT l'encodage, plutot que de decoder soi-meme les
+        # octets en ``str`` : ``ET.fromstring`` sur une ``str`` refuse les
+        # exports qui, eux, portent une declaration d'encodage, si bien que le
+        # rattrapage casserait le cas nominal.
+        try:
+            with _open_xml(source) as f:
+                tree = ET.parse(f, parser=ET.XMLParser(encoding="cp1252"))
+        except (OSError, ET.ParseError) as exc:
+            raise OSError(f"Failed to read XML file {source!r}: {exc}") from exc
     return _strip_namespaces(tree.getroot())
 
 
@@ -364,37 +379,74 @@ def _parse_time(img_el: ET.Element) -> Optional[AcquisitionTime]:
     )
 
 
-def _parse_series(series_el: ET.Element) -> Series:
+def _parse_series_list(series_el: ET.Element) -> list[Series]:
+    """Every logical series carried by one ``<Series>`` node.
+
+    Two export layouts coexist in the wild, and both have to be read:
+
+    - the historical SANSORI cohort writes **one ``<Series>`` per B-scan**, each
+      with its own IR localizer -- such a node yields a single :class:`Series`;
+    - newer exports (the repeatability study) put **the whole video in a single
+      ``<Series>``**: one localizer, then N OCT images.
+
+    The second layout is *exploded* into N :class:`Series`, one per B-scan, all
+    sharing the node's localizer, laterality, ``ID`` and ``context``. Everything
+    downstream (``load_ordered_oct_series``, the frame rate deduced from the
+    timestamps, the video export) then sees the same thing in both cases, and
+    the first layout comes out byte-for-byte as it did before.
+    """
     images = series_el.findall("Image")
     classified = [(img, _classify_image(img)) for img in images]
 
-    oct_el = next((img for img, k in classified if k == "oct"), None)
+    oct_els = [img for img, k in classified if k == "oct"]
     fundus_el = next((img for img, k in classified if k == "fundus"), None)
 
     # Fallback to the historical positional convention (Image[0] = fundus,
     # Image[1] = OCT) when ImageType is missing or ambiguous.
-    if oct_el is None and len(images) >= 2:
-        oct_el = images[1]
-    if fundus_el is None and len(images) >= 1:
-        fundus_el = images[0] if images[0] is not oct_el else None
+    if not oct_els and len(images) >= 2:
+        oct_els = [images[1]]
+    if fundus_el is None and images and images[0] not in oct_els:
+        fundus_el = images[0]
 
-    oct_img = _parse_image(oct_el, "oct") if oct_el is not None else None
     fundus_img = _parse_image(fundus_el, "fundus") if fundus_el is not None else None
+    series_id = _int(series_el, "ID")
+    laterality = _text(series_el, "Laterality") or _text(series_el, "Eye")
+    ctx = _leaf_dict(series_el)
 
-    # The OCT B-scan time is the one that matters for a time series; fall back to
-    # the localizer's time only if the OCT image has none.
-    acq_time = oct_img.acquisition_time if oct_img else None
-    if acq_time is None and fundus_img is not None:
-        acq_time = fundus_img.acquisition_time
+    # A series with no OCT image at all still exists -- returning nothing would
+    # silently drop it from ``study.series`` and from any count based on it.
+    if not oct_els:
+        return [Series(
+            series_id=series_id,
+            laterality=laterality,
+            acquisition_time=fundus_img.acquisition_time if fundus_img else None,
+            oct=None,
+            fundus=fundus_img,
+            context=ctx,
+        )]
 
-    return Series(
-        series_id=_int(series_el, "ID"),
-        laterality=_text(series_el, "Laterality") or _text(series_el, "Eye"),
-        acquisition_time=acq_time,
-        oct=oct_img,
-        fundus=fundus_img,
-        context=_leaf_dict(series_el),
-    )
+    out: list[Series] = []
+    for oct_el in oct_els:
+        oct_img = _parse_image(oct_el, "oct")
+        # The OCT B-scan time is the one that matters for a time series; fall
+        # back to the localizer's time only if the OCT image has none.
+        acq_time = oct_img.acquisition_time
+        if acq_time is None and fundus_img is not None:
+            acq_time = fundus_img.acquisition_time
+        out.append(Series(
+            series_id=series_id,
+            laterality=laterality,
+            acquisition_time=acq_time,
+            oct=oct_img,
+            fundus=fundus_img,
+            context=ctx,
+        ))
+    return out
+
+
+def _parse_series(series_el: ET.Element) -> Series:
+    """First logical series of the node -- kept for any external caller."""
+    return _parse_series_list(series_el)[0]
 
 
 def _parse_patient(patient_el: ET.Element) -> Patient:
@@ -433,7 +485,8 @@ def _parse_study(root: ET.Element, source: Optional[str]) -> SpectralisStudy:
     if study_el is None:
         raise ValueError("No Study node found under Patient.")
 
-    series = [_parse_series(s) for s in study_el.findall("Series")]
+    series = [s for el in study_el.findall("Series")
+              for s in _parse_series_list(el)]
     return SpectralisStudy(
         patient=_parse_patient(patient_el),
         series=series,

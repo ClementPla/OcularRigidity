@@ -1,6 +1,6 @@
 ---
 title: "Comparing one-cycle videos"
-subtitle: "The same 106 recordings folded twice — once on the FIR band-pass phase, once on the M-SSA phase — 10 bins, one averaged cardiac cycle, and a shuffled phase to tell us what any of it is worth"
+subtitle: "The same 104 recordings folded twice — once on the FIR band-pass phase, once on the M-SSA phase — 10 bins, five successive cycles, and a shuffled phase to tell us what any of it is worth"
 include-in-header: figures_one_cycle_compare/plotlyjs.html
 ---
 
@@ -20,19 +20,68 @@ same frames, the same uniform time grid, the same 10 bins, the same median
 folding and the same set of retained frames. **Only the phase differs**, so every
 difference below is attributable to the phase and to nothing else.
 
+::: {.callout-important}
+## This run answers the question the 30-bin run raised
+
+An earlier pass over **exactly these recordings, this registration and these
+phases** cut the cycle into 30 bins. It concluded that the binding constraint was
+not the phase method but the number of frames averaged per bin, and that two of
+the obvious quality metrics were tracking the bin count rather than the
+heartbeat. This run tests that directly by changing only the bin count — 30 → 10,
+so roughly 46 frames per bin instead of 15.
+
+The prediction holds, and then some. Split-half reproducibility on the thickness
+curve goes from 0.017 to **0.212** for the FIR phase; peak-to-peak ΔY falls from
+3.81 px to 1.65 px and its shuffled null falls with it, 4.10 → 1.61; modulation
+depth halves, 0.057 → 0.031, identically for a real phase and a random one. Where
+the 30-bin run found FIR indistinguishable from noise on every measure, **both
+phases now clear the null on the tests that matter.**
+:::
+
 {{< include figures_one_cycle_compare/tab_cohort.qmd >}}
+
+## Ten bins, and what that buys
+
+The cycle is cut into **10 phase bins**, so a median recording puts about **46
+frames in each** (459 frames folded, 10 bins) — and about 23 per bin once the
+recording is split in half for the reproducibility test. That is the resolution
+this page is measured at, and it is the single most important number on it.
+
+At this bin count **no condition in the cohort has an empty bin**, against two at
+30 bins. The smallest bin of a median recording holds 38 frames, and the
+bin-count coefficient of variation is 0.10 for both real phases against 0.12 for
+the null. Nothing on this page is reduced by missing bins; the `NaN` handling
+that mattered at 30 bins is still in place and simply never fires.
+
+## Five cycles, one per fifth of the recording
+
+The delivered video is no longer a single averaged cycle. The recording is cut
+into **five consecutive time slices** and each is folded on its own, so the video
+runs five cycles back to back: the first is the first fifth of the acquisition,
+the last is the last fifth. Each slice contributes about nine frames per bin.
+
+This is a *visual* diagnostic, not a new statistic. A pulsation that is real and
+stable gives five cycles that look alike; a phase that drifts, or a choroid that
+moves for reasons unrelated to the heartbeat, shows up as five cycles that do
+not. Watching one averaged cycle can never reveal that — it has already averaged
+the evidence away.
+
+Every number on this page is still measured on **one** cycle folded over the
+whole recording. Redefining the metrics slice by slice would be a different
+indicator, not a rescaling of this one, and it is not what is reported here.
 
 ## The one thing that makes these numbers readable
 
-A folded video always looks plausible. Average forty B-scans into each of ten
-bins and you get ten clean B-scans, whatever phase you used to sort them — so
-"the video looks good" is not evidence of anything.
+A folded video always looks plausible. Average forty-six B-scans into each of ten
+bins and you get ten very clean B-scans, whatever phase you used to sort them —
+so "the video looks good" is not evidence of anything. If anything, this run
+looks *better* than the 30-bin one for a reason that has nothing to do with
+timing: more frames per bin is a better speckle average.
 
-Every measurement on this page is therefore run a third time on a **shuffled
-phase**: the FIR phase, randomly permuted over the uniform grid, carried through
-the identical resampling and folding. Same frames, same bins, same everything —
-no timing. It is the only scale these numbers have, and it turns out to be a
-demanding one.
+Every measurement is therefore run a third time on a **shuffled phase**: the FIR
+phase, randomly permuted over the uniform grid, carried through the identical
+resampling and folding. Same frames, same bins, same everything — no timing. It
+is the only scale these numbers have.
 
 Three quantities are measured, all of them on both real phases and on the null:
 
@@ -45,8 +94,9 @@ Three quantities are measured, all of them on both real phases and on the null:
   per pixel, on the column-averaged depth profile, and on the thickness curve —
   because they have very different signal-to-noise, and only their agreement is
   worth reading.
-- **ΔY** — peak-to-peak of the folded thickness curve, obtained by folding the
-  *masks* with the same phase. This is the quantity the rigidity coefficient is
+- **ΔY** — amplitude of the folded thickness curve, obtained by folding the
+  *masks* with the same phase, read both as a raw peak-to-peak and as the
+  amplitude of a 1-harmonic fit. This is the quantity the rigidity coefficient is
   built on.
 - **bin occupancy** — how evenly the ten bins fill.
 
@@ -56,8 +106,7 @@ Three quantities are measured, all of them on both real phases and on the null:
 
 Solid lines are the whole recording; dotted lines are each half folded on its
 own. The gap between a method's two dotted curves is its split-half error, drawn
-rather than summarised — and on this condition, which is a perfectly ordinary
-one, that gap is comparable to the amplitude of the curve itself.
+rather than summarised.
 
 {{< include figures_one_cycle_compare/f2_bins_ref.qmd >}}
 
@@ -69,119 +118,124 @@ the shuffled null fills the bins evenly too, by construction.
 
 {{< include figures_one_cycle_compare/f3_phase_agreement.qmd >}}
 
-This is the first substantive result, and it is larger than expected.
+The phase comparison does not depend on the binning, so this section is identical
+to the 30-bin run: it is a property of the two estimators, not of the video they
+produce.
 
 The two phases sit within 30° of each other — under a twelfth of a cycle — in
-**66 of 106 conditions**. In **30** they are more than a quarter-cycle apart, and
-in **18** more than 150° apart. Nine of those eighteen hold that near-inversion
+**68 of 104 conditions**. In **25** they are more than a quarter-cycle apart, and
+in **15** more than 150° apart. Nine of those fifteen hold that near-inversion
 with a phase-locking value above 0.5: a *stable* half-cycle offset, not
 jitter. For those recordings the two videos are the same cycle played half a
 period out of step — one shows the choroid filling where the other shows it
 emptying.
 
 The phase-locking value, which measures whether the offset at least stays
-constant, has a median of **0.59**, and **83 of 106** conditions fall below 0.9.
-The two folded cycles correlate at a median of **0.15**, and **73 of 106** below
-0.3. Read plainly: on most of this cohort, the two methods do not produce
-variants of one video. They produce two different videos.
+constant, has a median of **0.63**, and **88 of 104** conditions fall below 0.9.
+
+What the binning *does* change is the agreement between the two folded videos:
+they now correlate at a median of **0.18**, against 0.07 at 30 bins, and 70 of
+104 fall below 0.3. Coarser bins do not make the two methods agree about the
+choroid — they leave three times more frames in each bin to average the speckle
+away, so the agreement that was there becomes visible. The two methods still
+produce two different videos; it is now possible to see how different.
 
 ## Does either phase beat a shuffled one?
 
 {{< include figures_one_cycle_compare/f4_split_half_null.qmd >}}
 
-Both do — significantly, and by very little.
+**Both do, on the tests with the power to show it** — which is the headline
+change from 30 bins, where FIR cleared nothing.
 
-Against its own per-condition null (Wilcoxon signed-rank over the 106 paired
-differences), the FIR phase is ahead on the thickness curve ($p = 5\times10^{-4}$)
-and on ΔY ($p = 0.005$), marginal per pixel ($p = 0.049$) and not significant on
-the depth profile ($p = 0.08$). M-SSA is ahead on all four: per pixel
-($p = 7\times10^{-5}$), depth profile ($p = 0.01$), thickness curve
-($p = 0.002$), ΔY ($p = 3\times10^{-4}$).
+Against its own per-condition null (Wilcoxon signed-rank over the 104 paired
+differences):
 
-So there is real cardiac timing in both phases — the folding is not an
-elaborate way of averaging noise. But look at the absolute values in the table
-below rather than the $p$-values. The median split-half correlation is **0.11**
-(FIR) and **0.15** (M-SSA) on the thickness curve, against **−0.03** for the
-shuffled phase. A cycle that reproduced across halves would sit near 1. These
-sit near zero, and they clear the null by a margin that takes 106 conditions to
-establish.
+| measured on | FIR band-pass | M-SSA |
+|:--|--:|--:|
+| split-half, per pixel | **$p = 0.004$** | **$p = 7\times10^{-5}$** |
+| split-half, thickness curve | **$p = 0.001$** | **$p = 0.049$** |
+| split-half, depth profile | $p = 0.76$ | $p = 0.083$ |
+| ΔY, 1-harmonic fit | $p = 0.22$ | **$p = 0.002$** |
+| ΔY, peak-to-peak | $p = 0.96$ | $p = 0.060$ |
+
+The absolute values matter more than the $p$-values, and this is where the run
+differs most from its predecessor. The median split-half correlation on the
+thickness curve is **0.212** (FIR) and **0.068** (M-SSA) against **0.055** for
+the shuffled phase. At 30 bins those three numbers were 0.017, 0.026 and 0.027 —
+the null nominally ahead of both. Tripling the frames per bin moved the FIR
+thickness curve from indistinguishable-from-noise to twelve times its own null.
+
+That is a real, reproducible cardiac cycle in the thickness curve, and it is the
+first time this comparison has shown one.
 
 {{< include figures_one_cycle_compare/tab_methods.qmd >}}
 
-One row of that table deserves to be read as a warning rather than a result.
-**Modulation depth is identical for all three columns** — 0.029, 0.030, 0.030 —
-including the shuffled phase. The intensity modulation left in a folded cycle is
-entirely explained by having averaged a finite number of frames per bin. It
-measures the bin count, not the heartbeat, and it should not be used to judge a
-fold. It is kept here precisely to say so.
+One row of that table still deserves to be read as a warning rather than a
+result. **Modulation depth is identical for all three columns** — 0.031, 0.033,
+0.033 — including the shuffled phase, exactly as it was identical at 0.057 across
+the board at 30 bins. It halved when the bins tripled in size, in lockstep across
+a real phase and a random one. It measures the bin count, not the heartbeat, and
+it should not be used to judge a fold. It is kept here precisely to say so.
 
 ## FIR against M-SSA
 
 {{< include figures_one_cycle_compare/f4b_split_half_paired.qmd >}}
 
-Head to head, the honest answer is **M-SSA is at least as good, and better where
-the test has the most power**:
+Head to head, the two methods now split the honours rather than one dominating:
 
 | measured on | FIR ahead in | Wilcoxon $p$ |
 |:--|--:|--:|
-| per pixel (~10⁶ points) | 35 % of conditions | 0.003 (favours M-SSA) |
-| depth profile | 46 % | 0.19 |
-| thickness curve (10 points) | 52 % | 0.87 |
-| ΔY | 42 % | 0.051 |
+| split-half, per pixel (~3×10⁶ points) | 39 % of conditions | **0.039** (favours M-SSA) |
+| split-half, thickness curve | 62 % | 0.077 (favours FIR) |
+| split-half, depth profile | 49 % | 0.30 |
+| ΔY, 1-harmonic fit | 41 % | **0.007** (favours M-SSA) |
+| ΔY, peak-to-peak | 45 % | 0.087 |
 
-The per-pixel test is the one with the sample size to resolve a small effect,
-and it favours M-SSA. The two reduced representations cannot separate them.
-Nothing here supports preferring FIR.
+M-SSA keeps the per-pixel test and both ΔY readings; FIR leads on the thickness
+curve, at 62 % of conditions and $p = 0.077$ — suggestive, not established. The
+honest summary is that **the choice between them no longer looks decisive at this
+resolution**, which is itself a change: at 30 bins nothing favoured FIR anywhere.
 
-That is the opposite of the previous page's ranking, and the reason is
-methodological rather than empirical. There, M-SSA scored 0.54 against a
-reference *defined* as the FIR pulse; a method that departs from FIR is
-penalised whether it departs towards the truth or away from it. Judged on the
-folded video against a null instead, the departure looks like the better cycle.
-M-SSA's flattening of beat-to-beat amplitude modulation — the property that
-counted against it before — costs it nothing here, because folding discards
-amplitude and keeps only timing.
+The methodological caveat from that run stands. The previous page ranks M-SSA
+below FIR by scoring it against a reference *defined* as the FIR pulse, which
+penalises any departure whether it moves towards the truth or away from it. Read
+on the folded video against a null instead, M-SSA is at worst FIR's equal.
 
 ## What this costs downstream
 
 {{< include figures_one_cycle_compare/f5_deltaY.qmd >}}
 
-This is the figure to worry about, and it is the bluntest result on the page.
-Read as **peak-to-peak of the folded thickness curve — the raw max minus min
-over the ten bins — ΔY does not beat the shuffled phase at all**:
+Read as **peak-to-peak of the folded thickness curve — the raw max minus min over
+the ten bins — ΔY still does not beat the shuffled phase**:
 
 | | FIR band-pass | M-SSA | shuffled (null) |
 |:--|--:|--:|--:|
-| median ΔY peak-to-peak (px) | 1.81 | 1.91 | **2.19** |
-| beats its own null in | 51 % of conditions | 60 % | — |
-| Wilcoxon $p$ vs null | 0.84 | 0.23 | — |
+| median ΔY peak-to-peak (px) | 1.65 | 1.77 | 1.61 |
+| beats its own null in | 49 % of conditions | 60 % | — |
+| Wilcoxon $p$ vs null | 0.96 | 0.060 | — |
 
-The null is not merely close, it is **nominally the largest of the three**, and
-neither real phase is significantly above it. In **49 % of conditions the FIR
-fold returns less peak-to-peak ΔY than that condition's own shuffled phase** — a
-coin flip.
+FIR is a coin flip against its own null; M-SSA misses significance. But look at
+what the bin count did to the numbers themselves: **3.81 → 1.65 px for FIR, and
+4.10 → 1.61 px for the null.** Same recordings, same registration, same phases,
+same choroid — only the number of frames averaged per bin changed, and the
+"amplitude" more than halved. Peak-to-peak is an extreme-value statistic:
+max-minus-min over noisy bins grows with the noise, so it inflates for a phase
+that scatters frames at random exactly as it does for one that sorts them
+correctly. It is a noise meter with a physiological name.
 
-The reason is that peak-to-peak is an extreme-value statistic. Max-minus-min over
-ten noisy bins grows with the noise, so a phase that scatters frames at random
-inflates it just as effectively as a phase that sorts them correctly — sometimes
-more so, since a correct sort averages coherently and *reduces* per-bin variance.
-Peak-to-peak ΔY therefore measures frames-per-bin at least as much as it measures
-the choroid, in the same way modulation depth did above.
+The signal survives once the curve is reduced to its fundamental. Fitting one
+harmonic to the ten points before taking the amplitude gives **0.85 px** (FIR)
+and **0.91 px** (M-SSA) against **0.50 px** for the null. Those three numbers
+barely moved when the bins tripled in size (0.87 / 0.97 / 0.64 px at 30 bins),
+while the peak-to-peak halved. **An estimator that is invariant to an arbitrary
+analysis parameter is measuring something; one that tracks it is measuring the
+parameter.**
 
-The signal is not absent; it only survives once the curve is reduced to its
-fundamental. Fitting one harmonic to the same ten points before taking the
-amplitude — the `ΔY, 1-harmonic fit` row of the methods table — gives 0.86 px
-(FIR) and 1.04 px (M-SSA) against 0.70 px for the null, and *both* clear it
-significantly ($p = 0.005$ and $p = 3\times10^{-4}$). Same data, same folds; the
-difference is entirely in whether the amplitude is read from two extreme bins or
-from all ten.
-
-The practical consequence for the rigidity coefficient is direct: **ΔY should be
-taken from a harmonic fit of the folded curve, never from its peak-to-peak
-range.** Beyond that, the two things that would raise the floor are neither a
-change of phase method nor a change of estimator — more frames per bin (longer
-recordings, or fewer bins), and a thickness measurement less sensitive to
-per-frame mask jitter than summing a folded binary mask.
+The practical consequence for the rigidity coefficient is unchanged and now
+better supported: **ΔY should be taken from a harmonic fit of the folded curve,
+never from its peak-to-peak range** — and folded into ten bins rather than
+thirty, since the finer resolution bought nothing and cost the reproducibility of
+the thickness curve an order of magnitude.
 
 {{< include figures_one_cycle_compare/f6_bin_uniformity.qmd >}}
 
@@ -192,55 +246,65 @@ split-half gain of one over the other scatters symmetrically about zero. The
 disagreement does not resolve in favour of either method; it is simply where
 both are least determined.
 
-## All 106 one-cycle videos
+## All 104 videos, five cycles each
 
 Every condition has its own page, carrying three things: the comparison video
-(FIR on top, M-SSA below, both folded from the same frames); **ΔY along the
-folded cycle**, with the shuffled null superimposed on the two real phases; and
-**the two pulses overlaid, their phase, and the instantaneous heart rate** on the
-full recording, which is where a phase that loses the beat becomes visible.
+(FIR on top, M-SSA below, both folded from the same frames, **five successive
+cycles**); **ΔY along the folded cycle**, with the shuffled null superimposed on
+the two real phases; and **the two pulses overlaid, their phase, and the
+instantaneous heart rate** on the full recording, which is where a phase that
+loses the beat becomes visible.
 
-The ΔY columns below are peak-to-peak, with the null beside them — on a good
-many rows the null is the largest of the three, which is the cohort result of the
-previous section seen one condition at a time.
+The five cycles are worth watching in sequence rather than as a loop: they are
+five different fifths of the acquisition, not five repeats of one measurement.
 
 {{< include figures_one_cycle_compare/_table.qmd >}}
 
 ## Conclusion
 
-- **The two phases do not fold the same video.** Median correlation between the
-  two folded cycles is 0.15; in 18 conditions of 106 they are more than 150°
-  apart, nine of them stably so — half a cardiac cycle, systole read as diastole.
-- **Both phases beat a shuffled phase, and both beat it narrowly.** Median
-  split-half reproducibility of 0.11 (FIR) and 0.15 (M-SSA) against −0.03 for the
-  null. The timing is real; the folded cycle is not yet reproducible.
-- **M-SSA is not worse than the FIR band-pass for folding, and is better on the
-  most powerful test** ($p = 0.003$ per pixel). The previous page's ranking
-  measured agreement with FIR, which is a different question from correctness,
-  and it should not be carried over to this one.
-- **The ΔY noise floor is the binding constraint**, not the choice of phase
-  method — and how ΔY is read off the folded curve decides whether there is any
-  signal at all. **Peak-to-peak does not beat a shuffled phase** (1.81 / 1.91 px
-  against 2.19 px for the null, $p = 0.84$ and $0.23$); a 1-harmonic fit of the
-  same ten points does (0.86 / 1.04 against 0.70 px, $p = 0.005$ and
-  $3\times10^{-4}$). Use the fit.
-- **Two of the obvious quality metrics measure the bin count, not the
-  heartbeat** — modulation depth and peak-to-peak ΔY are both matched or beaten
-  by a shuffled phase. Any metric proposed for this pipeline should be run
-  against the null before it is trusted.
+- **Bin count was the binding constraint, and this run proves it.** Same
+  recordings, same registration, same phases; 30 bins → 10 bins takes the FIR
+  split-half correlation on the thickness curve from 0.017 (below its null) to
+  **0.212** (twelve times its null, $p = 0.001$). The 30-bin verdict that
+  "the folded cycle is not reproducible for either phase" was a statement about
+  the analysis, not about the data.
+- **Both phases now beat a shuffled one** on the per-pixel and thickness-curve
+  split-half tests. M-SSA additionally clears the null on the harmonic-fit ΔY
+  ($p = 0.002$); FIR does not ($p = 0.22$).
+- **Neither method is clearly preferable at this resolution.** M-SSA wins per
+  pixel ($p = 0.039$) and on both ΔY readings ($p = 0.007$); FIR leads on the
+  thickness curve without reaching significance ($p = 0.077$). This is a change
+  from 30 bins, where nothing favoured FIR.
+- **How ΔY is read still decides whether there is any signal.** Peak-to-peak does
+  not beat a shuffled phase and halved when the bin count changed (3.81 → 1.65
+  px, its null 4.10 → 1.61); the 1-harmonic fit beats it for M-SSA and barely
+  moved (0.87 → 0.85 px). Use the fit, on ten bins.
+- **Two metrics still track the analysis rather than the physiology.** Modulation
+  depth is identical for a real phase and a random one at both bin counts (0.057
+  at 30, 0.031 at 10), and peak-to-peak ΔY follows the bin count as faithfully
+  for the null as for the signal. Any metric proposed for this pipeline should be
+  run against the null, at more than one bin count, before it is trusted.
 
 ::: {.source-note}
 Videos and tables produced by `Astronauts/compute_one_cycle_compare_methods.py`
-(106 conditions, masks `model1_scale_1.0`, 10 bins, one averaged cycle, median
-folding, one cardiac cycle trimmed at each end of the record for both methods
-alike). Pulses and phases are read from
-`pulse_from_data/traces/<slug>.npz` and never re-estimated. Figures, per-condition
-pages and the link table are generated by
+(104 conditions, 14 astronauts, masks and registration
+`model1_scale_1.0_flatten_choroid_xcorr`, **10 bins**, **5 cycles** — the record
+cut into five consecutive slices, each folded separately — median folding, one
+cardiac cycle trimmed at each end of the record for both methods alike). The
+delivered video therefore holds 5 × 10 images, played at 10 fps so that one cycle
+lasts about one second; the metrics are all measured on a *single* cycle folded
+over the whole recording (`cycle_1` in the script), never on the five-slice cube.
+No condition had an empty bin at this resolution. Pulses and phases are read from
+`pulse_from_data/traces/<slug>.npz` and never re-estimated. Figures,
+per-condition pages and the link table are generated by
 `figures_one_cycle_compare/make_figures.py`, which only reads the three CSVs, the
 per-condition `.npz` and the videos. Everything lives under `E:/NASA_Rigidity/`.
 Re-run the figure script rather than editing the generated fragments (`f*.qmd`,
-`tab_*.qmd`, `_table.qmd`, `one_cycles/oc_*.qmd`) by hand. The per-condition
-pages plot their thickness curves as inline SVG rather than Plotly: `plotly.js`
-is 4.9 MB and `include-in-header` inlines it per page, so 106 interactive
-sparklines would cost half a gigabyte. The figures on this page are interactive.
+`tab_*.qmd`, `_table.qmd`, `one_cycles/oc_*.qmd`) by hand — and run it from the
+repository root, not from inside `figures_one_cycle_compare/`, which is a
+junction to `E:` and would send the per-condition pages there. The 104 comparison
+videos now weigh **519 MB** in total (83 MB at 30 bins): five cycles instead of
+one, at a lower frame rate. This page inlines `plotly.js` (4.9 MB) in its header;
+the 104 per-condition pages load it from one shared `plotly.min.js` that the
+browser caches once. All figures, here and there, are interactive.
 :::

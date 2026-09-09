@@ -1,0 +1,324 @@
+---
+title: "Stress–strain"
+subtitle: "Le strain axial mesuré par recalage démons entre bins d'un one-cycle, contre l'épaisseur choroïdienne et contre sa dilatation — trois agrégats du strain, quatre régularisations, deux références, cinq bandes latérales"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+## Ce qui est mesuré
+
+Chaque enregistrement est replié en one-cycles de six battements réels, six bins
+de phase chacun, le bin 0 centré sur le maximum du pouls. Les **démons de
+SimpleITK** (`FastSymmetricForcesDemons`, pyramide à deux niveaux, 175
+itérations) recalent chaque bin sur un bin de référence, et le champ obtenu donne
+le strain axial
+
+$$\varepsilon_{yy} = \frac{\partial u_y}{\partial y}$$
+
+sans dimension — $u_y$ et $y$ partagent l'échelle axiale. La convention ITK ($u$
+va du fixe vers le mobile) fait qu'un $\varepsilon_{yy} > 0$ signifie *plus épais
+dans l'image mobile*.
+
+::: {.callout-note}
+## Trois agrégats, dont un de queue
+
+Le strain est une carte : il en faut un **résumé** par bande, et ce résumé est un
+choix, pas une évidence. Trois sont calculés côte à côte, au même rang partout —
+dans les pentes, dans la répétabilité, dans les marqueurs du SANS.
+
+* la **moyenne** sur les pixels de la bande ;
+* la **médiane**, qui ne se laisse pas tirer par quelques pixels aberrants ;
+* le **p95 signé**, nouveau : le 95ᵉ percentile de la *magnitude*
+  $|\varepsilon_{yy}|$, rendu **avec le signe** du pixel qui l'atteint. Si la plus
+  grande magnitude est négative, le p95 est négatif.
+
+Les deux premiers mesurent un **centre**, et cette page établit que le centre de
+la distribution du strain est dominé par le biais négatif de la régularisation —
+le strain médian est négatif alors que tous les bins mobiles sont plus épais. Le
+p95 mesure une **queue**, et pose donc une question que les deux autres ne posent
+pas : *les plus fortes déformations locales, elles, suivent-elles la dilatation ?*
+
+Le rang est pris sur la magnitude mais la valeur rendue est signée, et sans
+interpolation — interpoler entre deux pixels de signes opposés ne voudrait rien
+dire. Le p95 est donc toujours la valeur d'un pixel réel.
+:::
+
+::: {.callout-important}
+## Deux choix qui changent le sens du résultat
+
+**La référence**, calculée en deux variantes côte à côte :
+
+* `local` — l'image fixe est le bin de choroïde la plus fine **de ce
+  one-cycle**. Chaque cycle est mesuré contre lui-même : insensible à la dérive
+  lente de l'œil, mais la référence est bruitée (un bin ne contient que quelques
+  frames).
+* `global` — l'image fixe est la **moyenne** des bins les plus fins de tous les
+  one-cycles. Référence bien moins bruitée et strains comparables d'un cycle à
+  l'autre ; en contrepartie elle absorbe la dérive, et les six bins de chaque
+  cycle deviennent mobiles.
+
+**La régularisation.** `displacement_sigma` lisse le champ à chaque itération.
+Trop faible, les démons ajustent le speckle ; trop forte, ils rabotent
+l'amplitude réelle. Les quatre valeurs 5, 10, 12 et 15 sont conservées, et la
+stabilité d'un résultat à travers ce balayage fait partie du résultat.
+:::
+
+## Contrôle préalable : ce que σ fait au champ
+
+{{< include figures_sans_predictors/p2_sigma_control.qmd >}}
+
+Le balayage tranche immédiatement : **σ = 5 est à écarter.** À cette valeur le
+jacobien du champ devient négatif sur jusqu'à **1,46 %** des pixels — la
+transformation se replie sur elle-même, ce qui n'a aucun sens physique. À
+σ ≥ 10 il est strictement positif sur les **17 336** recalages retenus.
+
+L'amplitude reste un avertissement à elle seule : $|u|_{max}$ vaut 21 µm en
+médiane à σ = 15, pour une pulsation choroïdienne attendue de l'ordre de **4 µm**.
+Le champ trouvé est cinq fois plus grand que le mouvement qu'il est censé
+mesurer, et l'essentiel de son amplitude ne décrit pas la pulsation.
+
+## Validation : le strain retrouve-t-il une dilatation connue ?
+
+C'est le test le plus direct que la cohorte permette, et il conditionne la
+lecture de tout le reste. La référence étant le bin **le plus fin**, la
+dilatation des bins mobiles est *connue, mesurée sur les masques* : 3,25 µm en
+médiane après le portail, positive dans 100 % des recalages du cas local. Pour
+une choroïde de 410 µm, le strain attendu vaut donc
+
+$$\varepsilon_{yy}^{\text{attendu}} = \frac{\Delta CT}{CT} = \frac{3{,}25}{410} \approx +7{,}9 \times 10^{-3}$$
+
+et la pente attendue du strain contre $\Delta CT$ vaut $1/CT = 2{,}4 \times 10^{-3}$
+par µm.
+
+::: {.callout-note}
+## Le seul endroit de la section où le strain choroïdien subsiste
+
+Toute l'analyse porte sur le **strain rétinien** — c'est la rétine dont le
+gonflement définit le SANS. Cette figure est l'exception, et elle l'est par
+nécessité : la référence étant le bin de choroïde la plus fine, seule la
+**choroïde** possède une dilatation connue, donc une valeur de strain attendue à
+laquelle comparer la mesure. La rétine n'a aucune vérité terrain.
+
+Le strain choroïdien sert donc ici de **contrôle de méthode**, jamais de
+marqueur : il ne réapparaît ni dans la répétabilité, ni dans la prédiction du
+SANS. L'**épaisseur** choroïdienne, elle, reste l'abscisse de toute la section.
+:::
+
+{{< include figures_sans_predictors/p2_validation.qmd >}}
+
+{{< include figures_sans_predictors/tab_validation.qmd >}}
+
+::: {.callout-warning}
+## Le portail retourne ce résultat, et c'est le résultat
+
+Une version antérieure de cette page concluait que « les démons voient la
+dilatation » : $r \approx +0{,}18$, stable aux quatre régularisations. Ce
+chiffre est celui de la courbe rouge — **toutes** les données, portail non
+appliqué.
+
+Sur les one-cycles **retenus**, il devient **négatif** aux quatre σ :
+$-0{,}04$, $-0{,}10$, $-0{,}11$, $-0{,}12$.
+
+Ce n'est pas une atténuation. Restreindre l'étendue d'une abscisse rapproche $r$
+de zéro — le portail réduit l'étendue de ΔCT de 146 µm à 26 µm, et son
+écart-type d'un facteur 3,9 — mais une restriction d'étendue **n'inverse pas le
+signe**. L'inversion dit que la relation positive vivait *entièrement* dans les
+one-cycles écartés.
+
+Et l'explication est mécanique. Le portail écarte les one-cycles dont la
+pulsatilité dépasse 5 % du CT, c'est-à-dire ceux où la mesure d'épaisseur a
+échoué. Sur ceux-là, l'erreur de segmentation gonfle **à la fois** le ΔCT lu sur
+les masques **et** la déformation apparente que les démons ont à ajuster : les
+deux quantités partagent la même erreur, et corrèlent pour cette raison. C'est
+une corrélation d'erreur partagée, pas de physiologie.
+
+**Dans l'intervalle physiologiquement plausible, les démons ne retrouvent rien
+de la dilatation.**
+:::
+
+{{< include figures_sans_predictors/tab_validation.qmd >}}
+
+Ce qu'il faut retenir, dans l'ordre :
+
+1. **La relation n'existe pas** là où la mesure d'épaisseur est fiable. La pente
+   retenue est négative et vaut $-2$ à $-6$ % de la pente qu'impose la
+   géométrie, quand elle devrait valoir $+100$ %.
+2. **L'ordre de grandeur reste absent de toute façon.** Même la pente non
+   filtrée ne valait que 4 à 6 % de l'attendu — les démons récupéraient un
+   vingtième du mouvement au mieux.
+3. **Le biais de lissage, lui, est réel et se lit encore.** L'ordonnée à
+   l'origine glisse avec $\sigma$ dans les deux jeux, ce qui reste la signature
+   d'un artefact de régularisation et non d'un signal.
+
+Le reste de cette page porte sur le jeu **filtré**, et doit se lire en sachant
+que la grandeur mesurée n'a pas passé son propre contrôle de validité.
+
+## Le strain par bande, contre l'épaisseur et contre la dilatation
+
+La rétine est découpée en cinq bandes de largeur égale, indexées **+2 à −2** ;
+l'index désigne un côté de la **rétine** et la numérotation est donc **inversée
+pour l'œil gauche**, dont la B-scan est le miroir de celle de l'œil droit (voir
+[Methods](sans-methods.qmd)). Chaque point est un couple (condition, one-cycle, bande) :
+les bins d'un même one-cycle sont moyennés, sinon les six bins compteraient comme
+six observations indépendantes, ce qu'ils ne sont pas.
+
+### Moyenne
+
+{{< include figures_sans_predictors/p2_strain_vs_ct_moy.qmd >}}
+
+{{< include figures_sans_predictors/p2_strain_vs_dct_moy.qmd >}}
+
+### Médiane
+
+{{< include figures_sans_predictors/p2_strain_vs_ct_med.qmd >}}
+
+{{< include figures_sans_predictors/p2_strain_vs_dct_med.qmd >}}
+
+### p95 signé
+
+{{< include figures_sans_predictors/p2_strain_vs_ct_p95.qmd >}}
+
+{{< include figures_sans_predictors/p2_strain_vs_dct_p95.qmd >}}
+
+### Ce que les trois nuages disent ensemble
+
+**Les trois agrégats donnent la même figure, à l'échelle près.** Le p95 est douze
+fois plus grand en magnitude que la moyenne et la médiane — $|{\varepsilon}_{yy}|$
+médian de $1{,}3 \times 10^{-2}$ contre $1{,}0 \times 10^{-3}$ — ce qui est
+attendu d'un quantile extrême face à deux mesures de centre. Mais la forme du
+nuage, sa pente et son absence de structure ne changent pas.
+
+Un détail mérite d'être noté parce qu'il illustre ce que « p95 signé » veut dire :
+le signe du p95 diffère de celui de la médiane dans plus d'un tiers des bandes.
+Là où le centre de la distribution est positif mais où les plus fortes
+déformations sont des compressions, le p95 sort négatif — c'est exactement ce
+qu'on lui demande de rapporter, et cela n'aurait pas été visible sur
+$|{\varepsilon}_{yy}|$.
+
+Le profil latéral est net et reproductible d'une régularisation à l'autre — mais
+il est **symétrique** : à σ = 10, le strain rétinien médian vaut
+$-0{,}33$, $-0{,}85$, $-1{,}29$, $-0{,}86$ et $-0{,}40 	imes 10^{-3}$ de la
+bande +2 à la bande −2. Il est le plus négatif au centre et remonte vers les deux
+bords, à quelques pour cent près. Le gradient latéral *asymétrique* que le carnet
+avait relevé sur une condition unique ne se retrouve pas sur la cohorte. Un U
+symétrique ressemble beaucoup plus à un effet de bord du recalage qu'à une
+propriété de l'œil.
+
+::: {.callout-note}
+## Ce que le miroir de la numérotation a changé, et ce qu'il n'a pas changé
+
+Depuis le 2 septembre 2026, la numérotation des bandes est **inversée pour l'œil
+gauche**, de sorte qu'un même index désigne le même côté de la rétine dans les
+deux yeux (voir [Methods](sans-methods.qmd)). C'est exactement la correction qui
+permettrait à une asymétrie naso-temporale de se voir : avant elle, les deux
+côtés étaient mélangés et toute asymétrie s'annulait à moitié.
+
+**Le profil du strain n'a pas bougé** — il était symétrique, il l'est resté, à
+$-0{,}40$ contre $-0{,}33 	imes 10^{-3}$ sur les deux bords. L'hypothèse « effet
+de bord du recalage » en sort renforcée : elle survit à un test qui aurait pu la
+défaire.
+
+**Le profil de l'épaisseur choroïdienne, lui, s'est ouvert.** L'épaisseur médiane
+par bande passe de $333$, $427$, $489$, $412$, $292$ µm (avant, quasi symétrique)
+à $373$, $440$, $489$, $371$, $270$ µm : le côté **+** est désormais plus épais
+que le côté **−** de **103 µm** aux bandes extrêmes, contre 41 µm auparavant. Une
+asymétrie d'épaisseur choroïdienne entre les deux côtés de la macula est
+attendue anatomiquement ; ce qui est neuf, c'est qu'elle soit **visible** ici.
+
+Le contrôle qui tranche : séparés par œil, les deux profils d'épaisseur ont
+désormais **la même forme** — $345$, $434$, $494$, $369$, $266$ µm pour les yeux
+droits, $378$, $448$, $482$, $371$, $284$ µm pour les gauches. Avant le miroir
+ils étaient l'image l'un de l'autre, et les agréger revenait à moyenner une
+asymétrie avec son opposée.
+
+Quel côté anatomique porte le signe + n'est pas déterminé par ces données : cela
+dépend de la convention d'affichage des B-scans à l'acquisition, qui n'est pas
+enregistrée dans les tables. Le rattacher au nasal ou au temporal demande cette
+information.
+:::
+
+## Volcano : une pente par condition et par bande
+
+Les nuages ci-dessus mélangent 104 conditions. Le volcano les sépare : chaque
+point est **un ajustement**, celui du strain contre l'abscisse sur tous les
+couples (one-cycle, bin) d'une condition et d'une bande. L'abscisse du volcano
+est la pente, l'ordonnée sa p-valeur.
+
+### Moyenne
+
+{{< include figures_sans_predictors/p2_volcano_ct_moy.qmd >}}
+
+{{< include figures_sans_predictors/p2_volcano_dct_moy.qmd >}}
+
+### Médiane
+
+{{< include figures_sans_predictors/p2_volcano_ct_med.qmd >}}
+
+{{< include figures_sans_predictors/p2_volcano_dct_med.qmd >}}
+
+### p95 signé
+
+{{< include figures_sans_predictors/p2_volcano_ct_p95.qmd >}}
+
+{{< include figures_sans_predictors/p2_volcano_dct_p95.qmd >}}
+
+### La lecture
+
+Le tableau réunit les trois agrégats et les deux abscisses. La pente qu'impose la
+géométrie est la **même** pour les trois — $1/CT$ — puisqu'elle ne dépend que de
+l'épaisseur : les six lignes se lisent donc les unes contre les autres, et toutes
+contre cette valeur.
+
+{{< include figures_sans_predictors/tab_pentes_pool.qmd >}}
+
+Le volcano dit deux choses que les nuages précédents cachaient.
+
+**Beaucoup d'ajustements sont individuellement significatifs** : sur la moyenne,
+32 % des 3 040 couples (condition, bande) passent $p < 0{,}05$ contre l'épaisseur,
+35 % contre la dilatation. Pris un par un, ces ajustements ne sont donc pas du
+bruit.
+
+**Mais leur signe est tiré à pile ou face.** Sur ces ajustements significatifs,
+à peine la moitié ont une pente positive — 16 % du total contre l'épaisseur, 20 %
+contre la dilatation. La pente médiane, elle, vaut $1{,}7 \times 10^{-5}$ et
+$3{,}6 \times 10^{-5}$ par µm, à comparer aux $2{,}4 \times 10^{-3}$ qu'impose la
+géométrie.
+
+**Et pour le p95, « pile ou face » est à prendre au pied de la lettre** :
+**49,8 %** de pentes positives contre l'épaisseur, **51,7 %** contre la
+dilatation — la moitié exacte, aux deux abscisses. Sa pente médiane contre
+l'épaisseur est même **négative** ($-5{,}4 \times 10^{-6}$). Il produit en outre
+deux fois moins d'ajustements significatifs que les deux mesures de centre
+(17,5 % et 18,6 % contre 31 à 35 %), pour une dispersion de pentes dix fois plus
+large : c'est la signature d'un estimateur bruité, pas d'un signal.
+
+Autrement dit : **il y a bien une structure dans chaque condition, mais elle ne
+pointe pas dans la même direction d'une condition à l'autre.** C'est ce qu'on
+attend d'un ajustement dont la significativité vient de l'autocorrélation entre
+bins voisins plutôt que d'un effet physiologique commun — et c'est aussi
+pourquoi les nuages agrégés de la section précédente paraissent plats.
+
+::: {.callout-important}
+## Les deux abscisses n'en font qu'une
+
+Les pentes contre $CT$ et contre $\Delta CT$ sont, sur ces données, **la même**.
+
+À l'intérieur d'un one-cycle c'est mécanique : $\Delta CT = CT - CT_{\text{réf}}$
+et la référence y est une constante, donc seule l'ordonnée change. Mais la
+dégénérescence **survit au pooling** sur la condition, où la référence varie
+pourtant d'un one-cycle à l'autre : les pentes poolées diffèrent alors de
+**0,6 %** en médiane.
+
+La raison est instructive. Retirer la référence supprime la variance de $CT$
+**entre** one-cycles ; si la pente n'en est pas affectée, c'est que cette
+variance-là ne portait aucun signal de strain. La distinction « la rétine suit-elle
+le *gonflement* » contre « le strain dépend-il de l'*épaisseur* » ne peut donc pas
+être tranchée ici — non par un défaut de calcul, mais parce que la variation
+d'épaisseur d'un one-cycle à l'autre est du bruit. Les deux versions restent
+publiées dans `pooled_slopes.csv`, pour que ce constat soit vérifiable.
+:::
+
+::: {.source-note}
+Données produites par `Astronauts/compute_demons_strain.py` (104 conditions,
+394 one-cycles retenus sur 876, 17 336 recalages, 10,69 h) et les ajustements poolés par
+`Astronauts/compute_sans_predictors.py` ; figures générées par `figures_sans_predictors/make_figures.py`.
+:::

@@ -1,0 +1,165 @@
+---
+title: "Pulse comparison: mask vs intensities"
+subtitle: "Le pouls choroïdien extrait deux fois de la même vidéo — par l'épaisseur segmentée et par les intensités — puis les deux passés au même FIR"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Tout ce qui suit dans cette section repose sur un tri des images par phase
+cardiaque. Avant de mesurer quoi que ce soit sur ce tri, il faut savoir si le
+signal qui le porte existe. C'est l'objet de cette page.
+
+## Deux voies indépendantes vers le même pouls
+
+La même vidéo B-scan donne deux estimations de la pulsation choroïdienne, qui ne
+partagent aucune étape de calcul :
+
+* **voie masque** — l'épaisseur de la choroïde segmentée, sommée par A-scan et
+  moyennée sur les colonnes exploitables. C'est une mesure **géométrique**, qui
+  dépend entièrement de la segmentation U-Net.
+* **voie intensités** — une combinaison de composantes SVD des intensités des
+  pixels, sélectionnées par périodogramme de Lomb-Scargle (méthode `1_fir` de la
+  page [Comparing pulse-extraction methods](data-pulse-extraction-methods.qmd)).
+  C'est une mesure **radiométrique**, qui ne voit jamais le masque.
+
+Les deux subissent ensuite exactement le même passe-bande FIR à phase linéaire,
+centré sur la fréquence cardiaque à ±20 %. Si elles mesurent la même pulsation,
+elles doivent se corréler ; si elles divergent, l'une des deux — au moins —
+mesure du bruit.
+
+::: {.callout-note}
+## Pourquoi une p-valeur plutôt que le coefficient lui-même
+
+Le **signe** du pouls d'intensité est arbitraire : c'est une combinaison de
+composantes SVD, et rien ne fixe son orientation. Sa corrélation avec le CT peut
+donc sortir négative sans que cela veuille dire quoi que ce soit. De plus les
+one-cycles n'ont pas tous le même nombre de points, si bien qu'un même $r$ n'y a
+pas la même valeur de preuve.
+
+La p-valeur bilatérale règle les deux problèmes d'un coup : elle est insensible
+au signe et elle intègre l'effectif. Elle est déduite de $r$ et $n$ par la
+statistique de Student $t = r\sqrt{(n-2)/(1-r^2)}$, sans recharger les traces.
+:::
+
+## Combien de cycles portent réellement le signal ?
+
+{{< include figures_sans_predictors/p1_hist_logp.qmd >}}
+
+Les deux supports ne racontent pas la même histoire, et l'écart est le résultat
+principal de cette page.
+
+Sur le **support temporel** — l'épaisseur par frame, 54 points par one-cycle en
+médiane — la relation est franche : **67,5 %** des one-cycles passent
+$p < 0{,}05$ et **48,9 %** passent $p < 0{,}001$. Les deux voies mesurent bien la
+même pulsation, et la voie masque n'est donc pas du bruit.
+
+Sur le **support des bins repliés** — six points, le support exact sur lequel le
+strain sera mesuré dans les pages suivantes — il n'en reste presque rien :
+**12,4 %** passent $p < 0{,}05$ et **0,2 %** passent $p < 0{,}001$, contre 5 % et
+0,1 % qu'un tirage au hasard produirait. Six points ne suffisent pas à établir
+quoi que ce soit.
+
+C'est une limite structurelle de tout ce qui suit : le repliement à six bins jette
+l'essentiel de la preuve que la vidéo contient pourtant.
+
+## Les deux pouls, superposés
+
+{{< include figures_sans_predictors/p1_overlay.qmd >}}
+
+Chaque courbe est centrée-réduite : le pouls d'intensité est sans unité, le CT
+est en micromètres, et les superposer bruts ne dirait rien. Le signe du pouls est
+retourné quand sa corrélation médiane avec le CT est négative — ce qui concerne
+**56 conditions sur 104**, à peu près une sur deux, exactement ce qu'un signe
+tiré au hasard donnerait.
+
+Le panneau du bas isole la condition la plus **banale** de la cohorte —
+`09_210921001__210921001before_rigidity_OD5`, dont le $r$ de $+0{,}41$ est
+exactement la médiane des $|r|$. Ce n'est pas la plus belle : montrer la
+meilleure donnerait une idée fausse de ce que la chaîne voit d'habitude.
+
+::: {.callout-important}
+## Le signe n'est même pas stable à l'intérieur d'une condition
+
+On pourrait croire que le problème de signe se règle par convention. Il ne se
+règle pas : sur les 104 conditions, la fraction de one-cycles qui partagent le
+signe majoritaire vaut 0,71 en médiane, et **19 conditions seulement** ont le
+même signe sur tous leurs one-cycles.
+
+Ce n'est donc pas une orientation arbitraire qu'on pourrait fixer une fois pour
+toutes — la relation entre épaisseur et pouls **change d'un battement moyen au
+suivant** à l'intérieur d'un même enregistrement.
+:::
+
+{{< include figures_sans_predictors/tab_cohort.qmd >}}
+
+::: {.source-note}
+Données produites par `Astronauts/compute_demons_strain.py` et
+`Astronauts/compute_ct_pulse_traces.py` ; figures générées par
+`figures_sans_predictors/make_figures.py`, qui ne fait que lire leurs sorties.
+Les chiffres cités sont repris de `figures_sans_predictors/resume.txt`.
+:::
+
+## Le portail de validité des one-cycles
+
+Tout ce qui précède décrit la matière brute. Les pages suivantes ne travaillent
+pas dessus : un **portail de validité** écarte d'abord les one-cycles dont on
+peut établir, sans jamais regarder le strain, qu'ils ne portent pas ce qu'ils
+prétendent porter.
+
+::: {.callout-important}
+## Pourquoi aucun critère ne regarde le strain
+
+Écarter les one-cycles dont le strain s'éloigne des autres fabriquerait la
+cohérence qu'on prétend ensuite mesurer. Pire, ce degré de liberté échapperait
+entièrement à la correction de Benjamini-Hochberg appliquée plus loin, qui ne
+protège que contre le nombre de tests — pas contre le choix de l'échantillon.
+
+Les quatre critères sont donc calculés en amont du strain, et deux d'entre eux
+sortent directement de cette page :
+
+* **pulsatilité** $|\Delta CT| / CT < 5\ \%$ — la pulsation choroïdienne
+  cardiaque vaut 1 à 2 %, et la médiane observée (2,0 %) le confirme. Mais la
+  queue de la distribution monte à **43 %**, ce qui n'est pas une pulsation :
+  c'est un échec de segmentation ou de repliement. Calculée sur les seuls
+  masques ;
+* **phase valide** — $p < 0{,}05$ pour la corrélation masque / intensités sur le
+  support temporel. Les deux voies ne partagent aucune étape de calcul : leur
+  accord est une preuve indépendante que le repliement est en phase. Le support
+  à 6 bins est écarté, pour la raison donnée plus haut — filtrer dessus
+  reviendrait à filtrer au hasard ;
+* **occupation** — au moins 5 frames dans le bin le plus pauvre ;
+* **jacobien** non replié, évalué à $\sigma \geq 10$ seulement. Le faire dépendre
+  de $\sigma$ donnerait un jeu de one-cycles différent par régularisation, et on
+  ne pourrait plus comparer les régularisations entre elles.
+
+Une condition entière est écartée s'il lui reste moins de **3** one-cycles
+valides — en dessous, la médiane qui agrège la condition n'a plus aucune marge.
+:::
+
+{{< include figures_sans_predictors/p1_portail.qmd >}}
+
+{{< include figures_sans_predictors/tab_portail.qmd >}}
+
+{{< include figures_sans_predictors/tab_portail_videos.qmd >}}
+
+::: {.callout-warning}
+## Ce que le portail révèle en passant
+
+Le critère du **jacobien ne retire rien** : à $\sigma \geq 10$, la totalité des
+one-cycles le passent. Il est conservé pour que le portail reste explicite, mais
+c'est une confirmation de plus que $\sigma = 5$ était le seul réglage à écarter.
+
+Surtout, il faut retirer **plus de la moitié** des one-cycles pour ne garder que
+ceux qui passent des contrôles élémentaires : **422 sur 876** franchissent les
+quatre critères, soit **48,2 %**, et il en reste **394** une fois écartées les
+vidéos tombées sous trois one-cycles valides. C'est un résultat en soi, et il ne
+dit rien sur le strain : il dit que le repliement à **6 bins × 6 battements**
+travaille à la limite de ce que ces enregistrements supportent. C'est l'argument
+le plus direct en faveur du redécoupage évoqué en conclusion de la section — 3
+bins de 20 battements garderaient le contraste extrême du cycle en triplant le
+nombre de frames moyennées par bin.
+:::
+
+Toutes les figures et tous les chiffres des trois pages suivantes portent sur le
+jeu **filtré**. Cette page-ci est la seule à montrer les données brutes : c'est
+elle qui établit le portail, et montrer la sélection sur des données déjà
+sélectionnées n'aurait aucun sens.

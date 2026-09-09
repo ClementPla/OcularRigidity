@@ -41,6 +41,42 @@ The same questions, asked of the real cohort rather than of a simulation.
 |:--|:--|
 | [Comparing pulse-extraction methods on real videos](data-pulse-extraction-methods.qmd) | Seven routes from a registered B-scan video to a cardiac phase — no filter, FIR band-pass, SSA, M-SSA, per-channel SSA, BOPDMD model and projected — over 81 conditions and 14 subjects: where in the SVD the pulse actually lives, which phases are interpretable, and what each method costs |
 
+## Strain as a predictor of SANS (first experiment)
+
+Le strain axial mesuré par recalage démons entre bins d'un cycle cardiaque,
+évalué comme prédicteur des **deux marqueurs de SANS** — le gonflement rétinien
+post-vol (ΔTRT) et l'aplatissement du globe (ΔAL, la variation de longueur
+axiale) : 104 conditions, 876 one-cycles, 38 496 recalages.
+
+| Page | What it covers |
+|:--|:--|
+| [Methods](sans-methods.qmd) | La chaîne complète, étape par étape et paramètre par paramètre : repliement, références, démons, agrégats du strain, portail de validité, ICC et corrections de tests multiples — de quoi refaire ou contester l'expérience |
+| [Marker relationships](sans-marker-relationships.qmd) | Les issues cliniques seules, sans aucun marqueur OCT : comment les cinq ΔTRT se tiennent entre eux et avec le ΔAL, comment ils se répartissent par tranche, et ce que la base contient réellement — patient par patient, cases manquantes en rouge |
+| [Pulse comparison: mask vs intensities](sans-pulse-comparison.qmd) | Le pouls extrait deux fois de la même vidéo — par l'épaisseur segmentée et par les intensités — puis passé au même FIR : combien de cycles portent réellement le signal, et pourquoi six bins n'y suffisent pas |
+| [Stress-strain](sans-stress-strain.qmd) | Le strain $\varepsilon_{yy}$ contre l'épaisseur et contre sa dilatation, par bande latérale, quatre régularisations × deux références ; la validation contre une dilatation connue, et les volcanos par condition |
+| [Repeatability](sans-repeatability.qmd) | ICC(A,1) et CV intra-sujet sur deux définitions du réplicat : les acquisitions répétées « même œil, même séance », puis les one-cycles d'une même vidéo — et ce que l'écart entre deux battements fait à l'accord |
+| [Prediction of SANS: rigidity](sans-prediction-rigidity.qmd) | L'épaisseur choroïdienne et sa pulsation contre le ΔTRT et le ΔAL : treize marqueurs qui ne passent pas par le champ de déformation, les seuls de l'étude qui survivent à la correction de leur catégorie — et seulement contre le gonflement rétinien, jamais contre l'aplatissement |
+| [Prediction of SANS: strain](sans-prediction-strain.qmd) | Les trois agrégats du strain rétinien, bande par bande, quatre σ × deux références, contre les six issues : ce que le taux de fausses découvertes en laisse, si la répétabilité achète de la corrélation — puis les mêmes marqueurs en boxplots par classe de gonflement, hommes et femmes séparés, avec et sans correction du sexe |
+| [Prediction of SANS: viscosity](sans-prediction-viscosity.qmd) | Les pentes du strain contre l'épaisseur et contre la dilatation, dans leurs deux estimateurs, avec leurs coefficients r, contre les six issues — la catégorie la plus nombreuse, et la plus nettement négative |
+
+## Reproducibility
+
+De combien deux mesures du **même œil**, prises à quelques minutes d'intervalle
+sur le même appareil, diffèrent-elles ? C'est la borne sans laquelle aucune
+différence observée ailleurs n'est interprétable. À ce jour : 55 acquisitions,
+8 participants, 18 442 B-scans — et d'autres à venir.
+
+**La réponse est tombée** : le strain rétinien n'est pas répétable. ICC(1,1)
+médian 0,16, et 78 % de sa variance sépare deux mesures du même œil à cinq
+minutes d'intervalle. Cela borne à ≈ 0,40 toute corrélation qu'il pouvait avoir
+avec un marqueur de SANS, et explique pourquoi la section précédente ne trouvait
+de signal que dans l'épaisseur choroïdienne.
+
+| Page | What it covers |
+|:--|:--|
+| [Strain repeatability](repro-strain-repeatability.qmd) | La chaîne de l'expérience SANS refaite à l'identique sur des acquisitions répétées du même œil : l'ancrage de la fréquence cardiaque sans mesure au brassard, l'accord entre le pouls SVD et l'épaisseur choroïdienne, le strain entre le bin le plus mince et le plus épais — puis le résultat, **ICC(1,1) médian 0,16 sur 144 configurations et 78 % de variance intra-œil**, et ce qu'il impose comme plafond à l'expérience précédente |
+| [Data exploration](repro-data-exploration.qmd) | Ce que la cohorte contient — réplicats par participant et par œil, ré-exports démasqués (29 des 75 fichiers reçus), acquisitions tronquées — puis les conditions d'acquisition : pourquoi la cadence suit le réglage ART et non la latéralité, d'où vient l'intervalle entre B-scans, et ce qui n'est déjà pas répétable avant même d'avoir mesuré une image |
+
 ## Paths to explore
 
 Pistes non testées : ce qu'une référence propose, ce qui serait transférable à

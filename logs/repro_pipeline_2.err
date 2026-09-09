@@ -1,0 +1,24 @@
+W0906 14:27:46.104000 236376 site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+C:\Users\transformer\anaconda3\envs\pyOR\Lib\site-packages\torchmetrics\utilities\prints.py:43: UserWarning: DiceScore metric currently defaults to `average=micro`, but will change to`average=macro` in the v1.9 release. If you've explicitly set this parameter, you can ignore this warning.
+  warnings.warn(*args, **kwargs)
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+C:\Users\transformer\anaconda3\envs\pyOR\Lib\site-packages\imageio\plugins\_tifffile.py:8776: UserWarning: unexpected end of LZW stream (code 0)
+  warnings.warn("unexpected end of LZW stream (code %i)" % code)
+
+CC Analysis:   0%|          | 0/348 [00:00<?, ?it/s][A
+CC Analysis:  67%|██████▋   | 232/348 [00:00<00:00, 2307.58it/s][A
+                                                                [A
+CC Analysis:   0%|          | 0/348 [00:00<?, ?it/s][A
+CC Analysis:  64%|██████▎   | 221/348 [00:00<00:00, 2209.31it/s][A
+                                                                [AC:\Users\transformer\Documents\Nicolas\mes-codes\SANSORI\OcularRigidity\src\ocularrigidity\segmentation\fovea\from_ilm.py:85: RuntimeWarning: All-NaN slice encountered
+  rng = np.nanmax(filtered, axis=1, keepdims=True) - np.nanmin(
+Registering frames:   0%|          | 0/3 [00:00<?, ?it/s]Registering frames:  33%|███▎      | 1/3 [00:00<00:00,  2.21it/s]Registering frames:  67%|██████▋   | 2/3 [00:00<00:00,  3.45it/s]Registering frames: 100%|██████████| 3/3 [00:00<00:00,  4.87it/s]                                                                 Traceback (most recent call last):
+  File "C:\Users\transformer\Documents\Nicolas\mes-codes\SANSORI\OcularRigidity\Astronauts\compute_registration.py", line 721, in main
+    row = process_condition(raw_dir, model, frames_dir, masks_dir)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\transformer\Documents\Nicolas\mes-codes\SANSORI\OcularRigidity\Astronauts\compute_registration.py", line 536, in process_condition
+    box = choroid_roi(flat_masks)
+          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\transformer\Documents\Nicolas\mes-codes\SANSORI\OcularRigidity\Astronauts\compute_registration.py", line 335, in choroid_roi
+    raise ValueError("aucun pixel de choroide dans le tiers central des A-scans")
+ValueError: aucun pixel de choroide dans le tiers central des A-scans

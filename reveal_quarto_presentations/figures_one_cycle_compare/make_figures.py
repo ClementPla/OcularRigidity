@@ -7,7 +7,7 @@ Comme `figures_pulse_from_data/`, cette page ne calcule RIEN : elle lit ce que
 met en images.
 
 Entrees :
-    E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0/one_cycle_compare/
+    E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0_flatten_choroid_xcorr/one_cycle_compare/
         conditions.csv    1 ligne / condition
         methods.csv       1 ligne / (condition, methode)
         bins.csv          1 ligne / (condition, methode, bin)
@@ -50,12 +50,18 @@ from scipy.stats import wilcoxon
 # Entrees / sorties
 # --------------------------------------------------------------------------- #
 DATA = Path(
-    "E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0/one_cycle_compare")
+    "E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0_flatten_choroid_xcorr/one_cycle_compare")
 # Les pouls et phases viennent de la page precedente ; seule la HR instantanee
 # (`bpm_<methode>`, filtree sur un cycle) n'est pas recopiee dans les .npz du
 # repliement, on la relit donc a la source.
 TRACES_POULS = DATA.parent / "pulse_from_data" / "traces"
-SORTIE = Path(__file__).parent
+# `.absolute()`, et surtout PAS `.parent` seul : lance depuis ce dossier-ci,
+# `Path("make_figures.py").parent` vaut `.`, et `SORTIE.parent` vaut encore `.` --
+# les pages par condition atterrissaient alors dans `figures_one_cycle_compare/
+# one_cycles/` au lieu du depot, et le site rendait les anciennes.
+# `.resolve()` serait pire : ce dossier est une JONCTION vers `E:`, la resolution
+# ferait sortir `PAGES` du depot.
+SORTIE = Path(__file__).absolute().parent
 VIDEOS = SORTIE / "videos"
 PAGES = SORTIE.parent / "one_cycles"  # pages par condition (texte, dans le depot)
 
@@ -406,6 +412,7 @@ def table_methodes():
         ("frames folded", "n_good", "{:.0f}"),
         ("bin-count CV", "bin_cv", "{:.3f}"),
         ("smallest bin", "bin_min", "{:.0f}"),
+        ("empty bins (of 30)", "n_bins_empty", "{:.0f}"),
     ]
     for label, col, fmt in rangs:
         cells = [stat(methods[methods.methode == nom][col], fmt)
@@ -469,7 +476,10 @@ def fig_deltaY(z, r):
         if cle not in z.files:
             continue
         th = np.asarray(z[cle], float)
-        p2p = th.max() - th.min()
+        # Les bins vides valent NaN (aucune frame moyennee) : Plotly les laisse
+        # en trou, et le crete-a-crete les ignore -- un 0 px y serait un
+        # artefact de repliement, pas une epaisseur.
+        p2p = np.nanmax(th) - np.nanmin(th)
         fig.add_trace(go.Scatter(
             x=np.round(temps, 4), y=np.round(th, 4), mode="lines+markers",
             name=f"{LABELS[nom]} — ΔY {p2p:.2f} px",
@@ -638,7 +648,7 @@ its own, the cohort figure does.
 Recording: `{r.astro}/{r.moment}/{r.condition}` — {r.n_frames:.0f} frames,
 {r.duree_s:.0f} s, {r.fs_Hz:.1f} Hz, reference HR {r.hr_BPM:.0f} BPM
 (`{r.hr_source}`). Videos, folded curves and the `.npz` diagnostics:
-`E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0/one_cycle_compare/{r.out_rel}/`.
+`E:/NASA_Rigidity/SegmentationVariations/model1_scale_1.0_flatten_choroid_xcorr/one_cycle_compare/{r.out_rel}/`.
 :::
 """
     (PAGES / f"oc_{r.slug}.qmd").write_text(corps, encoding="utf-8")
@@ -697,8 +707,12 @@ for nom in TOUTES:
     s = methods[methods.methode == nom]
     for col in ("split_half_r_pix", "split_half_r_kymo", "split_half_r_thick",
                 "deltaY_fit_px", "deltaY_px", "mod_depth", "bin_cv",
-                "good_frac"):
+                "good_frac", "n_bins_empty"):
         resume[f"{col}_{nom}"] = float(s[col].median())
+    # Combien de conditions perdent au moins un bin : a 30 bins ce n'est plus
+    # theorique, et c'est ce qui justifie de traiter les bins vides en NaN.
+    resume[f"cond_avec_bin_vide_{nom}"] = int((s.n_bins_empty > 0).sum())
+    resume[f"bins_vides_max_{nom}"] = int(s.n_bins_empty.max())
 for col in ("split_half_r_pix", "split_half_r_kymo", "split_half_r_thick",
             "deltaY_fit_px", "deltaY_px"):
     x, y, _ = paire(col)

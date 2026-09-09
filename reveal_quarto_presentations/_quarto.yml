@@ -17,6 +17,17 @@ project:
     - data-pulse-extraction-methods.qmd
     - comparing-one-cycle-videos.qmd
     - one_cycles/*.qmd
+    - sans-methods.qmd
+    - sans-marker-relationships.qmd
+    - sans-acquisition-parameters.qmd
+    - sans-pulse-comparison.qmd
+    - sans-stress-strain.qmd
+    - sans-repeatability.qmd
+    - sans-prediction-rigidity.qmd
+    - sans-prediction-strain.qmd
+    - sans-prediction-viscosity.qmd
+    - repro-data-exploration.qmd
+    - repro-strain-repeatability.qmd
     - explore-iceemdan-svd.qmd
   # Les <video> sont ecrites en HTML brut dans les fragments generes : le
   # detecteur de ressources de Quarto ne suit pas ces balises (il suit <img>,
@@ -176,6 +187,32 @@ website:
           # 106 entrees. On y arrive par la table de liens de la page ci-dessous.
           - text: "Comparing one-cycle videos"
             href: comparing-one-cycle-videos.qmd
+      - section: "Strain as a predictor of SANS (first experiment)"
+        contents:
+          - text: "Methods"
+            href: sans-methods.qmd
+          - text: "Marker relationships"
+            href: sans-marker-relationships.qmd
+          - text: "Acquisition parameters"
+            href: sans-acquisition-parameters.qmd
+          - text: "Pulse comparison: mask vs intensities"
+            href: sans-pulse-comparison.qmd
+          - text: "Stress-strain"
+            href: sans-stress-strain.qmd
+          - text: "Repeatability"
+            href: sans-repeatability.qmd
+          - text: "Prediction of SANS: rigidity"
+            href: sans-prediction-rigidity.qmd
+          - text: "Prediction of SANS: strain"
+            href: sans-prediction-strain.qmd
+          - text: "Prediction of SANS: viscosity"
+            href: sans-prediction-viscosity.qmd
+      - section: "Reproducibility"
+        contents:
+          - text: "Data exploration"
+            href: repro-data-exploration.qmd
+          - text: "Strain repeatability"
+            href: repro-strain-repeatability.qmd
       - section: "Paths to explore"
         contents:
           - text: "ICEEMDAN + Hankel SVD"

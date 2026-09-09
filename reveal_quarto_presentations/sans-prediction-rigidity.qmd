@@ -1,0 +1,257 @@
+---
+title: "Prediction of SANS : rigidity"
+subtitle: "L'épaisseur choroïdienne et sa pulsation contre les deux marqueurs de SANS — le k de Sayah et ses entrées, les métriques CT / pouls, et l'épaisseur de chaque bande"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Trois pages posent la même question à trois familles de marqueurs :
+**[rigidité](sans-prediction-rigidity.qmd)** (celle-ci),
+**[strain](sans-prediction-strain.qmd)** et
+**[viscosité](sans-prediction-viscosity.qmd)**. Les séparer n'est pas cosmétique :
+elles n'ont ni le même nombre de marqueurs, ni la même reproductibilité, ni le
+même verdict, et une correction de tests multiples faite en commun noyait les
+treize marqueurs d'épaisseur dans les milliers de variantes de pente.
+
+## Les issues et les marqueurs
+
+**Deux marqueurs de SANS**, six issues, tous lus dans `sansori_db.db` et tous
+définis comme *après − avant* (voir [Methods](sans-methods.qmd)) :
+
+* le **gonflement rétinien**, $\Delta TRT_x = TRT250_x(\text{après}) - TRT250_x(\text{avant})$
+  pour les quatre quadrants (S, I, N, T) plus leur moyenne — 18 sujets ont les
+  deux mesures, 12 les ont *et* un marqueur mesuré avant le vol ;
+* l'**aplatissement du globe**, $\Delta AL = AL(\text{après}) - AL(\text{avant})$,
+  la variation de longueur axiale — 20 sujets, 14 avec un marqueur avant le vol.
+
+Les marqueurs de cette page sont ceux qui se mesurent sur l'**épaisseur
+choroïdienne** et sa pulsation, sans passer par le champ de déformation :
+
+* le **$k$ de Sayah** et ses trois entrées — épaisseur, $\Delta CT$ et $\Delta V$
+  de la chaîne de rigidité ;
+* les six métriques **CT / pouls** du one-cycle — épaisseur moyenne, $\Delta CT$,
+  et les corrélations entre l'épaisseur segmentée et le pouls d'intensité, sur
+  support temporel et sur bins ;
+* l'**épaisseur de chaque bande** (`CT_region_um`), déclinée par bande et par
+  style de référence.
+
+Soit **13 marqueurs, 22 variantes**. Aucun ne dépend de la régularisation σ des
+démons : il n'y a donc pas de grille (σ × référence) sur cette page, une seule
+carte suffit. La vue retenue est celle d'**avant le vol** — la seule qui réponde
+à la question « peut-on prédire ».
+
+::: {.callout-important}
+## Ce qu'une q-valeur change ici
+
+Le panel complet de l'étude fait **37 872 tests** ; à ce régime des $r$ de 0,7
+apparaissent par pur hasard. Trois corrections de Benjamini-Hochberg sont
+calculées et publiées dans `sans_correlations.csv` :
+
+* `pearson_q` — sur toute la table, la lecture stricte ;
+* `pearson_q_famille` — dans chaque famille de prédicteurs ;
+* **`pearson_q_categorie`** — dans **(catégorie, vue, issue)** : ici, les **22
+  tentatives** de la rigidité contre *une* issue. C'est cette dernière que la
+  carte et les tables signalent, et c'est la plus indulgente des trois.
+
+Elle ne corrige pas le fait d'avoir essayé six issues, ni les trois catégories.
+Et surtout, **ses 22 tests sont loin d'être indépendants** : `CT_region_um`
+répété sur cinq bandes et deux styles de référence, c'est dix fois presque la
+même mesure. Benjamini-Hochberg suppose des tests au pire positivement
+dépendants — c'est le cas — mais un décompte gonflé de redondances rend la
+correction **anti-conservatrice**. Ce qui suit se lit avec cette réserve.
+:::
+
+## Vue d'ensemble
+
+Une case par (marqueur, issue). L'astérisque marque $q < 0{,}05$ dans la
+catégorie ; le **cadre vert** signale un marqueur assez répétable —
+**ICC(A,1) ≥ 0,45** — qui atteint **$|r| ≥ 0{,}20$** contre cette issue-là.
+**78 cases sur 132** y parviennent — 59 %, contre 7 et 8 % sur les deux autres pages :
+ces marqueurs-ci sont mesurés.
+
+{{< include figures_sans_predictors/p4rig_heatmap.qmd >}}
+
+La colonne ΔTRT N se détache à l'œil nu, et elle seule.
+
+## Ce que le taux de fausses découvertes laisse
+
+La q-valeur en abscisse, la corrélation en ordonnée, un graphique par issue. Le
+trait rouge plein marque $q = 0{,}05$ ; les pointillés, le seuil nominal
+$|r| > 0{,}58$ à $n = 12$.
+
+{{< include figures_sans_predictors/p4rig_q_vs_r.qmd >}}
+
+**C'est la seule des trois pages où plusieurs points passent à gauche du trait.**
+**Treize tentatives sur 132** descendent sous $q = 0{,}05$, la plus basse à
+**0,001**. Par issue, le minimum vaut 0,001 (ΔTRT N), 0,080 (ΔTRT S), 0,090
+(ΔTRT moyen), 0,459 (ΔTRT T), 0,645 (ΔAL) et 0,969 (ΔTRT I) : **tout se joue
+sur le quadrant nasal**, et le reste ne s'en approche pas.
+
+Les survivants, dans l'ordre :
+
+| marqueur | issue | $r$ | $q$ |
+|:--|:--|--:|--:|
+| épaisseur de la bande, centre et colonne +1 (deux références) | ΔTRT N | $-0{,}86$ à $-0{,}87$ | 0,0013 |
+| épaisseur moyenne du one-cycle | ΔTRT N | $-0{,}86$ | 0,0013 |
+| épaisseur choroïdienne (chaîne $k$) | ΔTRT N | $-0{,}69$ | 0,005 |
+| $\Delta CT$ du one-cycle | ΔTRT N | $-0{,}80$ | 0,006 |
+| épaisseur de la bande, colonne −1 | ΔTRT N | $-0{,}79$ | 0,006 |
+| épaisseur de la bande, colonne −2 | ΔTRT N | $-0{,}74$ | 0,013 |
+| épaisseur de la bande, colonne +2 | ΔTRT N | $-0{,}69$ | 0,022 |
+
+Tous vont **dans le même sens** : plus la choroïde est épaisse avant le vol,
+moins la rétine nasale gonfle après. Le signe est identique dans les cinq bandes,
+avec les deux styles de référence, et sur deux estimations indépendantes de
+l'épaisseur — celle des masques (`CT_region_um`, $n = 12$) et celle de la chaîne
+du $k$ (`CT_mm`, $n = 18$, une autre géométrie et un autre effectif). Le $k$ de
+Sayah lui-même ne passe que sur la vue « après » ($r = +0{,}55$, $q = 0{,}045$).
+
+Depuis la **correction du miroir** (2 septembre 2026), qui aligne les bandes des
+deux yeux sur le même côté de la rétine, l'ordre des bandes se lit : le centre et
+la colonne **+1** portent la corrélation la plus forte ($-0{,}87$), puis
+$-1$ ($-0{,}79$), $-2$ ($-0{,}74$) et $+2$ ($-0{,}69$). Avant la correction, les
+cinq bandes se tenaient en $-0{,}64$ à $-0{,}87$ sans ordre lisible.
+
+::: {.callout-warning}
+## Trois raisons de ne pas conclure trop vite
+
+1. **Le quadrant nasal a été choisi une fois, ailleurs.** L'analyse historique de
+   ce dépôt (`compute_rigidity_compare_mask_model.py`) ne testait déjà que
+   `TRT250_N`. Ce n'est donc pas un choix *post hoc* — mais les six issues
+   restent non corrigées entre elles.
+2. **Les 22 tests sont redondants** (voir l'encadré d'ouverture) : la vraie
+   famille est plus petite que 22, donc la q-valeur est optimiste.
+3. **La correction stricte ne laisse rien.** Sur les 37 872 tests de la table,
+   `pearson_q` vaut 0,94 au mieux : **zéro** survivant. Ce qui suit est une piste
+   solide, pas un résultat établi.
+:::
+
+## Ce que le ΔAL ajoute
+
+L'aplatissement du globe est le **second marqueur de SANS** (voir
+[Methods](sans-methods.qmd)) : ΔAL = AL(après) − AL(avant), négatif sur 19 des
+20 sujets renseignés. Il est corrélé au ΔTRT nasal — $r = -0{,}54$, $p = 0{,}033$
+sur les 16 sujets qui ont les deux — mais faiblement : ce n'est pas le même
+signal sous un autre nom.
+
+Les **22 tentatives** de la rigidité contre le ΔAL, sur **14 sujets**, donnent :
+
+| | valeur | attendu sous $H_0$ |
+|:--|--:|--:|
+| $|r|$ maximal | 0,45 | — |
+| $p < 0{,}05$ | **0** | 1,1 |
+| $q < 0{,}05$ dans la catégorie | 0 | — |
+| $q$ minimum | 0,645 | — |
+
+**Zéro corrélation nominalement significative, là où le hasard seul en prédisait
+une.** Le mieux placé est le $\Delta CT$ du one-cycle, à $r = +0{,}45$
+($p = 0{,}11$) ; l'épaisseur de la bande suit à $+0{,}43$. C'est le seul des six
+panneaux où cette page ne bat pas le hasard, et de loin le plus haut $q$ minimum
+des six issues (0,645 contre 0,001 pour le ΔTRT N).
+
+**Ce résultat compte.** Le marqueur le mieux tenu de toute l'étude —
+l'épaisseur choroïdienne pré-vol, ICC médian 0,90, $r = -0{,}87$ contre le
+gonflement nasal — **ne prédit pas l'aplatissement du globe**. Comme le ΔAL
+n'est pas du bruit (il corrèle au ΔTRT N, et sur *plus* de sujets que lui), la
+lecture qui s'impose est que les deux signes du SANS ne partagent pas ce
+prédicteur-là. Une choroïde épaisse avant le vol accompagne une rétine nasale
+qui gonfle moins ; elle ne dit rien de la déformation du globe.
+
+::: {.callout-warning}
+## La longueur axiale est des deux côtés de l'équation pour le $k$ de Sayah
+
+$k$ et $\Delta V$ sont **calculés à partir** de la longueur axiale du moment
+considéré ; le ΔAL est une différence de ces mêmes longueurs axiales. Les
+corréler fait donc partager une variable aux deux membres.
+
+Ils sont néanmoins gardés dans le panel — les retirer pour une seule issue
+casserait l'uniformité du décompte de Benjamini-Hochberg d'une colonne à
+l'autre —, et la conséquence pratique se chiffre : sur la vue « avant le vol »,
+toute la catégorie reste sous $|r| = 0{,}45$ et rien n'approche le seuil. La
+paire la plus exposée est le $k$ contre le ΔAL **sur la vue « après »**, où les
+deux membres partagent AL(après) : $r = -0{,}62$, $p = 0{,}003$ — et même
+celle-là ne passe pas sa catégorie ($q = 0{,}072$). L'artefact est réel, il ne
+produit aucun résultat.
+:::
+
+## La répétabilité achète-t-elle de la corrélation ?
+
+Chaque point est un couple (marqueur, issue), placé selon la **répétabilité du
+marqueur** (ICC(A,1) sur les réplicats d'acquisition, page
+[Repeatability](sans-repeatability.qmd)) et la **corrélation obtenue**.
+
+{{< include figures_sans_predictors/p4rig_r_vs_icc.qmd >}}
+
+**Ici, oui.** La corrélation entre $|r|$ et l'ICC vaut **$+0{,}44$** — le seul
+signe positif des trois pages, et le seul entonnoir visible. L'ICC médian de ces
+marqueurs vaut **$+0{,}90$**, **55 %** dépassent 0,75, et le maximum atteint
+$+0{,}97$. **23 %** des couples cumulent un ICC supérieur à 0,5 *et* un $|r|$
+significatif — le quadrant supérieur droit, vide sur les deux autres pages, est
+ici peuplé.
+
+C'est exactement la relation qu'on attend d'un vrai marqueur : ce qui est bien
+mesuré corrèle, ce qui l'est mal ne corrèle pas.
+
+## La même question, battement par battement
+
+Le second ICC — celui des **one-cycles d'une même vidéo**, cible = la vidéo —
+n'existe pas pour la famille `rigidite` ($k$ et $\Delta V$ sont ajustés sur la
+série temporelle entière). Il reste **18 marqueurs** : les métriques CT / pouls
+et l'épaisseur des bandes.
+
+{{< include figures_sans_predictors/p4rig_r_vs_icc_oc.qmd >}}
+
+La conclusion tient : $r(|r|, ICC) = +0{,}33$, **89 %** de ces marqueurs
+dépassent un ICC de 0,5 d'un battement au suivant, et **30 points sur 108** sont
+dans le quadrant utile. L'épaisseur d'une bande se retrouve à $+0{,}98$ d'un
+battement à l'autre, avec un CV intra-vidéo de 3 %.
+
+## Le compte, avant toute interprétation
+
+| | nombre | attendu sous $H_0$ |
+|:--|--:|--:|
+| corrélations calculées (vue « avant », six issues) | 132 | — |
+| $p < 0{,}05$ | **30** | 6,6 |
+| $q < 0{,}05$ dans la catégorie | **13** | — |
+| $q < 0{,}05$ dans la famille | 1 | — |
+| $q < 0{,}05$ sur les 37 872 tests | 0 | — |
+
+**Quatre fois et demie le taux du hasard** en corrélations nominalement
+significatives — et les 30 se répartissent sur cinq colonnes, pas six : la
+colonne ΔAL n'en fournit aucune. Les deux autres pages donnent 2,8 fois (strain)
+et 0,8 fois (viscosité).
+
+## La table
+
+{{< include figures_sans_predictors/p4rig_tab.qmd >}}
+
+## Ce que la page conclut
+
+L'épaisseur choroïdienne mesurée avant le vol est **le marqueur le mieux tenu de
+toute l'étude** : ICC médian de 0,90, CV intra de quelques pour cent, une
+corrélation de $-0{,}87$ avec le gonflement nasal post-vol, et une q-valeur qui
+survit à la correction de sa catégorie.
+
+Elle ne demande **ni démons, ni repliement en one-cycles, ni champ de
+déformation** — seulement une segmentation de la choroïde et une moyenne. Les
+105 heures de calcul des deux autres pages n'ont rien produit qui s'en approche.
+
+Trois vérifications s'imposent avant d'en faire un résultat : refaire le test sur
+les six issues corrigées ensemble, réduire la redondance du panel à une seule
+mesure d'épaisseur par œil, et retrouver le signe sur une cohorte indépendante.
+
+Et une réserve de plus depuis l'ajout du ΔAL : le marqueur ne suit **qu'un** des
+deux signes du SANS. Un prédicteur de l'aplatissement du globe reste à trouver.
+
+## Reproduire
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_sans_predictors.py
+```
+
+```bash
+python reveal_quarto_presentations/figures_sans_predictors/make_figures.py
+```
+
+::: {.source-note}
+Corrélations calculées par `Astronauts/compute_sans_predictors.py` (Pearson et Spearman, trois q-valeurs de Benjamini-Hochberg : globale, par famille et par catégorie) ; carte, nuages et table générés par `figures_sans_predictors/make_figures.py`, qui ne fait que lire `sans_correlations.csv`, `repeatability.csv` et `repeatability_one_cycles.csv`. Tous les chiffres cités sont repris de `figures_sans_predictors/resume.txt`.
+:::

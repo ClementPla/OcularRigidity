@@ -1,0 +1,327 @@
+---
+title: "Data exploration"
+subtitle: "Ce que l'étude de répétabilité contient aujourd'hui : combien de réplicats par œil et par participant, une fois les ré-exports démasqués — puis dans quelles conditions ils ont été acquis, et pourquoi c'est le réglage ART, et non l'œil, qui commande la cadence"
+# Quatre figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits
+# mais aucun script ne les dessine.
+include-in-header: figures_repro_data/plotlyjs.html
+---
+
+Cette section ouvre une expérience distincte de la précédente. Là où la section
+SANS cherchait un **prédicteur**, celle-ci cherche une **borne** : de combien
+deux mesures du même œil, prises à quelques minutes d'intervalle sur le même
+appareil, diffèrent-elles ? Sans ce chiffre, aucune différence observée
+ailleurs n'est interprétable.
+
+Cette page-ci s'arrête avant toute mesure. Elle ne fait que deux choses : dire
+**ce que le premier lot contient**, et **dans quelles conditions il a été
+acquis**. Rien n'y est calculé sur les images.
+
+::: {.callout-note}
+## Ce qui est lu, et sur quoi exactement
+
+**55 acquisitions**, 8 participants, **18 442 B-scans**. Une acquisition est un
+dossier `E:/SANSORI/Reproducibility/<NOM_PRENOM_OEilN>/` : un participant, un
+œil, un enregistrement — et `N` est le rang chronologique du réplicat.
+
+Les données brutes arrivent en vrac, tous participants mêlés dans un dossier
+unique, avec des `.tif` aux noms opaques (`7DB83000.tif`). C'est
+`Reproducibility/migrate_repeatability.py` qui les range : le XML dit à quelle
+acquisition chaque image appartient, de qui elle est et de quel œil. Le
+manifeste de cette migration reste sous
+`E:/SANSORI/Reproducibility/_migration/`.
+
+Le lot d'extraction est ensuite `Reproducibility/compute_acquisition_params.py`
+— même moteur que la page [Acquisition
+parameters](sans-acquisition-parameters.qmd) de la section précédente, à trois
+chemins près. Il écrit `constants.csv`, `conditions.csv` et `series.csv` sous
+`E:/NASA_Rigidity/Reproducibility/AcquisitionParameters/`. Les figures de cette
+page ne lisent que ces trois fichiers.
+
+**D'autres données s'ajouteront.** Tout ici se régénère : la table ci-dessous
+est un pivot du CSV, pas une liste écrite à la main, et la numérotation des
+réplicats reprend où elle s'est arrêtée sans jamais renommer un dossier
+existant.
+:::
+
+## Combien de réplicats, et de qui
+
+{{< include figures_repro_data/tab_replicats.qmd >}}
+
+Vingt-huit acquisitions de l'œil droit, vingt-sept du gauche, huit
+participants. Le survol d'une case donne le détail de chaque réplicat — rang,
+nombre d'images, durée.
+
+Ce qui s'écarte du plan à trois réplicats complets :
+
+{{< include figures_repro_data/txt_anomalies.qmd >}}
+
+Deux précisions sur ces points. Les acquisitions tronquées vont **par paires
+consécutives** : Descovich OD3 et OD4 sont séparées de vingt-huit secondes,
+Richer OD1 et OD2 de cinquante. Dans les deux cas une acquisition interrompue
+puis reprise, et non deux mesures indépendantes — le même motif chez deux
+participants et à cinq jours d'écart. Et le réglage ART inhabituel touche les
+**deux yeux**, ce qui aura son importance deux sections plus bas.
+
+::: {.callout-warning}
+## Le vrai piège de ce jeu de données : les ré-exports
+
+Le deuxième versement livrait **75 exports XML** pour 46 acquisitions réelles.
+**Vingt-neuf d'entre eux étaient des ré-exports** d'enregistrements déjà rangés
+— le Spectralis recopie les mêmes images sous de **nouveaux noms de fichiers**,
+et le second versement a même réexporté la quasi-totalité du premier, parfois
+avec le même nom de `.xml`. Rien dans un export ne dit qu'il est une copie.
+
+Les compter comme des réplicats serait le **pire biais possible pour une étude
+de répétabilité** : deux copies du même enregistrement s'accordent
+parfaitement, et gonfleraient artificiellement tout ICC. Le script de migration
+les rapproche par leur vecteur d'horodatages — deux acquisitions distinctes ne
+peuvent pas partager 348 horodatages à la milliseconde — puis **confirme par
+md5** sur trois images avant de trancher. Les 29 sont confirmés, restent sur le
+disque source, et la preuve tient dans `_migration/duplicates.csv`.
+
+C'est aussi pourquoi la numérotation des réplicats ne repart jamais de 1 : le
+script relit ce qui est déjà rangé avant de décider, de sorte qu'un versement
+ultérieur ne renomme aucun dossier existant.
+
+Le **troisième versement** (Emmanuelle Richer, 9 acquisitions) est arrivé
+directement sous sa forme rangée, sans passer par le dépôt en vrac. Le contrôle
+de doublons a tout de même été passé dessus — il compare aux 46 déjà en place —
+et n'a rien signalé. C'est le contrôle qu'il faut refaire à chaque ajout, y
+compris quand les données semblent propres : rien dans un export ne dit qu'il
+est une copie.
+:::
+
+## Ce qui ne varie jamais
+
+Trente et un champs ont la **même valeur sur les 55 acquisitions**. Les sortir
+de la grande table n'est pas qu'une économie de place : ce sont eux qui
+décrivent le protocole, et les lire une fois suffit.
+
+{{< include figures_repro_data/tab_communs.qmd >}}
+
+Trois lignes méritent qu'on s'y arrête.
+
+**EDI est actif partout** — c'est le mode qui rapproche la choroïde du zéro de
+retard optique et la rend segmentable. Le **B-scan fait 496 pixels de haut pour
+0,0039 mm par pixel**, soit 1,93 mm de profondeur : une épaisseur choroïdienne
+de 300 µm y occupe 77 pixels, et une pulsation de 10 µm en occupe 2,6 — d'où le
+sous-pixel partout en aval. Ce sont les mêmes réglages que la cohorte SANS, ce
+qui n'allait pas de soi et permet de transposer la chaîne de traitement telle
+quelle.
+
+La troisième ligne est un contrôle, pas un réglage : **la latéralité du XML
+concorde avec celle du nom de dossier sur les 55**. Comme le nom de dossier est
+produit par le script de migration à partir de ce même XML, cela ne prouve pas
+que l'œil est le bon — cela prouve que rien n'a bougé entre le rangement et la
+lecture, et qu'un dossier renommé à la main serait signalé.
+
+Un mot sur le **localisateur infrarouge** : il est acquis **une seule fois** par
+enregistrement, pas à chaque B-scan. `SensorGain`, `Focus` et `FixationTarget`
+sont donc **un scalaire par acquisition** et non une série temporelle —
+vérifié : une seule valeur distincte par acquisition sur les 55. Aucune figure
+de cette page ne les traite comme variant dans le temps.
+
+## OD et OS n'ont pas été acquis dans les mêmes conditions
+
+C'est le fait principal de ce lot — mais l'écart n'est pas là où on
+l'attendrait, et le second versement l'a rendu plus intéressant qu'au premier.
+
+{{< include figures_repro_data/hist_od_os.qmd >}}
+
+Cinquante-cinq acquisitions, donc **un point par acquisition** plutôt qu'un
+histogramme : à cet effectif, chaque barre reposerait sur quelques valeurs. Et
+un point par acquisition n'est lisible qu'à condition que les valeurs égales
+s'écartent — l'ART vaut 4 sur vingt-trois acquisitions, et vingt-trois points
+superposés en affichent un. Ils sont donc étalés latéralement, régulièrement, de
+sorte qu'on peut les **compter**. La barre horizontale est la médiane du groupe ;
+le survol nomme l'acquisition, ce qui montre directement *lesquelles* font
+exception.
+
+{{< include figures_repro_data/tab_od_os.qmd >}}
+
+Un seul de ces six paramètres sépare vraiment les deux yeux, et ce n'est pas
+celui qu'on croit.
+
+**L'angle les sépare sans aucun recouvrement** : positif sur les vingt-huit OD,
+négatif sur les vingt-sept OS, et à moins d'un centième de degré de ±20,00
+partout. Ce n'est pas une autre inclinaison mais un **sens de parcours** :
+la même ligne oblique, parcourue de son extrémité basse vers la haute, donne
++20° ; parcourue en sens inverse, −20°. Ce sont `Start` et `End` qui s'échangent.
+Le balayage est donc miroir entre les deux yeux — ce qui devra être défait avant
+toute comparaison de bandes latérales entre OD et OS, exactement comme la
+numérotation des bandes a dû être mise au miroir dans la section précédente.
+
+**La qualité d'image ne distingue rien** — 26,3 dB contre 26,7. C'est le témoin :
+ce n'est pas que tout diffère entre les deux yeux.
+
+Et les quatre paramètres de temps — ART, intervalle, fréquence, durée — se
+séparent **en médiane mais plus en étendue**. Au premier versement les OS
+étaient tous à 52 ms et les OD tous à 104–105 : deux groupes disjoints. Le
+second a apporté six OS à ART 5, donc à **131 ms — plus lents que le plus lent
+des OD**. Les deux distributions se croisent désormais, et l'œil ne suffit plus
+à prédire la cadence. La section suivante dit ce qui la prédit.
+
+## D'où vient la cadence
+
+Les trois écarts de temps — intervalle, fréquence, durée — n'en font qu'un, et
+il a une cause mécanique unique, qui n'est pas la latéralité.
+
+{{< include figures_repro_data/hist_cadence.qmd >}}
+
+Le Spectralis n'écrit **aucun taux d'images** ; il horodate chaque B-scan à la
+milliseconde, et c'est tout. Mais il moyenne `ART` images brutes pour produire
+un B-scan, ce qui devrait donner un intervalle proportionnel à `ART`. C'est
+exactement ce qu'on observe :
+
+$$
+\Delta t_{\text{médian}} = \mathrm{ART} \times 26{,}0\ \text{ms}
+$$
+
+Le rapport $\Delta t / \mathrm{ART}$ vaut **26,00 ms** en médiane et ne s'écarte
+jamais de plus de 26,25 sur les 55 acquisitions. C'est la **période de balayage
+de l'appareil, 38,5 Hz**, une constante matérielle que rien dans le XML ne
+déclare. La droite rouge du panneau de gauche n'est donc pas un ajustement :
+c'est cette relation, tracée pour qu'on voie les points s'y poser.
+
+Tout suit : ART 2 → 52 ms → ~19 Hz au mieux ; ART 4 → 105 ms ; ART 5 → 131 ms.
+L'intervalle médian ne prend que **ces trois valeurs** sur les 55 acquisitions,
+sans aucune intermédiaire.
+
+**Douze acquisitions échappent au réglage dominant de leur œil**, toutes à
+ART 5, et elles sont réparties sur les deux yeux (cinq OD, sept OS — la liste
+est plus haut). Leur cadence suit leur ART, pas leur œil. C'est la démonstration
+que le premier versement ne permettait pas : six **OS** à 131 ms sont plus lents
+que n'importe quel **OD** à 105 ms, alors que « OS = rapide » était la règle
+apparente. **C'est donc l'ART qu'il faut apparier, pas la latéralité.**
+
+::: {.callout-important}
+## La cadence n'est pas régulière, et c'est structurant
+
+Le panneau de droite est en abscisse logarithmique pour une raison : les
+intervalles entre B-scans consécutifs vont de quelques dizaines de millisecondes
+à **1 659 ms**. La médiane est à 104 ms, le 99ᵉ centile à 472 ms, et **0,86 %
+des intervalles dépassent une demi-seconde** — ce sont les clignements et les
+pertes de suivi, pendant lesquels le *tracking* de l'appareil refuse
+d'enregistrer.
+
+C'est ce qui explique que la **fréquence moyenne** ne se sépare pas aussi
+proprement que l'intervalle médian : la moyenne mélange le rythme de l'appareil
+avec les arrêts du suivi. L'écart-type de l'intervalle va de **11 ms** sur la
+meilleure acquisition à **199 ms** sur la pire — un facteur dix-huit. La
+régularité est elle-même un paramètre qui varie, et une acquisition longue n'est
+longue que parce qu'elle a été interrompue.
+
+Conséquence directe pour la suite : le périodogramme de **Lomb-Scargle** (qui
+accepte un échantillonnage non uniforme) plutôt qu'une FFT, et l'**interpolation
+sur grille régulière** avant Hilbert et SSA — les mêmes choix que dans la
+section précédente, pour la même raison.
+:::
+
+## Où passe le B-scan
+
+{{< include figures_repro_data/hist_angle.qmd >}}
+
+Le panneau de gauche est **isométrique** : sans cela, 20° s'y liraient comme 45.
+Les deux faisceaux de lignes, bleu pour OD et vert pour OS, se croisent en X —
+c'est le miroir décrit plus haut, vu dans le plan du fond d'œil.
+
+L'angle ne bouge **pas** à l'intérieur d'une vidéo : l'étendue intra-acquisition
+vaut exactement zéro sur les 55, ce qui en fait un paramètre d'acquisition et
+non une mesure bruitée. C'est aussi ce qui rend `oct_longueur_mm` — la distance
+entre les deux extrémités, 8,92 mm [8,80 – 9,16] — différente de
+`ScaleX × 768` : la seconde ne vaudrait que pour un balayage horizontal.
+
+Le **`ScaleX`** ne prend que **neuf valeurs distinctes** sur les 55 (0,0116
+mm/pixel [0,0115 – 0,0119]) : il est calculé par l'appareil à partir de la
+longueur axiale saisie, donc quantifié.
+
+Mais il n'est pas stable là où on l'attendrait. **Six participants sur huit**
+ont plusieurs valeurs de `ScaleX` d'un réplicat à l'autre du même œil —
+Descovich en a trois sur ses quatre OD (0,0115 à 0,0117). Chaque versement a
+confirmé le constat plutôt que de le diluer : cinq sur sept, puis six sur huit. L'écart reste
+inférieur à 2 %, mais il est réel : l'échelle latérale
+elle-même n'est pas parfaitement répétable, alors qu'elle décrit un œil qui n'a
+pas changé entre deux acquisitions séparées de cinq à sept minutes. C'est un
+premier
+résultat de répétabilité, obtenu avant toute mesure sur les images — et il
+signifie que comparer des largeurs en pixels entre réplicats, sans repasser par
+les millimètres, introduirait une variabilité qui n'est pas physiologique.
+
+## Image quality
+
+C'est le seul paramètre que l'appareil recalcule **à chaque B-scan**.
+
+{{< include figures_repro_data/hist_qualite.qmd >}}
+
+La qualité moyenne vaut **26,3 dB** par acquisition (médiane 26,5), l'étendue
+allant de 20,1 à 31,3. À l'intérieur d'une vidéo, l'écart-type médian n'est que
+de **2,01 dB** : une acquisition est homogène, et une vidéo médiocre l'est du
+début à la fin plutôt que par accès.
+
+Ce niveau est **nettement plus bas que celui de la cohorte SANS** — 26,5 dB de
+médiane par acquisition ici, contre 33,2 là-bas. L'écart est trop large pour être du
+bruit et mérite d'être gardé en tête : c'est le rapport signal/bruit sur lequel
+la segmentation devra travailler, et il conditionne ce qu'une étude de
+répétabilité peut mesurer — une borne obtenue sur des images plus bruitées est
+pessimiste pour la cohorte principale, pas optimiste.
+
+## Une colonne par acquisition
+
+Vingt-sept lignes, cinquante-cinq colonnes, **OD d'abord puis OS** — l'ordre qui
+rend le contraste lisible. La table **défile horizontalement** ; la colonne des
+paramètres et la ligne d'en-tête restent visibles. Chaque en-tête donne le
+participant et le réplicat ; le nom complet du dossier apparaît en infobulle.
+
+{{< include figures_repro_data/tab_conditions.qmd >}}
+
+## La distribution de chaque paramètre variable
+
+{{< include figures_repro_data/tab_resume.qmd >}}
+
+Deux lignes de cette table ne sont pas des réglages d'image mais des faits de
+séance, et elles comptent pour la suite. Les acquisitions se répartissent sur
+**trois journées** — 2026-09-03 (26), 2026-09-04 (20) et 2026-09-08 (9) — et
+**deux opérateurs**, nicolas (48) et Denise (7). Une étude de répétabilité qui
+mélange les deux mesure l'accord *opérateur compris* ; le séparer demandera de
+le tester, ce que le présent effectif ne permet pas encore.
+
+Le troisième jour est celui d'Emmanuelle Richer, entrée seule dans la cohorte
+cinq jours après les autres. Ses neuf acquisitions ne partagent donc **ni la
+séance ni le jour** avec les sept premiers participants : si un effet de séance
+existait, il se confondrait chez elle avec l'effet de sujet. Rien dans les
+paramètres d'acquisition ne le suggère — mêmes constantes, même appareil, même
+firmware — mais c'est une confusion à garder en tête, et elle disparaîtra dès
+qu'un participant sera acquis sur deux journées.
+
+::: {.callout-important}
+## Ce qu'il faut retenir avant de mesurer quoi que ce soit
+
+**L'œil n'est pas le facteur ; l'ART l'est.** OD et OS diffèrent en cadence
+parce qu'ils ont surtout été acquis à ART 4 et ART 2 — mais les dix
+acquisitions à ART 5 suivent leur ART et non leur œil, au point que six OS sont
+plus lents que tous les OD. Tout appariement doit se faire sur l'ART.
+
+**Le balayage est miroir entre les deux yeux** (+20° / −20°, sans recouvrement).
+Aucune comparaison latérale entre OD et OS n'est valide sans redresser cela.
+
+**Trois réplicats ne sont pas garantis** : quatre yeux en ont quatre, et deux
+acquisitions sont tronquées. L'effectif utilisable dépendra des critères
+d'inclusion, qui restent à fixer.
+
+**Un export n'est pas un enregistrement.** Vingt-neuf des soixante-quinze
+exports reçus étaient des copies d'enregistrements déjà présents. Tout ajout de
+données doit repasser par `migrate_repeatability.py`, qui les démasque — les
+recopier à la main gonflerait la répétabilité mesurée.
+
+**La qualité d'image est plus basse que dans la cohorte SANS** — 26,5 contre
+33,2 dB de médiane. La borne de répétabilité qui sortira de ce lot sera donc
+conservatrice.
+
+**L'échelle latérale n'est déjà pas répétable.** `ScaleX` change d'un réplicat
+à l'autre du même œil chez six participants sur huit, de moins de 2 % mais
+systématiquement. Toute mesure de largeur doit passer par les millimètres.
+
+**Le protocole, lui, est stable.** EDI actif, 768 × 496 pixels, champ de 30°,
+même appareil et même firmware : sur ces points, les 55 acquisitions sont
+interchangeables, et comparables à la cohorte SANS.
+:::

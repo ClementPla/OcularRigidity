@@ -1,0 +1,211 @@
+---
+title: "Acquisition parameters"
+subtitle: "Ce que les exports XML Heidelberg disent des 107 acquisitions : les réglages identiques partout d'abord, puis ceux qui changent d'une condition à l'autre — une colonne par condition — et la cadence réelle de chaque vidéo, que l'appareil n'écrit nulle part"
+# Cinq figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits
+# mais aucun script ne les dessine.
+include-in-header: figures_acquisition_params/plotlyjs.html
+---
+
+Toutes les pages de cette section partent d'une vidéo B-scan et n'en discutent
+plus les conditions d'obtention. Celle-ci fait l'inverse : elle ne parle que de
+l'acquisition, et s'arrête avant la segmentation.
+
+Rien n'y est mesuré sur les images. Tout vient des **exports XML HEYEX** que le
+Spectralis dépose à côté des `.tif` bruts, un par condition — la seule exception
+étant la fréquence d'acquisition, que l'appareil n'écrit pas et qu'il faut
+déduire des horodatages.
+
+::: {.callout-note}
+## Ce qui est lu, et sur quoi exactement
+
+**107 conditions**, 14 sujets, **47 301 B-scans**. Une condition est un dossier
+`E:/SANSORI/<sujet>/<...>_rigidity/<...OD|OS...>/` : un sujet, un moment
+(`before` / `post`), un œil, une acquisition — plusieurs conditions pouvant être
+des acquisitions répétées du même œil dans la même séance, comme sur la page
+[Repeatability](sans-repeatability.qmd).
+
+Les séries retenues sont celles de `load_ordered_oct_series` : un B-scan OCT, un
+`.tif` présent sur disque, un `AcquisitionTime`. Ce sont donc **exactement les
+images qui composent la vidéo** traitée par le reste de la chaîne, ni plus ni
+moins — sur les 107 conditions, aucune série du XML n'a été écartée à ce titre.
+
+Le lot d'extraction est `Astronauts/compute_acquisition_params.py` ; il écrit
+`constants.csv`, `conditions.csv` (une ligne par condition) et `series.csv` (une
+ligne par B-scan) sous `E:/NASA_Rigidity/AcquisitionParameters/`. Les figures de
+cette page ne lisent que ces trois fichiers.
+:::
+
+## Ce qui ne varie jamais
+
+Vingt-trois champs ont la **même valeur sur les 107 acquisitions**. Les sortir de
+la grande table n'est pas qu'une économie de place : ce sont eux qui décrivent
+le protocole, et les lire une fois suffit.
+
+{{< include figures_acquisition_params/tab_communs.qmd >}}
+
+Trois lignes méritent qu'on s'y arrête. **EDI est actif partout** — c'est le mode
+qui rapproche la choroïde du zéro de retard optique et la rend segmentable ;
+sans lui, cette expérience n'existerait pas. Le **B-scan fait 496 pixels de haut
+pour 0,0039 mm par pixel**, soit 1,93 mm de profondeur : une épaisseur
+choroïdienne de 300 µm y occupe 77 pixels, et une pulsation de 10 µm en occupe
+2,6 — d'où le sous-pixel partout en aval. Enfin **`ScaleY` est constant alors que
+`ScaleX` ne l'est pas** : l'échelle axiale est fixée par l'optique de l'appareil,
+l'échelle latérale par l'œil mesuré.
+
+## La fréquence d'acquisition
+
+Le Spectralis n'écrit **aucun taux d'images**. Il horodate chaque B-scan à la
+milliseconde (`AcquisitionTime/Time`), et c'est tout. La fréquence moyenne d'une
+vidéo est donc reconstruite :
+
+$$
+f_s = \frac{n_{\text{images}} - 1}{t_{\text{dernière}} - t_{\text{première}}}
+$$
+
+soit l'inverse de l'intervalle **moyen**. C'est la valeur portée par la ligne en
+gras de la grande table.
+
+{{< include figures_acquisition_params/hist_frequence.qmd >}}
+
+La médiane vaut **7,92 Hz** [7,25 – 8,43], mais l'étendue va de **2,32 à
+17,26 Hz** : un facteur sept d'un bout à l'autre de la cohorte. Une vidéo
+médiane compte 459 images [456 – 466] pour 57,8 s [54,0 – 63,6] — cinquante à
+soixante-dix battements cardiaques, ce qui fixe le nombre de cycles disponibles
+pour le repliement.
+
+::: {.callout-important}
+## La cadence n'est pas régulière, et c'est structurant
+
+Le panneau de droite est en abscisse logarithmique pour une raison : les
+intervalles entre B-scans consécutifs vont de **10 ms à 11,4 s**. La médiane est
+à 106 ms, le 99ᵉ centile à 702 ms, et **1,9 % des intervalles dépassent une
+demi-seconde** — ce sont les clignements et les pertes de suivi, pendant
+lesquels le *tracking* de l'appareil refuse d'enregistrer.
+
+C'est la justification de deux choix faits ailleurs dans la chaîne et jamais
+expliqués sur leur propre page : le périodogramme de **Lomb-Scargle** (qui
+accepte un échantillonnage non uniforme) plutôt qu'une FFT pour chercher la
+fréquence cardiaque, et l'**interpolation sur grille régulière** avant Hilbert
+et SSA. Une FFT sur ces horodatages traités comme uniformes déplacerait le pic
+cardiaque d'autant que la cadence dérive.
+
+L'écart-type de l'intervalle atteint 729 ms sur la pire condition, contre 29 ms
+sur la meilleure : la régularité est elle-même un paramètre qui varie d'un
+facteur vingt-cinq.
+:::
+
+## Une colonne par condition
+
+Vingt-sept lignes, cent-sept colonnes. La table **défile horizontalement** ; la
+colonne des paramètres et la ligne d'en-tête restent visibles. Chaque en-tête
+donne le sujet, le moment et l'œil — le nom complet du dossier apparaît en
+infobulle.
+
+{{< include figures_acquisition_params/tab_conditions.qmd >}}
+
+## La distribution de chaque paramètre variable
+
+Vingt-six paramètres ne sont pas constants sur la cohorte. Le tableau les
+résume, les deux figures qui suivent les montrent.
+
+{{< include figures_acquisition_params/tab_resume.qmd >}}
+
+{{< include figures_acquisition_params/hist_numeriques.qmd >}}
+
+{{< include figures_acquisition_params/hist_categoriels.qmd >}}
+
+Quelques lectures. Le **`ScaleX`** vaut 0,0115 mm/pixel [0,0114 – 0,0117] et ne
+prend que **treize valeurs distinctes** : il est calculé par l'appareil à partir
+de la longueur axiale saisie, donc quantifié — et la **longueur réelle du
+B-scan**, mesurée entre les coordonnées `Start` et `End`, s'étend de 8,39 à
+9,30 mm. Un pixel latéral ne vaut pas la même distance d'un œil à l'autre, ce
+qui compte dès qu'on compare des largeurs de bandes entre sujets.
+
+Le **gain du capteur** infrarouge va de 36 à 67 (médiane 50,0 [44,5 – 53,0]) et
+est laissé en automatique sur 102 conditions sur 107. Le **focus** couvre
+6,25 dioptries, de −3,20 à +3,05 : la cohorte n'est pas emmétrope.
+
+Trois **versions de firmware** cohabitent (module d'acquisition 6.16.8.0 pour 98
+conditions, 6.10.6.0 et 6.13.3.0 pour les autres), et quatre **fuseaux
+horaires** — les acquisitions n'ont pas toutes eu lieu au même endroit. Aucun de
+ces deux facteurs n'est un réglage d'image, mais l'un comme l'autre expliquent
+des différences de format quand un export résiste.
+
+## Où passe le B-scan, et sous quel angle
+
+Le XML donne les deux extrémités de la ligne de balayage sur le fond d'œil, en
+millimètres : `Start` et `End`, chacune un couple $(X, Y)$. Elles sont dans la
+grande table, et l'**angle** s'en déduit :
+
+$$
+\theta = \arctan\!\left(\frac{Y_{\text{end}} - Y_{\text{start}}}{X_{\text{end}} - X_{\text{start}}}\right)
+$$
+
+`arctan` et non `arctan2` : ce qu'on cherche est l'inclinaison d'une **droite**,
+définie à 180° près, donc à valeurs dans $(-90°, +90°]$. Les deux coïncident sur
+cette cohorte — $\Delta X$ est positif partout — mais `arctan2` renverrait
+$+160°$ là où `arctan` renvoie $-20°$ si un export inversait un jour les deux
+extrémités.
+
+{{< include figures_acquisition_params/hist_angle.qmd >}}
+
+Le résultat est net : **95 conditions sur 107 balayent à exactement 20,00°** en
+valeur absolue, et l'étendue complète va de 12,51° à 44,00°. Ce n'est pas un
+B-scan horizontal : la ligne descend en oblique à travers le pôle postérieur,
+d'un bord du champ à l'autre, sur $\Delta X = 8{,}272$ mm [8,128 – 8,415] pour
+$\Delta Y = 3{,}015$ mm [2,948 – 3,088].
+
+::: {.callout-note}
+## Le signe de l'angle est un sens de parcours, pas une autre inclinaison
+
+Quatre-vingt-quatorze conditions ont un angle positif, treize un angle négatif —
+mais les deux modes sont à $\pm 20°$, symétriques. Une même ligne parcourue de
+son extrémité basse vers son extrémité haute donne $+20°$ ; parcourue en sens
+inverse, $-20°$. C'est `Start` et `End` qui s'échangent, pas l'orientation du
+balayage sur la rétine. D'où le troisième panneau, en valeur absolue, qui réunit
+les deux et montre le vrai réglage.
+
+Le panneau de gauche est **isométrique** (`scaleanchor`), sans quoi 20° s'y
+liraient comme 45.
+
+L'angle ne bouge **pas** à l'intérieur d'une vidéo : l'étendue intra-vidéo vaut
+exactement zéro sur les 107 conditions, ce qui en fait un paramètre
+d'acquisition et non une mesure bruitée. C'est aussi ce qui rend
+`oct_longueur_mm` — la distance entre les deux extrémités — différente de
+`ScaleX × 768` : la seconde ne vaudrait que pour un balayage horizontal.
+:::
+
+## Image quality
+
+C'est le seul paramètre que l'appareil recalcule **à chaque B-scan**, et le seul
+dont la moyenne par vidéo cache quelque chose.
+
+{{< include figures_acquisition_params/hist_qualite.qmd >}}
+
+La qualité moyenne vaut **33,2 dB** [29,4 – 35,7] par condition, l'étendue
+allant de 20,9 à 40,9. À l'intérieur d'une vidéo, l'écart-type médian n'est que
+de **1,7 dB** : une acquisition est homogène, et une vidéo médiocre l'est du début à
+la fin plutôt que par accès. Les quelques conditions à forte dispersion interne
+sont celles dont l'histogramme du milieu montre la queue basse — les images
+prises pendant une perte de suivi.
+
+::: {.callout-important}
+## Ce qu'il faut retenir avant de lire les autres pages
+
+**`NumAve` n'est pas un réglage.** C'est le nombre d'images réellement moyennées
+pour *ce* B-scan : le compteur monte 1, 2, 3 … jusqu'à la consigne ART puis y
+reste. La consigne est donc le **maximum**, pas la moyenne — 10 sur 97
+conditions, 5 sur 9, 9 sur une. Une moyenne de `NumAve` ne mesurerait que la
+durée de la montée.
+
+**La cadence est irrégulière et varie d'un facteur sept entre conditions.** Toute
+méthode qui suppose un échantillonnage uniforme doit interpoler d'abord.
+
+**L'échelle latérale est propre à chaque œil.** `ScaleX` dépend de la longueur
+axiale ; `ScaleY` n'en dépend pas. Comparer des distances latérales entre sujets
+sans repasser par les millimètres est une erreur silencieuse.
+
+**Le protocole, lui, est stable.** EDI actif, 768 × 496 pixels, champ de 30°,
+localisateur infrarouge moyenné 100 fois : sur ces points, les 107 acquisitions
+sont interchangeables.
+:::

@@ -1,0 +1,437 @@
+---
+title: "Strain repeatability"
+subtitle: "La même mesure de strain rétinien que l'expérience SANS, refaite trois fois sur chaque œil à quelques minutes d'intervalle : ce que le one-cycle donne, ce que le strain donne, et quelle part de sa variance sépare réellement deux personnes"
+# Huit figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits
+# mais aucun script ne les dessine.
+include-in-header: figures_repro_strain/plotlyjs.html
+---
+
+L'expérience SANS cherchait un **prédicteur** : le strain rétinien mesuré par
+recalage démons prédit-il le gonflement rétinien post-vol ? Elle a rendu treize
+corrélations survivantes, toutes portées par l'épaisseur choroïdienne et aucune
+par le champ de déformation lui-même — et une question restée ouverte : *le
+strain ne prédit rien parce qu'il n'y a rien à prédire, ou parce qu'il n'est pas
+reproductible ?*
+
+Cette page répond à la seconde moitié. Elle refait **exactement la même chaîne**,
+avec les mêmes réglages, sur des acquisitions répétées du même œil dans la même
+séance. Rien ne devrait bouger entre deux réplicats sinon le bruit de mesure : ce
+qui bouge quand même *est* le bruit de mesure.
+
+::: {.callout-important}
+## La réponse, en une ligne
+
+**Le strain rétinien n'est pas répétable.** Sur 45 acquisitions, 7 participants
+et 13 yeux à trois réplicats, l'ICC(1,1) médian vaut **0,16** et ne dépasse
+jamais 0,59 sur les 144 configurations testées. **78 % de la variance du
+marqueur sépare deux mesures du même œil**, contre 11 % qui séparent deux
+personnes.
+
+Cela borne mécaniquement ce que le strain pouvait prédire dans l'expérience
+SANS : un marqueur d'ICC 0,16 ne peut pas corréler au-delà de
+$\sqrt{0{,}16} pprox 0{,}40$ avec quoi que ce soit, même parfaitement lié à
+la vérité. Les treize corrélations survivantes de la section précédente
+venaient toutes de l'**épaisseur choroïdienne** et aucune du champ de
+déformation : ce résultat-ci dit pourquoi.
+:::
+
+::: {.callout-note}
+## La chaîne est identique à celle de SANS, à trois chemins près
+
+Les mêmes trois lots que la section précédente, lancés par
+`Reproducibility/run_batch.py` avec quatre variables d'environnement — où sont
+les données, où vont les sorties, et une arborescence plate au lieu de trois
+niveaux. **Aucun paramètre d'analyse ne change** : même variante de
+segmentation, même recalage en quatre temps, même extraction du pouls, mêmes
+`N_CYCLE = 6`, `N_BINS = 6`, mêmes σ, mêmes cinq bandes.
+
+C'est délibéré et c'est la seule chose qui rend les deux études comparables :
+une borne de répétabilité obtenue avec d'autres réglages ne bornerait pas
+l'expérience SANS.
+
+Les tables lues par cette page sont sous
+`E:/NASA_Rigidity/Reproducibility/SegmentationVariations/<variante>/`, et les
+figures ne lisent qu'elles — aucun XML, aucune image n'est rouverte ici.
+:::
+
+# La fréquence cardiaque, préalable à tout
+
+Toute la chaîne repose sur une phase cardiaque, et la phase repose sur une
+fréquence. L'expérience SANS la **mesurait** — `visit_data.csv`, relevée à la
+séance — et s'en servait pour borner la recherche du pic. Cette cohorte-ci n'a
+aucune mesure de ce genre, et le lot retombe alors sur une estimation par SVD
+cherchée sur 20–240 BPM.
+
+::: {.callout-important}
+## Sans ancrage, l'estimateur accroche une harmonique une fois sur deux
+
+Sur le même œil, à douze minutes d'intervalle :
+
+| œil | estimations brutes (BPM) |
+|:--|:--|
+| `ROY_JOANNIE_OD` | 78,6 → 53,2 → **142,0** |
+| `PLAYOUT_CLEMENT_OS` | 64,1 → 61,3 → **32,9** → **143,5** |
+| `BELANGER_CHARLES_OD` | 80,3 → 77,7 → **32,1** |
+
+142 vaut ~2 × 71 et 32,9 ~½ × 66 : ce sont des **harmoniques et
+sous-harmoniques de la même fréquence**, pas des battements différents. Comme
+la phase — donc le repliement, donc le bin de référence, donc le strain — en
+dépend entièrement, un ICC calculé là-dessus mesurerait surtout « l'estimateur
+a-t-il choisi deux fois la même harmonique ».
+:::
+
+L'ancrage retenu remplace la mesure absente par le **consensus du participant**
+(`Reproducibility/estimate_consensus_hr.py`) : chaque estimation est repliée sur
+l'octave de la médiane des estimations brutes de ce participant, puis la médiane
+de ces valeurs devient l'*a priori*. Le cœur est unique — les deux yeux et tous
+les réplicats d'une séance partagent la même fréquence, à la dérive près.
+
+Deux approches plus simples ont été essayées et écartées, chacune pour une
+raison qui se voit dans les données : replier dans une **bande fixe** laisse la
+borne décider (avec [45, 100], les cinq acquisitions de Mcneil estimées à
+~104 BPM — plausibles telles quelles — étaient écrasées à 52) ; et chercher la
+fondamentale par un **coût d'octave** est dégénéré par construction, `f` et `2f`
+ayant exactement le même coût (cette version a doublé Modica à 121 BPM alors que
+ses six estimations brutes valaient 60–62).
+
+{{< include figures_repro_strain/fig_hr_ancrage.qmd >}}
+
+Le contrôle ne peut pas porter sur la fréquence retenue : après ancrage elle
+vaut le consensus **par construction**, et constater que les réplicats
+« s'accordent » serait une tautologie. La figure montre donc `dmd_hr_BPM`,
+estimée par décomposition en modes dynamiques sans qu'on la lui souffle.
+
+::: {.callout-note}
+## Ce que ce contrôle prouve, et ce qu'il ne prouve pas
+
+La recherche DMD reste bornée à FC ± 20 % autour de l'*a priori* : l'ancrage la
+**contraint**, elle ne pouvait donc plus rendre les valeurs aberrantes. La
+convergence n'est pas une validation indépendante.
+
+Ce qui l'est davantage : l'accord obtenu est **dix fois plus serré que la
+largeur de la bande** laissée libre. Les réplicats d'un œil retombent sur la
+même valeur à ~1 BPM là où ils avaient ±14 BPM pour se disperser. Une simple
+contrainte n'expliquerait pas cela ; un signal cardiaque réel, oui.
+:::
+
+`hr_prior.csv` n'est **pas** une mesure et ne se fait pas passer pour telle : il
+n'est pas écrit sous le nom `visit_data.csv`, la colonne `hr_source` du lot
+distingue `prior` de `visit_data` et de `svd`, et les valeurs non ancrées sont
+conservées sous `pulse_from_data_sans_ancrage/`. Cinq participants sur sept
+gardent par ailleurs une étendue résiduelle supérieure à 15 BPM après repliement
+— un rapport 3:2 survit au repliement d'octave — et sont marqués
+`consensus_fiable = False`.
+
+# Les one-cycles
+
+Avant de mesurer une déformation, il faut savoir sur quoi elle est mesurée. Un
+one-cycle est la moyenne de **six battements consécutifs** repliés en **six
+bins** de phase cardiaque. Trois choses conditionnent tout ce qui suit : la
+phase est-elle juste, les bins sont-ils peuplés, et l'amplitude du cycle
+est-elle mesurable.
+
+## Deux mesures indépendantes du même pouls
+
+La phase vient d'une **SVD des intensités**. L'épaisseur choroïdienne vient des
+**masques segmentés**. Ce sont deux chaînes indépendantes : la première ne
+regarde jamais la segmentation, la seconde jamais les intensités. Rien
+n'impose qu'elles s'accordent — et leur accord est donc un contrôle.
+
+{{< include figures_repro_strain/fig_ct_pulse.qmd >}}
+
+Les deux signaux sont **centrés-réduits** : ils n'ont ni la même unité (µm
+contre intensité arbitraire) ni la même échelle, seule leur forme se compare.
+Le panneau du haut montre les signaux bruts, celui du bas les mêmes après le
+**même filtre FIR** à phase linéaire sur FC ± 20 % — c'est la condition pour
+que la comparaison veuille dire quelque chose.
+
+{{< include figures_repro_strain/fig_accord.qmd >}}
+
+{{< include figures_repro_strain/tab_ct_pulse.qmd >}}
+
+La corrélation dit si les deux signaux ont la même **forme**, la covariance si
+l'accord porte sur une **amplitude** qui compte : une corrélation forte sur un
+signal minuscule ne vaut rien, d'où les deux. Les valeurs sont données
+**signées** et non en valeur absolue.
+
+Et c'est bien ce qu'il fallait faire, car la distribution est **centrée sur
+zéro** : $r = 0{,}03$ en médiane sur la fenêtre temporelle, $0{,}04$ sur les
+bins. Ce n'est pas que les deux signaux ne s'accordent pas — leur $|r|$ médian
+vaut **0,39** et **0,48** — c'est que le **signe** est arbitraire, fixé par une
+convention interne au lot d'extraction et non par la physiologie. La cohorte
+SANS donne exactement la même signature (médiane 0,00, $|r|$ 0,41), ce qui
+confirme qu'il s'agit d'une propriété de la méthode et non de ces données.
+
+Un $|r|$ de 0,4 entre deux mesures indépendantes du même phénomène est faible.
+Les deux chaînes voient le même battement — la section précédente l'a montré
+sur la fréquence — mais elles n'en voient pas la même forme d'onde.
+
+## Le spectre, et où tombe la fréquence cardiaque
+
+{{< include figures_repro_strain/fig_spectre.qmd >}}
+
+La bande **50–80 BPM** tracée en rouge est un *a priori* physiologique (adulte
+au repos) : ce n'est ni un filtre, ni la bande de recherche du lot. Elle sert
+uniquement à situer le résultat.
+
+Les fréquences portées ici sont celles de l'ancrage décrit plus haut
+(`hr_source = prior`), donc constantes par participant. Sept acquisitions
+tombent hors de la bande, et cela ne veut pas dire qu'elles sont fausses :
+Mcneil se stabilise à **102 BPM**, valeur que ses estimations brutes indiquaient
+déjà cinq fois sur huit. Une tachycardie légère est un état, pas une erreur — et
+c'est bien pour cela que la bande est un repère de lecture et non une contrainte
+imposée à la recherche.
+
+## Ce que le repliement met dans chaque bin
+
+{{< include figures_repro_strain/fig_bins.qmd >}}
+
+L'effectif vient **avant** la grandeur, parce que la seconde ne se lit qu'à la
+lumière de la première : un bin de trois frames n'est pas une moyenne, c'est
+presque une image, et son épaisseur porte le speckle d'une seule acquisition.
+
+Un bin contient **7 frames [6 – 10]**, et 21 bins sur 1 335 en contiennent moins
+de quatre — c'est peu, et le repliement tient. L'amplitude du cycle,
+**ΔCT = 4,5 µm [2,4 – 17,1]**, est en revanche du même ordre que la résolution
+axiale (3,9 µm par pixel) : la pulsation choroïdienne fait **un à quatre
+pixels**. Tout ce qui suit se joue à cette échelle-là.
+
+Le nombre de one-cycles par acquisition varie d'un facteur cinq — **6 [4 – 8]**,
+de 2 à 11 — et suit la durée de la vidéo ($r = 0{,}75$). Neuf acquisitions n'en
+ont que deux ou trois. Le repliement inter-cycles est une **médiane**, choisie
+pour résister aux cycles ratés ; sur deux valeurs, une médiane est une moyenne
+et ne résiste à rien. Les trois OS de Modica sont dans ce cas, conséquence
+directe de leur ART 2 : cadence double, donc durée moitié pour le même nombre
+d'images. Les colonnes `n_one_cycles_min` et `n_one_cycles_med` de `icc.csv` et
+`variance.csv` portent ce chiffre pour que nul ICC ne se lise sans lui.
+
+Le CT du panneau central est celui des masques **repliés puis resegmentés** —
+la grandeur telle que le recalage démons la voit, et non l'épaisseur frame par
+frame de la figure précédente. Chaque cycle est centré sur sa propre moyenne :
+sans cela, l'épaisseur absolue (250 à 400 µm selon le sujet) écraserait la
+pulsation, qui vaut quelques µm et qui est la seule chose que le bin fait
+varier.
+
+# Le strain
+
+## Ce qui est mesuré
+
+Pour chaque one-cycle, le champ de déformation est calculé par **recalage
+démons** entre deux bins et deux seulement :
+
+- l'image **fixe** est le bin de choroïde la plus **mince** ;
+- l'image **mobile** est le bin de choroïde la plus **épaisse**.
+
+C'est la déformation sur l'**amplitude complète** de la pulsation choroïdienne,
+donc le meilleur rapport signal/bruit que le cycle puisse offrir. Le lot calcule
+en réalité tous les bins mobiles contre le bin de référence ; cette page n'en
+retient que l'extrême.
+
+Le strain axial $\varepsilon_{yy} = \partial u_y / \partial y$ est ensuite
+résumé sur la rétine, découpée en **cinq bandes latérales** (de « colonne −2 »
+à « colonne +2 »), par **trois agrégats** — moyenne, médiane, et **p95 signé**
+de la magnitude — et pour **quatre régularisations** σ ∈ {5, 10, 12, 15}.
+
+Le repliement se fait en deux temps : par **bande** (les trois agrégats sur les
+pixels de la bande), puis **entre cycles** par la **médiane**. La médiane et non
+la moyenne : un one-cycle raté — clignement, perte de suivi — produit un strain
+*aberrant* et non un strain bruité, et la moyenne le suivrait.
+
+Il reste alors **un nombre par (acquisition, σ, bande, agrégat)**.
+
+{{< include figures_repro_strain/fig_strain.qmd >}}
+
+Cette figure vient **avant** les ICC et non après, pour une raison : un marqueur
+dont la dispersion entre sujets est nulle ne peut pas avoir un bon ICC, quelle
+que soit la qualité de la mesure. Il faut voir l'étendue avant de lire un
+rapport de variances — et ici l'étendue existe. Le problème n'est pas que le
+strain ne varie pas ; c'est qu'il varie **entre deux mesures du même œil**.
+
+# Répétabilité
+
+## L'accord entre réplicats
+
+Le « sujet » est l'**œil** (participant × latéralité), le « réplicat » son rang
+chronologique. Seuls les yeux ayant leurs **trois premiers réplicats** entrent,
+ce qui donne un plan strictement équilibré.
+
+{{< include figures_repro_strain/fig_icc.qmd >}}
+
+L'**ICC(1,1)** est le modèle juste ici — à un facteur aléatoire, réplicats
+*interchangeables* : rien ne distingue le premier enregistrement du troisième
+sinon l'ordre. `ICC(A,1)` et `ICC(C,1)` sont calculés en plus et rangés dans
+`icc.csv` ; leur écart signalerait une **dérive** au fil de la séance.
+
+Les intervalles de confiance sont tracés parce qu'ils sont **larges** : leur
+largeur médiane vaut **0,68**. Treize yeux et trois réplicats ne suffisent pas à
+distinguer un ICC de 0,4 d'un ICC de 0,8, et lire les points sans leurs barres
+donnerait une précision qui n'existe pas. Vingt-quatre configurations sur 144
+ont un intervalle qui exclut zéro.
+
+**Aucune des 144 configurations n'atteint 0,75** — le seuil usuel du « bon
+accord » — et six seulement dépassent 0,50. Vingt-quatre donnent un ICC
+**négatif**, c'est-à-dire une variance entre réplicats du même œil supérieure à
+la variance entre yeux.
+
+Trois régularités se lisent malgré tout, et elles vont toutes dans le même sens :
+
+| facteur | ICC(1,1) médian |
+|:--|:--|
+| σ = 5 → 10 → 12 → 15 | 0,09 → 0,17 → 0,19 → **0,28** |
+| référence `global` → `local` | 0,12 → **0,25** |
+| agrégat p95 signé → médiane → moyenne | 0,10 → 0,17 → **0,20** |
+
+**Plus la régularisation est forte, plus la mesure est répétable.** C'est
+cohérent et instructif : σ lisse le champ de déplacement, donc supprime du
+bruit — et comme la répétabilité s'améliore de façon monotone jusqu'à σ = 15,
+la borne supérieure testée, rien ne dit qu'on ait atteint l'optimum. Le p95
+signé, l'agrégat le plus sensible aux valeurs extrêmes, est le moins répétable
+des trois ; c'est attendu, et cela le disqualifie comme marqueur.
+
+La référence **locale** bat la **globale**, ce qui peut surprendre puisque la
+référence globale est moins bruitée. L'explication tient à ce qu'elle absorbe :
+la référence globale rend les one-cycles comparables *entre eux* mais fait
+entrer la dérive lente de l'œil dans le strain mesuré — dérive qui, elle, n'est
+pas reproductible d'un enregistrement à l'autre.
+
+::: {.callout-note}
+## Ce que l'écart entre les trois ICC dit de la séance
+
+`ICC(A,1)` et `ICC(C,1)` sont **identiques à 0,001 près** en médiane. Le second
+ignore un décalage systématique entre rangs de réplicat, le premier non : leur
+égalité signifie qu'il n'y a **aucune dérive** au fil de la séance. Le troisième
+enregistrement n'est pas systématiquement plus haut ou plus bas que le premier.
+
+Ce n'est pas un détail. L'échec de répétabilité n'est pas une tendance qu'on
+pourrait corriger — c'est du bruit pur.
+:::
+
+{{< include figures_repro_strain/tab_icc.qmd >}}
+
+Un ICC seul est un **rapport** ; il ne dit pas dans quelle unité on se trompe.
+La colonne « écart-type intra » le dit, et le **coefficient de répétabilité**
+(2,77 × écart-type intra) donne l'écart que deux mesures du même œil ne
+dépassent pas dans 95 % des cas. C'est ce chiffre-là qu'on emporte pour
+dimensionner une étude.
+
+Pour la meilleure configuration — référence locale, σ = 15, colonne −2,
+moyenne — l'écart-type intra vaut $1{,}7	imes10^{-3}$ et le coefficient de
+répétabilité $4{,}8	imes10^{-3}$. **Deux mesures du même œil peuvent différer
+de 4,8 milli-unités de strain**, là où l'étendue du marqueur sur toute la
+cohorte est du même ordre. Le Bland-Altman confirme l'absence de biais
+($-1{,}7	imes10^{-4}$) et des limites d'accord à $\pm 5	imes10^{-3}$ : rien
+de systématique, tout est dispersion.
+
+{{< include figures_repro_strain/fig_paires.qmd >}}
+
+## Où passe la variance
+
+L'ICC mélange deux niveaux que l'étude peut séparer, puisque chaque participant
+a ses **deux yeux**. La décomposition les distingue :
+
+$$
+\sigma^2_{\text{total}} \;=\;
+\underbrace{\sigma^2_{\text{sujet}}}_{\text{entre personnes}} \;+\;
+\underbrace{\sigma^2_{\text{œil}(\text{sujet})}}_{\text{entre les deux yeux d'une personne}} \;+\;
+\underbrace{\sigma^2_{\text{résidu}}}_{\text{entre réplicats du même œil}}
+$$
+
+C'est une **ANOVA hiérarchique à effets aléatoires**. Le plan étant exactement
+équilibré — chaque participant, ses deux yeux, ses trois premiers réplicats —
+les composantes se calculent directement par sommes de carrés :
+
+$$
+\hat\sigma^2_{\text{résidu}} = \mathrm{MS}_{\text{résidu}}, \quad
+\hat\sigma^2_{\text{œil}} = \frac{\mathrm{MS}_{\text{œil}} - \mathrm{MS}_{\text{résidu}}}{n_{\text{rep}}}, \quad
+\hat\sigma^2_{\text{sujet}} = \frac{\mathrm{MS}_{\text{sujet}} - \mathrm{MS}_{\text{œil}}}{n_{\text{œil}}\, n_{\text{rep}}}
+$$
+
+Sur un plan équilibré ces estimateurs sont exacts, et un ajustement itératif
+(REML) rendrait les mêmes valeurs. L'implémentation est vérifiée sur des données
+simulées à composantes connues, et la somme des carrés est contrôlée à chaque
+appel — une décomposition qui ne se referme pas lève une erreur au lieu de
+produire un chiffre.
+
+Une composante négative n'a pas de sens physique : elle signale que le facteur
+n'explique rien de plus que le bruit, et elle est ramenée à zéro (convention
+usuelle), le fait étant reporté dans `variance.csv`.
+
+{{< include figures_repro_strain/fig_variance.qmd >}}
+
+**La lecture est directe.** Une barre dominée par le **participant** décrit un
+marqueur qui distingue deux personnes et qu'on peut donc espérer corréler à
+quelque chose. Une barre dominée par le **résidu** décrit un marqueur qui ne
+distingue pas deux mesures du même œil — et qui ne peut alors rien prédire, non
+parce que le phénomène est absent, mais parce que la mesure ne le voit pas.
+
+Les barres sont dominées par le résidu.
+
+| composante | part de la variance |
+|:--|--:|
+| entre participants | 11,0 % [1,8 – 22,1] |
+| entre les deux yeux d'un participant | 2,6 % [0,0 – 16,5] |
+| **entre réplicats du même œil** | **78,2 % [68,0 – 87,3]** |
+
+**Deux configurations sur 144** voient la variance inter-sujets dépasser le
+résidu. Dans 90 des 144, une composante ressort négative et est ramenée à zéro —
+signe que le facteur correspondant n'explique rien de plus que le bruit ; c'est
+presque toujours la composante « œil », ce qui veut dire que les deux yeux d'une
+même personne ne se distinguent pas davantage que deux mesures du même œil.
+
+C'est le lien direct avec la section précédente. La répétabilité impose un
+plafond de corrélation, dont $\sqrt{\mathrm{ICC}}$ donne l'ordre de grandeur :
+à ICC 0,16, le strain ne peut pas corréler au-delà de **0,40** avec quoi que ce
+soit ; même dans sa meilleure configuration (0,59), il plafonne à 0,77. Les
+corrélations que l'expérience SANS cherchait étaient donc hors de portée de la
+mesure, indépendamment de la question biologique.
+
+::: {.callout-important}
+## Ce qu'il faut retenir
+
+**Le strain rétinien par recalage démons n'est pas un marqueur individuel.**
+ICC(1,1) médian 0,16, aucune des 144 configurations au-dessus de 0,75, 78 % de
+la variance entre réplicats du même œil. Sur cette chaîne, à cette résolution,
+la mesure ne distingue pas deux enregistrements du même œil à cinq minutes
+d'intervalle.
+
+**Ce n'est pas une dérive, c'est du bruit.** `ICC(A,1)` et `ICC(C,1)` coïncident
+à 0,001 près : aucun effet d'ordre au fil de la séance, donc rien à corriger par
+un recalage de niveau.
+
+**La régularisation aide, et son optimum n'est pas atteint.** L'ICC croît de
+façon monotone de σ = 5 à σ = 15, la borne supérieure testée. Un balayage
+au-delà est le premier essai à faire — mais gagner 0,1 d'ICC ne changerait pas
+la conclusion.
+
+**L'échelle explique beaucoup.** La pulsation choroïdienne vaut 4,5 µm pour un
+pixel axial de 3,9 µm : le phénomène mesuré fait un à quatre pixels. Un champ de
+déformation estimé à cette échelle est dominé par le speckle.
+
+**Ce qui reste utilisable, c'est l'épaisseur choroïdienne**, pas le champ de
+déformation — exactement ce que la section SANS avait trouvé sans pouvoir
+l'expliquer. Cette page fournit l'explication.
+:::
+
+## Limites
+
+**Treize yeux, trois réplicats.** Les intervalles de confiance font 0,68 de
+large en médiane. La conclusion « pas de bon ICC » est solide — aucune borne
+supérieure n'atteint 0,75 sur la majorité des configurations — mais le classement
+des configurations entre elles ne l'est pas.
+
+**Six participants dans la décomposition de variance**, contre sept dans l'ICC :
+`MARTINEZ_ALEJANDRA_OS3` est corrompue à la source (238 de ses 348 images sont
+vides, ~24 ko au lieu de ~450), son œil tombe à deux réplicats, et la
+décomposition exige les deux yeux d'un participant. Un ré-export du Spectralis
+récupérerait ce quatorzième œil.
+
+**Neuf acquisitions reposent sur deux ou trois one-cycles** seulement. Leur
+marqueur est plus bruité que les autres et cela pèse à la baisse sur l'ICC,
+sans expliquer un écart de cette taille.
+
+**La fréquence cardiaque est ancrée, pas mesurée.** Le consensus par
+participant a été validé contre une estimation indépendante (section 1), mais
+cinq participants sur sept gardent une dispersion résiduelle marquée
+`consensus_fiable = False`. Un brassard pendant l'acquisition lèverait
+entièrement cette réserve, et c'est la modification de protocole la moins chère
+que suggère cette étude.

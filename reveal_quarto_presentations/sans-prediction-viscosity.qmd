@@ -1,0 +1,234 @@
+---
+title: "Prediction of SANS : viscosity"
+subtitle: "Les pentes du strain contre l'épaisseur et contre la dilatation — les deux estimateurs, leurs coefficients r — contre les deux marqueurs de SANS"
+include-in-header: figures_sans_predictors/plotlyjs.html
+---
+
+Trois pages posent la même question à trois familles de marqueurs :
+**[rigidité](sans-prediction-rigidity.qmd)**, **[strain](sans-prediction-strain.qmd)**
+et **[viscosité](sans-prediction-viscosity.qmd)** (celle-ci). La pente d'un strain
+contre l'épaisseur qui le produit est la grandeur qui se rapproche le plus d'une
+**propriété mécanique du tissu** : c'est la question de cette page.
+
+## Les issues et les marqueurs
+
+**Six issues, deux marqueurs de SANS** (voir [Methods](sans-methods.qmd)) : le
+**gonflement rétinien**, $\Delta TRT_x = TRT250_x(\text{après}) - TRT250_x(\text{avant})$,
+sur les douze sujets qui ont l'issue *et* un marqueur mesuré avant le vol, et
+l'**aplatissement du globe**, $\Delta AL = AL(\text{après}) - AL(\text{avant})$,
+la variation de longueur axiale, sur quatorze sujets.
+
+Les marqueurs sont les **pentes** de l'ajustement du strain rétinien contre
+l'épaisseur de la bande ($CT$) et contre sa dilatation ($\Delta CT$), dans leurs
+**deux estimateurs** :
+
+* **par one-cycle** — un ajustement sur les 5 à 6 bins de chaque battement, puis
+  la médiane des pentes sur les one-cycles retenus ;
+* **poolée** — un seul ajustement sur tous les couples (one-cycle, bin) de la
+  vidéo.
+
+Chacun décliné sur les **trois agrégats du strain**, les **cinq bandes**, quatre
+σ et deux références, et accompagné du **coefficient $r$** de l'ajustement. Soit
+24 marqueurs et **960 variantes** affichées, contre les six issues : 5 760
+corrélations.
+
+::: {.callout-note}
+## Deux abscisses qui n'en font qu'une
+
+Par one-cycle, la pente contre $CT$ et la pente contre $\Delta CT$ sont
+**mathématiquement la même** : à l'intérieur d'un battement, $\Delta CT = CT -
+CT(\text{bin de référence})$ et la référence est une constante, donc seule
+l'ordonnée change. La page [Stress–strain](sans-stress-strain.qmd) montre que la
+dégénérescence **survit au pooling** — les pentes poolées ne diffèrent que de
+0,6 %. Les deux abscisses sont conservées parce que les tables et la
+répétabilité en font des prédicteurs distincts, mais elles ne portent pas deux
+informations.
+
+La catégorie compte **1 920 tests par issue** ; la page en affiche 960. Les deux
+abscisses à portée globale ($CT$ et $\Delta CT$ du champ entier, non restreints à
+la bande) sont calculées et corrigées, mais pas dessinées — elles ajoutent une
+redondance de plus sans rien trancher.
+:::
+
+::: {.callout-important}
+## Ce qu'une q-valeur change ici
+
+Trois corrections de Benjamini-Hochberg sont publiées dans
+`sans_correlations.csv` : `pearson_q` sur les 37 872 tests de la table,
+`pearson_q_famille` dans la famille de prédicteurs, et
+**`pearson_q_categorie`** dans **(catégorie, vue, issue)** — ici, les **1 920
+tentatives** de la viscosité contre *une* issue. C'est la plus indulgente des
+trois, et c'est elle que la carte signale.
+
+Cette catégorie est de loin la plus nombreuse des trois : c'est le prix du
+balayage — quatre abscisses, trois agrégats, deux estimateurs, cinq bandes,
+quatre σ et deux références. **Tripler les variantes durcit mécaniquement la
+correction pour toutes**, et c'est payé ici.
+:::
+
+## Vue d'ensemble
+
+Deux cartes : les **pentes** d'abord, puis les **coefficients $r$** des mêmes
+ajustements. Une case par (marqueur, issue), une grille par (σ, référence). Le
+cadre vert signale un marqueur assez répétable — ICC(A,1) ≥ 0,45 — atteignant
+$|r| ≥ 0{,}20$ contre cette issue-là : **458 cases sur 5 760**, 8 %.
+
+{{< include figures_sans_predictors/p4vis_heatmap.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_heatmap_r.qmd >}}
+
+Aucune astérisque sur la carte des pentes ; **deux** sur celle des coefficients
+$r$, à la colonne +1 contre ΔTRT S.
+
+## Ce que le taux de fausses découvertes laisse
+
+{{< include figures_sans_predictors/p4vis_q_vs_r.qmd >}}
+
+La plus petite q-valeur de la catégorie vaut **0,044**, la médiane **0,97**. Par
+issue, le minimum va de 0,044 (ΔTRT S) à 0,976 (ΔAL) : le nuage entier reste
+tassé contre le bord droit, mais **deux points passent le seuil** — les premiers
+de cette page.
+
+Il s'agit du **coefficient $r$** de l'ajustement par one-cycle du strain moyen
+contre l'épaisseur, sur la **colonne +1** en référence locale, contre ΔTRT S :
+$r = -0{,}91$, $p = 4{,}6 	imes 10^{-5}$, $q = 0{,}044$. Les deux points
+n'en font qu'un : contre $CT$ et contre $\Delta CT$, l'ajustement par one-cycle
+*est* le même (voir l'encadré ci-dessus), et la corrélation est identique à la
+cinquième décimale. **Une tentative sur 1 920, à $q = 0{,}044$ dans la catégorie
+la plus nombreuse du panel** — c'est-à-dire tout juste, dans la lecture la plus
+indulgente, et sur la seule des six issues qui l'atteigne.
+
+Ce résultat n'existait pas avant la correction du miroir (2 septembre 2026), qui
+aligne les bandes des deux yeux sur le même côté de la rétine : le minimum de la
+catégorie valait alors 0,656. C'est le comportement attendu d'une correction de
+ce type — une corrélation propre à un côté de la rétine était jusque-là diluée
+par le côté opposé. Cela ne la valide pas pour autant : elle porte sur une bande,
+une référence, un agrégat et une issue, et rien de voisin ne l'accompagne.
+
+Les corrélations brutes, elles, restent **sous le hasard** : **223** à
+$p < 0{,}05$ quand $H_0$ en prédit **288** — signature d'une dépendance forte
+entre variantes, pas d'un signal.
+
+## Ce que le ΔAL ajoute
+
+Le second marqueur de SANS (voir [Methods](sans-methods.qmd)) : ΔAL =
+AL(après) − AL(avant), l'aplatissement du globe, sur **14 sujets**. C'est
+l'issue sur laquelle cette page fait le plus mauvais score des six.
+
+| | valeur | attendu sous $H_0$ |
+|:--|--:|--:|
+| tentatives corrigées ensemble | 1 920 | — |
+| $|r|$ maximal | 0,75 | — |
+| $p < 0{,}05$ | 84 | 96 |
+| $q < 0{,}05$ dans la catégorie | **0** | — |
+| $q$ minimum | 0,976 | — |
+
+**Encore sous le hasard** — 84 corrélations nominalement significatives quand
+$H_0$ en prédit 96 —, exactement comme contre les ΔTRT (223 pour 288). Le $q$
+minimum, **0,976**, est le pire des six issues et le pire des trois pages : le
+nuage est collé au bord droit sur toute sa longueur.
+
+Les plus fortes valeurs viennent toutes de la **colonne −1** aux grandes
+régularisations ($r = -0{,}75$ à $\sigma = 15$, $-0{,}74$ à $\sigma = 12$), et
+la pente contre $CT$ y est identique à la pente contre $\Delta CT$ — la
+dégénérescence décrite plus haut, qui compte deux fois la même mesure. Il n'y a
+donc pas quatre résultats mais un seul, et il ne passe rien.
+
+## La répétabilité achète-t-elle de la corrélation ?
+
+{{< include figures_sans_predictors/p4vis_r_vs_icc.qmd >}}
+
+$r(|r|, ICC) = -0{,}141$ — nul, et du mauvais signe. L'ICC médian de ces marqueurs
+vaut $+0{,}13$, **2,5 %** dépassent 0,75, **3,7 %** des couples franchissent
+$|r| > 0{,}58$, et **0,23 %** cumulent les deux. Le quadrant utile est vide, comme sur la page
+[strain](sans-prediction-strain.qmd) et contrairement à la page
+[rigidité](sans-prediction-rigidity.qmd).
+
+## La même question, battement par battement
+
+L'ICC par **one-cycle** n'existe que pour l'estimateur **par one-cycle** : une
+pente poolée est ajustée sur toute la vidéo et n'a pas de valeur par battement.
+Il reste 480 marqueurs par issue.
+
+{{< include figures_sans_predictors/p4vis_r_vs_icc_oc.qmd >}}
+
+$r(|r|, ICC) = +0{,}035$, et **0,4 %** seulement de ces pentes dépassent un ICC de
+0,5 d'un battement au suivant — contre 89 % des marqueurs d'épaisseur de la page
+rigidité. **Quatre points sur 2 880** sont dans le quadrant utile.
+
+C'est le résultat le plus dur de cette page : une pente ne se reproduit pas d'un
+battement au suivant, sur le même œil, dans la même seconde. Ce qu'on lui demande
+ensuite — séparer des sujets, puis prédire une issue clinique — est hors de sa
+portée avant même qu'on l'essaie.
+
+## Le compte, avant toute interprétation
+
+| | nombre | attendu sous $H_0$ |
+|:--|--:|--:|
+| corrélations calculées et affichées (vue « avant », six issues) | 5 760 | — |
+| corrélations corrigées ensemble (catégorie entière) | 11 520 | — |
+| $p < 0{,}05$ | 223 | 288 |
+| $q < 0{,}05$ dans la catégorie | **2** (une seule mesure, comptée deux fois) | — |
+| $q < 0{,}05$ dans la famille | 0 | — |
+| $q < 0{,}05$ sur les 37 872 tests | 0 | — |
+
+## Les tables, référence locale
+
+Les tables portent les **pentes** ; les coefficients $r$ se lisent sur la seconde
+carte et dans les nuages.
+
+{{< include figures_sans_predictors/p4vis_tab_local_s5.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_tab_local_s10.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_tab_local_s12.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_tab_local_s15.qmd >}}
+
+## Les tables, référence globale
+
+{{< include figures_sans_predictors/p4vis_tab_global_s5.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_tab_global_s10.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_tab_global_s12.qmd >}}
+
+{{< include figures_sans_predictors/p4vis_tab_global_s15.qmd >}}
+
+## Ce que la page conclut
+
+La pente stress–strain ne prédit rien — le seul test qui passe la correction
+porte sur un **coefficient $r$** d'ajustement, pas sur une pente, et il tient à
+une seule bande. C'était prévisible dès la page
+[Stress–strain](sans-stress-strain.qmd) : sur la cohorte, la pente médiane vaut
+$3{,}1 \times 10^{-5}$ par µm avec 57 % de pentes positives — pile ou face —, et
+la significativité des ajustements par condition vient de l'autocorrélation entre
+bins voisins, pas d'un effet commun.
+
+Deux enseignements de méthode restent :
+
+* **l'estimateur par one-cycle bat l'estimateur poolé** en répétabilité (ICC
+  $+0{,}19$ contre $+0{,}09$), le seul écart qui survive à tous les changements
+  de jeu de données — mais il ne se traduit par aucun gain de corrélation ;
+* **le coût de ce balayage est payé par les autres pages.** Ces 1 920 variantes
+  par issue durcissent la correction globale que la page
+  [rigidité](sans-prediction-rigidity.qmd) doit franchir. Réduire ce panel est la
+  première chose à faire avant toute reprise de l'analyse.
+
+## Reproduire
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_demons_strain.py
+```
+
+```bash
+C:/Users/transformer/anaconda3/envs/pyOR/python.exe Astronauts/compute_sans_predictors.py
+```
+
+```bash
+python reveal_quarto_presentations/figures_sans_predictors/make_figures.py
+```
+
+::: {.source-note}
+Corrélations calculées par `Astronauts/compute_sans_predictors.py` (Pearson et Spearman, trois q-valeurs de Benjamini-Hochberg : globale, par famille et par catégorie) ; cartes, nuages et tables générés par `figures_sans_predictors/make_figures.py`, qui ne fait que lire `sans_correlations.csv`, `repeatability.csv` et `repeatability_one_cycles.csv`. Tous les chiffres cités sont repris de `figures_sans_predictors/resume.txt`.
+:::

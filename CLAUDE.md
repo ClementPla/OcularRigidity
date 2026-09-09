@@ -9,18 +9,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > lives on `C:`. See "Where results go" below for the layout and the junction convention.
 
 > The package went through a large restructuring (58 files, +14k/-2.2k lines) shortly before this
-> revision of CLAUDE.md. Some consumers outside `src/ocularrigidity` (notably the gitignored
-> `Astronauts/` scripts, see below) were **not** updated to match and currently have broken imports.
+> revision of CLAUDE.md. Some consumers outside `src/ocularrigidity` (notably the `Astronauts/`
+> scripts, see below) were **not** updated to match and still have broken imports.
 > Don't trust old references to `motion/registered_video.py`, `RegisteredVideo`,
 > `registration/horizontal/`, `registration/export.py`, or `rigidity/features.py` — they're gone.
 
 ## Where results go
 
-Everything generated lands on `E:`. The three roots in use:
+Everything generated lands on `E:`. The roots in use:
 
 ```
 E:/SANSORI/<NN_id>/<...>_rigidity/<..._OD|OS...>/   raw acquisitions + per-condition outputs
+E:/SANSORI/Reproducibility/<NOM_PRENOM_OD|OS+N>/    repeatability study, one folder per acquisition
 E:/NASA_Rigidity/SegmentationVariations/<variant>/  registered frames/masks + batch analysis tables
+E:/NASA_Rigidity/Reproducibility/                   repeatability batch tables
 E:/NASA_Rigidity/quarto_results/                    figures of the Quarto report site
 ```
 
@@ -65,10 +67,10 @@ non-invasive estimation of ocular rigidity (the IOP–volume relationship). Stag
 cardiac-cycle rate/phase extraction → one-cycle folding → rigidity-coefficient fitting from
 pressure/area or pressure/thickness curves.
 
-## Two tracks sharing the same registration/pulsation core
+## Three tracks sharing the same registration/pulsation core
 
-The `src/ocularrigidity` package is shared by two processing tracks — check which one you're touching
-before assuming file layout, config source, or output paths:
+The `src/ocularrigidity` package is shared by three processing tracks — check which one you're
+touching before assuming file layout, config source, or output paths:
 
 1. **Generic cohort pipeline** (Clement's track, `main`-derived): `src/ocularrigidity/scripts/cohort_analysis/`
    (`segment_n_cycles.py`, `extract_deltaA.py`, `flag_misregistration.py`) + `scripts/pulsation/infer.py`
@@ -78,40 +80,103 @@ before assuming file layout, config source, or output paths:
    etc.) — will not resolve on Windows/SANSORI machines without editing. Rigidity here is the
    **Friedenwald K** coefficient ([src/ocularrigidity/friedenwald.py](src/ocularrigidity/friedenwald.py)),
    derived from choroidal *area* change (`deltaA`, from `extract_deltaA.py`) via a spherical-shell model.
-2. **SANSORI batch pipeline** (Nicolas's track, `Astronaut` branch): [Astronauts/](Astronauts/) (gitignored,
-   see below) + `src/ocularrigidity/scripts/registration/astronauts.py` + `scripts/one_cycle/astronauts.py`
+2. **SANSORI batch pipeline** (Nicolas's track, `Astronaut` branch): [Astronauts/](Astronauts/)
+   + `src/ocularrigidity/scripts/registration/astronauts.py` + `scripts/one_cycle/astronauts.py`
    + the Streamlit app in [testing_app/](testing_app/). Operates directly on
    `E:/SANSORI/<NN_id>/<...>_rigidity/<..._OD|OS...>/` (hardcoded `PATH_GENERAL` in each script/page). Rigidity
    here is the **Sayah et al. (2020) k** coefficient, derived from choroidal *thickness* pulsatility
    (`deltaY`) plus axial length/IOP/OPA joined from `sansori_db.db` + `visit_data.csv`.
+3. **Repeatability study** (Nicolas's track, added 2026-09-04): [Reproducibility/](Reproducibility/).
+   Same acquisitions, same device, same eye, minutes apart — the point is the *bound* on
+   reproducibility, not a predictor. Operates on `E:/SANSORI/Reproducibility/<NOM_PRENOM_OD|OS+N>/`
+   (a **flat** layout: no `<...>_rigidity` level, the folder name carries participant, eye and
+   replicate rank), writes under `E:/NASA_Rigidity/Reproducibility/`, and reports through the
+   Quarto section "Reproducibility". See its own section below.
 
-Both tracks now converge on the same registration engine (`registration.registration_engine.VideoRegistrator`)
+The first two tracks converge on the same registration engine (`registration.registration_engine.VideoRegistrator`)
 and, for cardiac extraction, the same `motion.pulsation` package — the fork is really just "which script
-calls them with which config and where it reads/writes," not two independent implementations. Don't mix up
+calls them with which config and where it reads/writes," not two independent implementations. The third
+has not reached registration yet: so far it only reads the XML exports. Don't mix up
 `k` (Sayah, mm⁻³) and `K` (Friedenwald) — different quantities, different formulas, different config
 dataclasses (`FriedenwaldConfig` vs the ad hoc bandpass+Hilbert method in `compute_rigidity_time_series.py`).
 
-## `Astronauts/` is local-only and currently out of sync with the refactor
+## `Astronauts/` is partly out of sync with the refactor
 
-`Astronauts/` is entirely gitignored (`.gitignore:5`) — it lives only on this machine, isn't reviewed, and
-was **not** touched by the recent restructuring commits. As of this writing:
+**`Astronauts/` is tracked by git.** Only `Astronauts/*.ipynb` is ignored (`.gitignore:5`); the `.py`
+scripts are versioned like any other source. (Earlier revisions of this file claimed the whole folder
+was gitignored and local-only — that was wrong.) What is true is that the restructuring commits did not
+touch these scripts, so some still point at modules that moved. As of this writing:
 
 - [Astronauts/register_files.py](Astronauts/register_files.py) imports `from ocularrigidity.registration.export
   import export_registered_video, DEFAULT_OUTPUT_SUBDIR` — that module was moved/renamed to
   `ocularrigidity.scripts.registration.astronauts`. It also prints `cfg.flatten` / `cfg.horizontal_alignment`,
   fields that don't exist on `RegistrationConfig` anymore (now `flatten_rpe` / `lateral_method`). **This
   script will raise `ImportError` before doing anything.**
-- [Astronauts/compute_rigidity_time_series.py](Astronauts/compute_rigidity_time_series.py) imports
-  `from ocularrigidity.rigidity.features import compute_deltaY_masks` — `rigidity/` no longer contains any
-  Python source (moved to `thickness/features.py`); this import is also broken. It also still reads
-  choroid data from the **legacy** `RawImages/registeredBscans/` (MATLAB registration) rather than the new
-  `RawImages/registered/` produced by `export_registered_video`, and doesn't yet apply the A-scan/RPE
-  refinement pass — wiring that in was the explicit goal of the most recent working session on this repo
-  and is still in progress.
+- [Astronauts/compute_rigidity_time_series.py](Astronauts/compute_rigidity_time_series.py) now imports
+  `from ocularrigidity.thickness.features import compute_deltaY_masks` — that import is **fixed**. But it
+  still reads choroid data from the **legacy** `RawImages/registeredBscans/` (MATLAB registration) rather
+  than the new `RawImages/registered/` produced by `export_registered_video`, and doesn't yet apply the
+  A-scan/RPE refinement pass — wiring that in is still in progress.
 - [Astronauts/segment_files.py](Astronauts/segment_files.py) is unaffected (imports only stable
   `data`/`segmentation` modules) but still targets `RawImages/oneCycle_regAveBin/`, a MATLAB-era path.
+- Everything else under `Astronauts/` runs. In particular
+  [Astronauts/compute_acquisition_params.py](Astronauts/compute_acquisition_params.py) is now a thin
+  driver over `scripts/acquisition_params.py` (see below) and reproduces its three CSVs byte-for-byte.
 
-Fix imports/attribute names here before running any of these three scripts.
+Fix imports/attribute names in the first two before running them.
+
+## `Reproducibility/` — the repeatability study
+
+Same code, different question and a **different folder shape**. One folder per acquisition, flat:
+
+```
+E:/SANSORI/Reproducibility/BELANGER_CHARLES_OD1/RawImages/{*.tif, <hash>.xml}
+                           _migration/{manifest.csv, duplicates.csv}
+```
+
+The name carries participant, eye and **chronological replicate rank** (not capped at 3). There is no
+`<...>_rigidity` level, which is exactly why every SANS-track iterator — all of which filter on
+`*rigidity` — steps over this tree without seeing it. Keep that filter if you add one.
+
+- [Reproducibility/migrate_repeatability.py](Reproducibility/migrate_repeatability.py) builds that tree
+  from a flat vendor dump (`D:/SANSORI/REPEATABILITY/Raw Images`, thousands of `.tif` with opaque names
+  plus one XML per acquisition). Three things it does that are easy to get wrong if you rewrite it:
+  **it does nothing without `--apply`** (dry run is the default and still writes the manifest); it
+  **re-reads what is already under the destination** before deciding anything, so a later batch is
+  recognised as duplicate/continuing rather than renumbered from 1 and no existing folder is ever
+  renamed; and it detects **re-exports of the same recording** (the device recopies identical images
+  under new filenames) by timestamp-vector fingerprint plus a 3-file md5 confirmation — counting those
+  as replicates would be the worst possible bias for a repeatability study. This is not hypothetical:
+  the second delivery re-exported nearly the whole first batch, 29 of its 75 XMLs being copies, some
+  under the very same `.xml` filename. **Never hand-copy a delivery into the tree; always go through
+  this script.**
+- [Reproducibility/compute_acquisition_params.py](Reproducibility/compute_acquisition_params.py) is a
+  driver over the shared `scripts/acquisition_params.py`.
+- Reporting: `reveal_quarto_presentations/repro-data-exploration.qmd` +
+  `figures_repro_data/make_figures.py`.
+
+Fact worth knowing before analysing this cohort: **ART, not laterality, sets the frame interval.**
+`dt_median = ART x 26.0 ms` (the device's sweep period) holds on every acquisition, and the median
+interval takes only three values — 52, 105, 131 ms — with nothing in between. OD is *mostly* ART 4 and
+OS *mostly* ART 2, but ~20% of acquisitions sit at ART 5 on both eyes, to the point that OS
+acquisitions at 131 ms are slower than every OD at 105 ms. **Pair on ART, never on laterality.** The
+B-scan is also mirrored between eyes (+20 deg / -20 deg), with no overlap — undo that before comparing
+lateral bands across eyes.
+
+Counts move with each delivery, so this file states none: `E:/NASA_Rigidity/Reproducibility/
+AcquisitionParameters/conditions.csv` is the answer, and the Quarto page regenerates from it.
+
+## Shared batch engines under `src/ocularrigidity/scripts/`
+
+When two tracks need the same batch computation, the engine goes in `src` and each track keeps only a
+short driver saying *where the conditions are*, *how they identify*, and *where the CSVs go*.
+
+[scripts/acquisition_params.py](src/ocularrigidity/scripts/acquisition_params.py) is the worked example:
+`process()` (one condition -> one row + one per-B-scan table), `split_constants()`, `read_header_fields()`
+and `run_batch()`. `process()` takes an `identity: dict` whose keys become the leading columns of both
+tables *and* the `cols_id` excluded from the constants split — so a track with a `moment` and a track
+with a `replicate` share everything else. Both `Astronauts/` and `Reproducibility/`
+`compute_acquisition_params.py` are ~100-line drivers over it (the engine is ~450).
 
 ## Registration architecture
 
@@ -259,6 +324,15 @@ immediately on a machine without CUDA/cupy, even if you only wanted a CPU-only f
 - [data/spectralis.py](src/ocularrigidity/data/spectralis.py): `SpectralisStudy` parses Heidelberg HEYEX XML
   exports (series, acquisition times, image quality) — how raw `.tif` frames get ordered/matched to metadata
   before segmentation/registration (`load_ordered_oct_series` in `scripts/registration/astronauts.py`).
+  Two export quirks are handled here, both found on the repeatability data and both silent killers if
+  you reimplement the parsing elsewhere: **(a)** some exports carry *no* encoding declaration and are
+  cp1252, so `ET.parse` dies on the first accented patient name — `read_root` retries with an explicit
+  cp1252 parser; **(b)** the layout of `<Series>` is not stable across exporter versions. The historical
+  cohort writes **one `<Series>` per B-scan**; newer exports put **the whole video in a single
+  `<Series>`** (one IR localizer + N OCT images). `_parse_series_list` explodes the latter into one
+  `Series` per B-scan sharing the localizer, so `study.series` always means "one entry per B-scan".
+  Verified a no-op on the 47 301 `<Series>` nodes of the SANS cohort. Corollary: on the new layout
+  `SensorGain` / `Focus` / `FixationTarget` come from a **single** localizer, i.e. one scalar per video.
 - [consts.py](src/ocularrigidity/consts.py): hardcoded `/home/clement/...`, `/media/clement/...`,
   `smb://192.168.11.16/...` paths for the generic-track roots — won't resolve outside Clement's machine. The
   SANSORI track instead hardcodes `PATH_GENERAL = Path("E:/SANSORI")` independently in each script/page
@@ -329,10 +403,19 @@ pip install -e .                       # editable install (poetry-core backend, 
 pytest tests/test_spectralis.py
 python tests/test_spectralis.py
 
-# SANSORI batch pipeline (Astronauts/, gitignored — fix the broken imports noted above before running)
+# SANSORI batch pipeline (Astronauts/ — fix the broken imports noted above before running)
 python Astronauts/register_files.py              # segment + register raw .tif -> RawImages/registered/
 python Astronauts/segment_files.py                # segment oneCycle_regAveBin video variant
 python Astronauts/compute_rigidity_time_series.py # -> rigidity_time_series.csv + per-condition figures
+python Astronauts/compute_acquisition_params.py   # -> E:/NASA_Rigidity/AcquisitionParameters/*.csv
+
+# Repeatability study (Reproducibility/)
+python Reproducibility/migrate_repeatability.py                  # DRY RUN: reads, validates, writes the manifest
+python Reproducibility/migrate_repeatability.py --apply --verify-hash
+python Reproducibility/compute_acquisition_params.py             # -> E:/NASA_Rigidity/Reproducibility/...
+
+# Quarto figures (run from the REPO ROOT: figures_*/ are junctions onto E:)
+python reveal_quarto_presentations/figures_repro_data/make_figures.py
 
 # Interactive registration tuning (Streamlit, SANSORI data)
 streamlit run testing_app/first_cc_registration.py
