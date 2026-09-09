@@ -80,7 +80,7 @@ save_mask(mask, path)  # bit-packed + zstd
 Two entry points produce the same artifacts.
 
 ```bash
-./scripts/pipeline.sh                     # six passes over the cohort, resumable per stage
+./scripts/pipeline.sh                     # stage by stage, resumable
 ./scripts/pipeline.sh --stage pulsation   # re-run one stage
 OCULARRIGIDITY_SEG_GPUS=0 ./scripts/pipeline.sh
 
@@ -131,6 +131,8 @@ Weights are on the Hugging Face Hub and download on first use:
 - `ClementP/OCTVideoRegistration`, revision `cascade_v9` — cascade regressor over the frozen encoder pyramid.
 
 Both are returned in eval mode on the CPU. Move them to your device before use.
+
+The batch scripts do not use the Hub: they load local checkpoints from `CHECKPOINT_PATH` and `REGISTRATOR_CHECKPOINT` in `consts.py`, because the checkpoint path is part of the registration cache key.
 
 ## Cohort browser
 
