@@ -447,7 +447,10 @@ def available_measures(clinical_long: pd.DataFrame) -> list[str]:
 
 def regression_stats(df: pd.DataFrame, x: str, y: str) -> dict:
     """Pearson / Spearman / OLS line for ``y`` vs ``x`` on the finite rows."""
-    d = df[[x, y]].apply(pd.to_numeric, errors="coerce").dropna()
+    # dict.fromkeys, not [x, y]: the explorer lets the same column be picked for
+    # both axes, and selecting one label twice returns a 2-column frame, which
+    # linregress then chokes on.
+    d = df[list(dict.fromkeys([x, y]))].apply(pd.to_numeric, errors="coerce").dropna()
     if len(d) < 3:
         return {"n": len(d)}
     r, p = stats.pearsonr(d[x], d[y])

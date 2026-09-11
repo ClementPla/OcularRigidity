@@ -1,12 +1,4 @@
-"""Load a trained :class:`RegistrationRegressor` for inference.
-
-The checkpoint written by ``train_registration.py`` carries its own
-architecture, so nothing here has to mirror the trainer's defaults — a
-mirrored hyper-parameter is one that silently drifts and then loads weights
-into the wrong shape. Two of them (the correlation radii) live under ``args``
-rather than at the top level, which is the only reason this needs more than a
-constructor call.
-"""
+import numpy as np
 
 from __future__ import annotations
 
@@ -15,6 +7,7 @@ from typing import Tuple
 
 import torch
 
+from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.registration.deep_learning.models.regressor import (
     RegistrationRegressor,
 )
@@ -65,3 +58,5 @@ def load_registration_regressor(
 
     meta = {k: v for k, v in ck.items() if k != "model"}
     return model.to(device).eval(), meta
+
+

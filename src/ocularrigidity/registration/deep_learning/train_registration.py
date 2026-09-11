@@ -1,8 +1,9 @@
 import argparse
+import json
 import random
 from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import cv2
 import numpy as np
@@ -794,6 +795,81 @@ def run_epoch(
     return out
 
 
+#: Everything that defines *which* objective is being optimised. An ablation
+#: varies these and nothing else, so they are also exactly the knobs that have
+#: to be pinned to a common setting for two arms to be comparable.
+OBJECTIVE_KEYS = (
+    "w_feature",
+    "w_photometric",
+    "w_lateral",
+    "w_bm",
+    "w_smooth",
+    "w_curvature",
+    "w_coverage",
+    "w_cycle",
+    "w_shift",
+    "bm_scale",
+)
+
+
+def _build_criterion(spec: Dict[str, float], n_scales: int, args, segmenter):
+    """A loss module for one objective spec.
+
+    The segmenter is only attached when the BM term is actually on: with
+    ``w_bm == 0`` the term is skipped, and passing ``None`` makes that
+    structural rather than a weight that happens to be zero.
+    """
+    return UnsupervisedRegistrationLoss(
+        n_scales=n_scales,
+        w_feature=spec["w_feature"],
+        w_photometric=spec["w_photometric"],
+        w_lateral=spec["w_lateral"],
+        w_bm=spec["w_bm"],
+        w_smooth=spec["w_smooth"],
+        w_curvature=spec["w_curvature"],
+        w_coverage=spec["w_coverage"],
+        photometric_levels=args.photometric_levels,
+        photometric_window=args.photometric_window,
+        coarse_to_fine=not args.no_coarse_to_fine,
+        segmenter=segmenter if spec["w_bm"] > 0 else None,
+        bm_scale=spec["bm_scale"],
+        bm_on_features=args.bm_on_features,
+    )
+
+
+def _init_wandb(args, train_obj, eval_obj, n_train_vid, n_val_vid, n_train, n_val):
+    """Start a W&B run, or return ``None`` when --wandb-project was not given.
+
+    The config carries both objectives explicitly, so a sweep's runs can be
+    grouped and diffed by which term was dropped without re-deriving it from
+    the flat weight list.
+    """
+    if not args.wandb_project:
+        return None
+    import wandb
+
+    cfg = {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}
+    cfg.update(
+        train_objective=train_obj,
+        eval_objective=eval_obj,
+        cascade=not args.no_cascade,
+        use_correlation=not args.no_correlation,
+        n_train_videos=n_train_vid,
+        n_val_videos=n_val_vid,
+        n_train_pairs=n_train,
+        n_val_pairs=n_val,
+    )
+    return wandb.init(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        name=args.wandb_name,
+        group=args.wandb_group,
+        tags=args.wandb_tags,
+        mode=args.wandb_mode,
+        config=cfg,
+    )
+
+
 def _fmt(tag: str, m: Dict[str, float]) -> str:
     return (
         f"{tag} loss {m['total']:.4f}"
@@ -1009,10 +1085,74 @@ def main():
     )
     ap.add_argument("--out", type=Path, default=Path("checkpoints"))
     ap.add_argument("--dry-run", action="store_true")
+
+    # --- comparable evaluation ---------------------------------------------
+    ap.add_argument(
+        "--eval-objective",
+        type=str,
+        default=None,
+        metavar="JSON",
+        help="score validation under a *different* objective than the one "
+        "being trained, given as a JSON object of "
+        f"{{{', '.join(OBJECTIVE_KEYS)}}} overrides. This is what makes an "
+        "ablation readable: dropping a term changes the training loss, so "
+        "`val/total` of an ablated arm is not on the same scale as the "
+        "reference's and ranking arms by it compares nothing. Pass the "
+        "reference objective here in every arm and every run is scored on "
+        "one fixed ruler -- including checkpoint selection, which otherwise "
+        "means a different thing in each arm. Validation-side triplet/shift "
+        "loaders follow this spec, the training-side ones follow the "
+        "training weights, so an ablated term still costs nothing to train.",
+    )
+
+    # --- logging ------------------------------------------------------------
+    ap.add_argument(
+        "--wandb-project",
+        type=str,
+        default=None,
+        help="log to this Weights & Biases project; omitted = no logging",
+    )
+    ap.add_argument("--wandb-entity", type=str, default=None)
+    ap.add_argument("--wandb-name", type=str, default=None, help="run name")
+    ap.add_argument(
+        "--wandb-group",
+        type=str,
+        default=None,
+        help="group runs of one sweep together (the ablation runner sets this)",
+    )
+    ap.add_argument("--wandb-tags", type=str, nargs="*", default=None)
+    ap.add_argument(
+        "--wandb-mode",
+        choices=("online", "offline", "disabled"),
+        default="online",
+    )
+    ap.add_argument(
+        "--wandb-checkpoint",
+        action="store_true",
+        help="upload the best checkpoint as a W&B artifact at the end of the "
+        "run. It is written to --out regardless.",
+    )
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # What we optimise, and what we score. Identical unless --eval-objective
+    # says otherwise, in which case the latter is the common ruler every arm
+    # of an ablation is measured against.
+    train_obj = {k: float(getattr(args, k)) for k in OBJECTIVE_KEYS}
+    eval_obj = dict(train_obj)
+    if args.eval_objective:
+        override = json.loads(args.eval_objective)
+        unknown = set(override) - set(OBJECTIVE_KEYS)
+        if unknown:
+            raise SystemExit(
+                f"--eval-objective: unknown key(s) {sorted(unknown)}; "
+                f"expected a subset of {list(OBJECTIVE_KEYS)}"
+            )
+        eval_obj.update({k: float(v) for k, v in override.items()})
+        print("train objective:", json.dumps(train_obj))
+        print("eval  objective:", json.dumps(eval_obj), "(common ruler)")
 
     seg = build_segmenter(device)
     encoder = seg.model.encoder
@@ -1029,28 +1169,43 @@ def main():
     train_ds = FramePairDataset(args.root, train_vids, **ds_kw)
     val_ds = FramePairDataset(args.root, val_vids, **ds_kw)
 
-    train_triplet_ds = val_triplet_ds = None
-    if args.w_cycle > 0:
-        triplet_kw = dict(
-            triplets_per_video=args.triplets_per_video,
-            seed=args.seed,
-            cache_images=args.num_workers == 0,
-            crop=crop,
-        )
-        train_triplet_ds = FrameTripletDataset(args.root, train_vids, **triplet_kw)
-        val_triplet_ds = FrameTripletDataset(args.root, val_vids, **triplet_kw)
+    # Each side is built only if *its own* objective uses the term: ablating a
+    # term out of training costs nothing to train, while the eval side keeps
+    # measuring it so the arm stays comparable.
+    triplet_kw = dict(
+        triplets_per_video=args.triplets_per_video,
+        seed=args.seed,
+        cache_images=args.num_workers == 0,
+        crop=crop,
+    )
+    train_triplet_ds = (
+        FrameTripletDataset(args.root, train_vids, **triplet_kw)
+        if train_obj["w_cycle"] > 0
+        else None
+    )
+    val_triplet_ds = (
+        FrameTripletDataset(args.root, val_vids, **triplet_kw)
+        if eval_obj["w_cycle"] > 0
+        else None
+    )
 
-    train_shift_ds = val_shift_ds = None
-    if args.w_shift > 0:
-        shift_kw = dict(
-            shifts_per_video=args.shifts_per_video,
-            shift_max=args.shift_max,
-            seed=args.seed,
-            cache_images=args.num_workers == 0,
-            crop=crop,
-        )
-        train_shift_ds = FrameShiftDataset(args.root, train_vids, **shift_kw)
-        val_shift_ds = FrameShiftDataset(args.root, val_vids, **shift_kw)
+    shift_kw = dict(
+        shifts_per_video=args.shifts_per_video,
+        shift_max=args.shift_max,
+        seed=args.seed,
+        cache_images=args.num_workers == 0,
+        crop=crop,
+    )
+    train_shift_ds = (
+        FrameShiftDataset(args.root, train_vids, **shift_kw)
+        if train_obj["w_shift"] > 0
+        else None
+    )
+    val_shift_ds = (
+        FrameShiftDataset(args.root, val_vids, **shift_kw)
+        if eval_obj["w_shift"] > 0
+        else None
+    )
 
     sample = train_ds[0]
     H, W = sample[0].shape[-2:]          # what the model is fed while training
@@ -1069,15 +1224,20 @@ def main():
     print(f"images {H}x{W} | encoder channels (fine->coarse): {in_channels}")
     print(f"videos: {len(train_vids)} train / {len(val_vids)} val")
     print(f"pairs:  {len(train_ds)} train / {len(val_ds)} val  [{args.pair_mode}]")
-    if train_triplet_ds is not None:
+    def _n(ds) -> int:
+        return len(ds) if ds is not None else 0
+
+    if train_triplet_ds is not None or val_triplet_ds is not None:
         print(
-            f"triplets: {len(train_triplet_ds)} train / {len(val_triplet_ds)} val "
-            f"[cycle consistency, w_cycle={args.w_cycle}]"
+            f"triplets: {_n(train_triplet_ds)} train / {_n(val_triplet_ds)} val "
+            f"[cycle consistency, w_cycle={train_obj['w_cycle']} "
+            f"train / {eval_obj['w_cycle']} eval]"
         )
-    if train_shift_ds is not None:
+    if train_shift_ds is not None or val_shift_ds is not None:
         print(
-            f"shifts:   {len(train_shift_ds)} train / {len(val_shift_ds)} val "
-            f"[equivariance, w_shift={args.w_shift}, delta=+-1..{args.shift_max}px]"
+            f"shifts:   {_n(train_shift_ds)} train / {_n(val_shift_ds)} val "
+            f"[equivariance, w_shift={train_obj['w_shift']} train / "
+            f"{eval_obj['w_shift']} eval, delta=+-1..{args.shift_max}px]"
         )
 
     if args.dry_run:
@@ -1118,67 +1278,41 @@ def main():
         else None
     )
 
-    train_triplet_loader = val_triplet_loader = None
-    train_triplet_sampler = None
-    if train_triplet_ds is not None:
-        # Kept in a name so the epoch can be advanced alongside train_sampler:
-        # without that the triplet stream replays one fixed order every epoch.
-        train_triplet_sampler = VideoChunkBatchSampler(
-            train_triplet_ds.samples,
-            args.triplet_batch_size,
-            args.videos_in_flight,
-            shuffle=True,
-            seed=args.seed,
-        )
-        train_triplet_loader = DataLoader(
-            train_triplet_ds,
-            batch_sampler=train_triplet_sampler,
-            collate_fn=collate_triplets,
-            **common,
-        )
-        val_triplet_loader = (
-            DataLoader(
-                val_triplet_ds,
-                batch_sampler=VideoChunkBatchSampler(
-                    val_triplet_ds.samples,
-                    args.triplet_batch_size,
-                    args.videos_in_flight,
-                    shuffle=False,
-                ),
-                collate_fn=collate_triplets,
-                **common,
-            )
-            if len(val_triplet_ds)
-            else None
-        )
+    def _aux_loader(ds, batch, *, shuffle, collate=None):
+        """One auxiliary loader, plus its sampler so the epoch can be advanced.
 
-    train_shift_loader = val_shift_loader = None
-    train_shift_sampler = None
-    if train_shift_ds is not None:
-        train_shift_sampler = VideoChunkBatchSampler(
-            train_shift_ds.samples,
-            args.shift_batch_size,
+        Returns ``(loader, sampler)``, both ``None`` when the term is off on
+        this side. Without advancing the sampler the aux stream would replay
+        one fixed order every epoch.
+        """
+        if ds is None or not len(ds):
+            return None, None
+        sampler = VideoChunkBatchSampler(
+            ds.samples,
+            batch,
             args.videos_in_flight,
-            shuffle=True,
+            shuffle=shuffle,
             seed=args.seed,
         )
-        train_shift_loader = DataLoader(
-            train_shift_ds, batch_sampler=train_shift_sampler, **common
-        )
-        val_shift_loader = (
-            DataLoader(
-                val_shift_ds,
-                batch_sampler=VideoChunkBatchSampler(
-                    val_shift_ds.samples,
-                    args.shift_batch_size,
-                    args.videos_in_flight,
-                    shuffle=False,
-                ),
-                **common,
-            )
-            if len(val_shift_ds)
-            else None
-        )
+        kw = dict(common)
+        if collate is not None:
+            kw["collate_fn"] = collate
+        return DataLoader(ds, batch_sampler=sampler, **kw), sampler
+
+    train_triplet_loader, train_triplet_sampler = _aux_loader(
+        train_triplet_ds, args.triplet_batch_size, shuffle=True,
+        collate=collate_triplets,
+    )
+    val_triplet_loader, _ = _aux_loader(
+        val_triplet_ds, args.triplet_batch_size, shuffle=False,
+        collate=collate_triplets,
+    )
+    train_shift_loader, train_shift_sampler = _aux_loader(
+        train_shift_ds, args.shift_batch_size, shuffle=True
+    )
+    val_shift_loader, _ = _aux_loader(
+        val_shift_ds, args.shift_batch_size, shuffle=False
+    )
 
     amp_dtype = None if args.encoder_dtype == "fp32" else torch.bfloat16
     cache = FeatureCache(encoder, capacity=args.feature_cache, amp_dtype=amp_dtype)
@@ -1196,34 +1330,30 @@ def main():
         dx_step=args.dx_step,
     ).to(device)
 
-    criterion = UnsupervisedRegistrationLoss(
-        n_scales=len(in_channels),
-        w_feature=args.w_feature,
-        w_photometric=args.w_photometric,
-        w_lateral=args.w_lateral,
-        w_bm=args.w_bm,
-        w_smooth=args.w_smooth,
-        w_curvature=args.w_curvature,
-        w_coverage=args.w_coverage,
-        photometric_levels=args.photometric_levels,
-        photometric_window=args.photometric_window,
-        coarse_to_fine=not args.no_coarse_to_fine,
-        segmenter=seg if args.w_bm > 0 else None,
-        bm_scale=args.bm_scale,
-        bm_on_features=args.bm_on_features,
-    )
+    criterion = _build_criterion(train_obj, len(in_channels), args, seg)
+    # A separate module rather than the same one re-weighted: it is always held
+    # at full progress, so validation is not measured under the coarse-to-fine
+    # ramp's objective-of-the-epoch and stays comparable with itself.
+    eval_criterion = _build_criterion(eval_obj, len(in_channels), args, seg)
+    eval_criterion.set_progress(1.0)
 
+    run = _init_wandb(args, train_obj, eval_obj, len(train_vids), len(val_vids),
+                      len(train_ds), len(val_ds))
+
+    baseline_metrics = None
     if args.eval_baseline and val_loader is not None:
-        criterion.set_progress(1.0)
-        base = run_epoch(
+        baseline_metrics = run_epoch(
             model,
             val_loader,
-            criterion,
+            eval_criterion,
             cache,
             device,
             baseline=True,
         )
-        print(_fmt("[baseline: classical transform] val", base))
+        print(_fmt("[baseline: classical transform] val", baseline_metrics))
+        if run is not None:
+            for k, v in baseline_metrics.items():
+                run.summary[f"baseline/{k}"] = v
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
@@ -1232,6 +1362,7 @@ def main():
 
     args.out.mkdir(parents=True, exist_ok=True)
     best = float("inf")
+    best_epoch = -1
 
     for epoch in tqdm(range(args.epochs), desc="epochs"):
         # Coarse-to-fine over the first half of training, all scales after.
@@ -1252,30 +1383,32 @@ def main():
             device,
             optimizer=optimizer,
             triplet_loader=train_triplet_loader,
-            w_cycle=args.w_cycle,
+            w_cycle=train_obj["w_cycle"],
             shift_loader=train_shift_loader,
-            w_shift=args.w_shift,
+            w_shift=train_obj["w_shift"],
             shift_beta=1.0,
         )
+        lr_now = scheduler.get_last_lr()[0]
         scheduler.step()
         msg = f"[{epoch:03d}] " + _fmt("train", tr)
 
         score = tr["total"]
+        va = None
         if val_loader is not None:
-            # Validation always at full progress: with the coarse-to-fine ramp on,
-            # the training loss is measured under a different objective every
-            # epoch and cannot be compared with itself.
-            criterion.set_progress(1.0)
+            # eval_criterion is permanently at full progress: with the
+            # coarse-to-fine ramp on, the training loss is measured under a
+            # different objective every epoch and cannot be compared with
+            # itself -- nor, under an ablation, with another arm.
             va = run_epoch(
                 model,
                 val_loader,
-                criterion,
+                eval_criterion,
                 cache,
                 device,
                 triplet_loader=val_triplet_loader,
-                w_cycle=args.w_cycle,
+                w_cycle=eval_obj["w_cycle"],
                 shift_loader=val_shift_loader,
-                w_shift=args.w_shift,
+                w_shift=eval_obj["w_shift"],
                 shift_beta=1.0,
             )
             msg += "  ||  " + _fmt("val", va)
@@ -1283,8 +1416,17 @@ def main():
         msg += f"  [cache {cache.hit_rate:.0%}]"
         tqdm.write(msg)
 
+        if run is not None:
+            log: Dict[str, Any] = {f"train/{k}": v for k, v in tr.items()}
+            if va is not None:
+                log.update({f"val/{k}": v for k, v in va.items()})
+            log["lr"] = lr_now
+            log["cache_hit_rate"] = cache.hit_rate
+            log["progress"] = criterion._progress
+            run.log(log, step=epoch)
+
         if score < best:
-            best = score
+            best, best_epoch = score, epoch
             torch.save(
                 {
                     "epoch": epoch,
@@ -1298,12 +1440,38 @@ def main():
                     "scales": scales,
                     "use_correlation": not args.no_correlation,
                     "val_loss": score,
+                    "train_objective": train_obj,
+                    "eval_objective": eval_obj,
                     "args": vars(args),
                 },
                 args.out / "best.pt",
             )
 
-    print(f"done. best val objective: {best:.4f}  ->  {args.out / 'best.pt'}")
+    ckpt_path = args.out / "best.pt"
+    print(f"done. best val objective: {best:.4f}  ->  {ckpt_path}")
+
+    if run is not None:
+        run.summary["best/val_total"] = best
+        run.summary["best/epoch"] = best_epoch
+        run.summary["checkpoint"] = str(ckpt_path.resolve())
+        if args.wandb_checkpoint and ckpt_path.exists():
+            import wandb
+
+            art = wandb.Artifact(
+                f"regressor-{run.name}".replace("/", "-"),
+                type="model",
+                metadata={
+                    "best_epoch": best_epoch,
+                    "val_total": best,
+                    "train_objective": train_obj,
+                    "eval_objective": eval_obj,
+                    "cascade": not args.no_cascade,
+                    "use_correlation": not args.no_correlation,
+                },
+            )
+            art.add_file(str(ckpt_path))
+            run.log_artifact(art)
+        run.finish()
 
 
 if __name__ == "__main__":

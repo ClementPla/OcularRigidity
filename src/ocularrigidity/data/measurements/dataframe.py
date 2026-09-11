@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -191,4 +192,26 @@ def load_measurements(
                 f"({n_pat} patients) remain."
             )
 
+    df = manual_correction(df)
+
+    return df
+
+
+def filter_misregistration(df, misregration):
+    if isinstance(misregration, str):
+        misregration = Path(misregration)
+    if isinstance(misregration, Path) and misregration.exists():
+        misreg = pd.read_csv(misregration)
+
+    misreg_cases = misreg[misreg.flag].video.unique()
+    df = df[~df["video"].isin(misreg_cases)]
+    return df
+
+
+def manual_correction(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply manual corrections to the given dataframe"""
+
+    df.loc[
+        (df.PatientId == 686) & (df.Date == "2025-02-19") & (df.Eye == "OS"), "OPA"
+    ] = 3.62
     return df

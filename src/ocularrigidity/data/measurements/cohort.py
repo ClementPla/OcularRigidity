@@ -56,7 +56,11 @@ from ocularrigidity.consts import (
     ROOT_CARDIAC_PIPELINE,
     STUDY_PATH,
 )
-from ocularrigidity.data.measurements.dataframe import load_measurements
+from ocularrigidity.data.measurements.dataframe import (
+    filter_misregistration,
+    load_measurements,
+)
+from ocularrigidity.data.measurements.igri import add_igri_base
 from ocularrigidity.data.measurements.pulsation_results import load_pulsation_results
 from ocularrigidity.data.measurements.studies import Study
 
@@ -97,6 +101,18 @@ _STEEPEST_FAMILIES = {
 #: The per-eye progression columns :func:`_add_steepest_change` derives.
 STEEPEST_CHANGE_COLUMNS = list(_STEEPEST_FAMILIES)
 
+#: ``(family, candidate sectors)`` for the across-sector extrema. ``G`` is
+#: excluded for the same reason as above: being the mean of the six it can only
+#: be the min or the max when they all agree.
+_EXTREMA_FAMILIES = {
+    "BMO_MRW": [c for c in BMO_MRW_SECTORS if not c.startswith("G ")],
+}
+
+#: The per-visit across-sector columns :func:`_add_sector_extrema` derives.
+SECTOR_EXTREMA_COLUMNS = [
+    f"{stat}_{family}" for family in _EXTREMA_FAMILIES for stat in ("min", "max")
+]
+
 #: What the cardiac pipeline measures. ΔCT / minCT in mm, rates in µm/s,
 #: K in 1/µL. ``*_Mask`` are the mask-based counterparts of the displacement-based
 #: ΔCT, kept side by side because they are two estimators of the same quantity.
@@ -122,6 +138,7 @@ COVARIATES = ["IOP", "OPA", "AxialLength", "HR", "predicted_HR", "Age"]
 #: them, but they are ~47% one common factor — testing all fourteen buys
 #: multiplicity, not independent evidence.
 DEFAULT_MEASURES = [
+    "igri_base",
     "G BMO MRW",
     "G RNFL Thickness",
     "steepest_change_BMO_MRW",
@@ -223,7 +240,8 @@ def build_cohort(
     """
     root = Path(root)
     cases, _cycles = load_pulsation_results(root, overwrite=overwrite)
-
+    cases = filter_misregistration(cases, Path(root) / "misregistration_flags.csv")
+    _cycles = filter_misregistration(_cycles, Path(root) / "misregistration_flags.csv")
     visits = load_measurements(
         which_study=study,
         include_OPA=True,
@@ -256,13 +274,14 @@ def build_cohort(
     visits, clinical_cols = _add_clinical(
         visits, measurements_path, clinical_values_path, iop_instrument
     )
+    visits, igri_cols = _add_igri(visits)
 
     groups = {
         "identity": [c for c in IDENTITY if c in visits.columns],
         "pulsation": [c for c in PULSATION_METRICS if c in visits.columns],
         "covariates": [c for c in COVARIATES if c in visits.columns],
         "onh": onh_cols,
-        "clinical": clinical_cols,
+        "clinical": clinical_cols + igri_cols,
     }
     ordered = list(dict.fromkeys(sum(groups.values(), [])))
     rest = [c for c in visits.columns if c not in ordered]
@@ -484,12 +503,90 @@ def _add_onh(
                 "clinical_values"
             )
 
+    out, extrema_cols = _add_sector_extrema(out, present)
     out, steepest_cols = _add_steepest_change(out, exams)
 
-    cols = present + [
-        c for c in ("onh_exam_date", "onh_gap_days", "onh_source") if c in out.columns
-    ] + steepest_cols
+    cols = (
+        present
+        + [
+            c
+            for c in ("onh_exam_date", "onh_gap_days", "onh_source")
+            if c in out.columns
+        ]
+        + extrema_cols
+        + steepest_cols
+    )
     return out, cols
+
+
+def _add_igri(visits: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """Add the I-GRI base score -- see :mod:`ocularrigidity.data.measurements.igri`.
+
+    Last of the stages, because it reads what the earlier ones produced: the
+    visual field from the clinical join, the RNFL sectors from the ONH join and
+    the IOP covariate. Its coverage report is kept in
+    ``df.attrs["igri_report"]`` rather than being printed, since it says how many
+    visits could be scored and how many values were clipped onto the paper's
+    ranges -- both of which change what the column means.
+    """
+    out, report = add_igri_base(visits)
+    out.attrs = dict(visits.attrs)
+    out.attrs["igri_report"] = report
+    cols = [c for c in ("igri_base",) if c in out.columns and out[c].notna().any()]
+    return out, cols
+
+
+def _add_sector_extrema(
+    visits: pd.DataFrame, present: Sequence[str]
+) -> tuple[pd.DataFrame, list[str]]:
+    """Per visit, the thinnest and the thickest sector of each ONH family.
+
+    Glaucomatous rim loss is sectoral before it is global, so the ``G`` average
+    dilutes it: an eye that has lost 40 µm in one sector and nothing elsewhere
+    reads as a ~7 µm change on ``G BMO MRW``. ``min_*`` is that focal view, and
+    ``max_*`` is the intact sector it should be read against -- the pair says how
+    asymmetric the disc is, which neither the average nor the minimum says alone.
+
+    Unlike ``steepest_change_*`` these are per-*visit* values in µm taken across
+    sectors at a single exam; nothing is fitted over time. They are also not the
+    database's ``Steepest BMO MRW``, which picks the sector deviating most from
+    the Heyex normative reference rather than the smallest raw value -- the two
+    agree on only ~13% of the ClinicalValues rows.
+
+    A visit is scored only when the whole family is present. Taking the minimum
+    over whichever sectors happen to be non-NaN would make the value depend on
+    the row's coverage rather than on the eye, and a minimum over four sectors
+    sits systematically above one over six. That costs 4 of ~3700 source exams
+    here, so insisting on completeness is close to free.
+
+    ``…_sector`` names the winner (``TI``, ``NS``, …), mirroring
+    ``steepest_change_*_sector``; ties go to the first sector in report order.
+    """
+    out = visits.copy()
+    added: list[str] = []
+    for family, candidates in _EXTREMA_FAMILIES.items():
+        names = [
+            f"min_{family}",
+            f"max_{family}",
+            f"min_{family}_sector",
+            f"max_{family}_sector",
+        ]
+        added += names
+        for c in names:
+            out[c] = np.nan
+        cols = [c for c in candidates if c in present and c in out.columns]
+        if len(cols) < len(candidates):  # a partial family has no comparable min
+            continue
+        block = out[cols].apply(pd.to_numeric, errors="coerce")
+        full = block[block.notna().all(axis=1)]
+        if full.empty:
+            continue
+        out[f"min_{family}"] = full.min(axis=1).reindex(out.index)
+        out[f"max_{family}"] = full.max(axis=1).reindex(out.index)
+        for stat, idx in (("min", full.idxmin), ("max", full.idxmax)):
+            sector = idx(axis=1).str.split(" ").str[0]
+            out[f"{stat}_{family}_sector"] = sector.reindex(out.index)
+    return out, added
 
 
 def _add_steepest_change(
@@ -523,9 +620,11 @@ def _add_steepest_change(
     two months apart is arithmetic, not progression, and these are what let a
     caller filter it out.
     """
-    added = [c for c in _STEEPEST_FAMILIES] + [
-        f"{c}_sector" for c in _STEEPEST_FAMILIES
-    ] + ["onh_slope_n_exams", "onh_slope_span_years"]
+    added = (
+        [c for c in _STEEPEST_FAMILIES]
+        + [f"{c}_sector" for c in _STEEPEST_FAMILIES]
+        + ["onh_slope_n_exams", "onh_slope_span_years"]
+    )
     if not exams:
         for c in added:
             visits[c] = np.nan
@@ -573,7 +672,9 @@ def _add_steepest_change(
     per_eye = pd.DataFrame(rows)
     out = visits.copy()
     out["Eye"] = out["Eye"].astype(str).str.strip()
-    out = out.merge(per_eye, on=["PatientId", "Eye"], how="left").set_index(visits.index)
+    out = out.merge(per_eye, on=["PatientId", "Eye"], how="left").set_index(
+        visits.index
+    )
     for c in added:  # a family with no usable slope anywhere still needs its column
         if c not in out.columns:
             out[c] = np.nan

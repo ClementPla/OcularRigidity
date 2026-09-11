@@ -88,6 +88,69 @@ def baseline_vs_future_slope(
     )
 
 
+def baseline_vs_slope_wide(
+    df,
+    x,
+    y,
+    *,
+    date_col="YearMonth",
+    group_cols=("PatientId", "Eye"),
+    min_points=2,
+):
+    """Baseline ``x`` vs the per-year slope of ``y``, on a **wide** frame.
+
+    The wide-frame twin of :func:`baseline_vs_future_slope`. That one reads the
+    long measure table, so it can only ever pair the probe against a melted
+    ``MeasureName_y``; here both are ordinary columns, which lets any two
+    variables of the cohort table be paired -- a covariate against an ONH sector,
+    one clinical measure against another.
+
+    Per group (patient-eye): ``x`` at the earliest visit is the baseline, and
+    ``y`` is regressed on time from that visit onward, in units per year. Visits
+    are collapsed to one per ``date_col`` first, so an eye seen twice inside one
+    month does not weigh double.
+
+    The pairing is what makes this worth a separate design: one point per eye
+    rather than one per visit, so the correlation is not inflated by repeated
+    measurements -- at the cost of every eye counting the same whether its slope
+    was fit over two visits or six. ``n_visits`` and ``span_years`` come back
+    alongside so a caller can drop the slopes that are arithmetic rather than
+    progression.
+
+    Returns one row per group: ``[*group_cols, f"{x}_baseline", f"{y}_slope",
+    "n_visits", "span_years"]``. Groups with fewer than ``min_points`` distinct
+    dates, or with no spread in time, are dropped.
+    """
+    group_cols = list(group_cols)
+    # dict.fromkeys, not a set: x may be y (baseline vs own slope is a valid ask)
+    # and selecting the same label twice would give a duplicated column.
+    d = df[list(dict.fromkeys(group_cols + [date_col, x, y]))].copy()
+    d[x] = pd.to_numeric(d[x], errors="coerce")
+    d[y] = pd.to_numeric(d[y], errors="coerce")
+    d["_date"] = pd.to_datetime(d[date_col], errors="coerce")
+    d = d.dropna(subset=[x, y, "_date"])
+
+    values = list(dict.fromkeys([x, y]))
+    d = d.groupby(group_cols + ["_date"], as_index=False)[values].mean()
+
+    rows = []
+    for keys, g in d.groupby(group_cols):
+        g = g.sort_values("_date")
+        if len(g) < min_points:
+            continue
+        t = (g["_date"] - g["_date"].iloc[0]).dt.days.to_numpy() / 365.25
+        if np.all(t == t[0]):
+            continue
+        slope = np.polyfit(t, g[y].to_numpy(), 1)[0]
+        keys = keys if isinstance(keys, tuple) else (keys,)
+        rows.append((*keys, g[x].iloc[0], slope, len(g), float(t.max())))
+
+    return pd.DataFrame(
+        rows,
+        columns=group_cols + [f"{x}_baseline", f"{y}_slope", "n_visits", "span_years"],
+    )
+
+
 def baseline_vs_next_rate(
     df,
     measure,

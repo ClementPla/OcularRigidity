@@ -104,7 +104,7 @@ def load_pulsation_results(
             mask_cts.append(ct_mask)
             cycle_rows.append(
                 {
-                    "caseId_path": video,
+                    "video": video,
                     "cycle": i,
                     "deltaCT": res.deltaCT_mm,  # mm, displacement-based
                     "deltaCT_Mask": ct_mask,  # mm, mask-based
@@ -152,6 +152,14 @@ def load_pulsation_results(
                 "predicted_HR": cardiac_freq * 60.0,
                 "HR": row.HR,
             }
+        )
+    if not case_rows:
+        raise RuntimeError(
+            f"No case produced a measurement under {root_cardiac_pipeline}. "
+            f"Of the {len(videos)} videos in deltaY.pkl, none had the "
+            "measures/<video>/{deltaA_per_cycle.pkl,segmented_cycles.npz,"
+            "measure.pkl} trio with usable biomeasures - most likely the "
+            "deltaA stage has not been run for this pipeline root."
         )
     df_cycles = pd.DataFrame(cycle_rows)
     df = pd.DataFrame(case_rows).set_index("case_id")

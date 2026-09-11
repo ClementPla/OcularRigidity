@@ -55,7 +55,7 @@ STUDY_PATH = Path("/home/clement/Documents/data/OcularRigidity/Studies.db")
 # CLINICAL_VALUES_PATH and extends its coverage.
 HEYEX_ONH_PATH = _env_path(
     "OCULARRIGIDITY_HEYEX_ONH",
-    Path(__file__).resolve().parents[2] / "heyex_data.pkl",
+    Path("/home/clement/Documents/data/OcularRigidity/heyex_data.pkl"),
 )
 
 OIMHS_ROOT = Path("/home/clement/Documents/data/OIMHS/Images/")

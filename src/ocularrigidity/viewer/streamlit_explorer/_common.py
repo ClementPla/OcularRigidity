@@ -6,12 +6,17 @@ which script Streamlit launches.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import NamedTuple, Sequence
 
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 import streamlit as st
+import streamlit.components.v1 as components
+from plotly.offline import get_plotlyjs_version
 
 from ocularrigidity.consts import ROOT_CARDIAC_PIPELINE
 from ocularrigidity.data.measurements.cohort import (
@@ -20,12 +25,17 @@ from ocularrigidity.data.measurements.cohort import (
     cohort_to_long,
     load_excluded_cases,
 )
+from ocularrigidity.data.measurements.dataframe import filter_misregistration
 from ocularrigidity.data.measurements.pulsation_results import load_pulsation_results
 from ocularrigidity.data.measurements.studies import Study
 from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import longitudinal as L
 
 HOVER_IDS = ("case_id", "PatientId", "Date", "Eye")
+
+#: Browser-side statistics for :func:`show_regression`. Read once at import.
+_LIVE_STATS_JS = (Path(__file__).parent / "_live_stats.js").read_text()
+_PLOTLY_JS = f"https://cdn.plot.ly/plotly-{get_plotlyjs_version()}.min.js"
 
 
 class Selection(NamedTuple):
@@ -60,6 +70,9 @@ def cached_cohort(sel: Selection) -> pd.DataFrame:
 def cached_cycles(sel: Selection) -> pd.DataFrame:
     """Per-(video, cardiac cycle) metrics — the test-retest / reliability input."""
     _cases, cycles = load_pulsation_results(Path(sel.root))
+    cycles = filter_misregistration(
+        cycles, Path(sel.root) / "misregistration_flags.csv"
+    )
     cycles = cycles.rename(columns={"caseId_path": "video"})
     if sel.exclude_qc:
         cycles = cycles[~cycles["video"].isin(load_excluded_cases())]
@@ -160,47 +173,100 @@ def show_regression(
     hover: Sequence[str] = HOVER_IDS,
     show_stats: bool = True,
 ) -> None:
-    """Stats row (N / r / ρ / slope) + OLS scatter — the notebook's regression plot.
+    """OLS scatter whose N / r / ρ / slope describe the points *currently shown*.
 
-    ``show_stats=False`` drops the Pearson row, for the designs whose rows repeat
-    within an eye and whose inference therefore has to be clustered instead.
+    The stats used to be a row of ``st.metric`` above the chart, and they went
+    stale the moment anyone clicked a legend entry: Streamlit reruns Python on a
+    widget change, and a Plotly legend click is not one, so the row kept
+    reporting the whole cohort while the plot showed a subset. They now sit in a
+    box inside the plot and are recomputed in the browser on every legend
+    toggle, together with the fitted line — which turns "does this association
+    survive dropping the OHT eyes?" into one click.
+
+    The cost is that the figure is rendered through ``components.html`` rather
+    than ``st.plotly_chart``: it needs its own plotly.js from the CDN, and it
+    does not inherit the Streamlit theme (hence the explicit template).
+    ``_live_stats.js`` holds the browser side; its formulas are the ones
+    :func:`ocularrigidity.viewer.cohort_data.regression_stats` uses, verified
+    against scipy.
+
+    ``show_stats=False`` drops the box, for the designs whose rows repeat within
+    an eye and whose inference therefore has to be clustered instead.
     """
-    s = C.regression_stats(df, x, y)
-    if s.get("n", 0) < 3:
+    if C.regression_stats(df, x, y).get("n", 0) < 3:
         st.warning(f"Not enough finite points to regress {y} on {x} (need ≥ 3).")
         return
-
-    if show_stats:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("N", s["n"])
-        c2.metric(
-            "Pearson r", f"{s['pearson_r']:.3f}", help=f"p = {s['pearson_p']:.2e}"
-        )
-        c3.metric(
-            "Spearman ρ", f"{s['spearman_rho']:.3f}", help=f"p = {s['spearman_p']:.2e}"
-        )
-        sign = "+" if s["intercept"] >= 0 else "−"
-        c4.metric(
-            "Slope",
-            f"{s['slope']:.4g}",
-            help=f"y = {s['slope']:.4g}·x {sign} {abs(s['intercept']):.4g}",
-        )
 
     fig = px.scatter(
         df,
         x=x,
         y=y,
         color=color,
-        trendline="ols",
-        trendline_scope="overall",
         hover_data=[c for c in hover if c in df.columns],
         labels={x: x_label or x, y: y_label or y},
         log_x=logx,
         log_y=logy,
         opacity=0.6,
+        template="plotly_white",
     )
+    # Empty on arrival: the browser fills both from whatever the legend shows.
+    fig.add_scatter(
+        x=[],
+        y=[],
+        mode="lines",
+        name="OLS",
+        meta={"role": "fit"},
+        line=dict(color="#2b2b2b", width=2),
+        hoverinfo="skip",
+        showlegend=False,
+    )
+    if show_stats:
+        fig.add_annotation(
+            name="live-stats",
+            text="",
+            xref="paper",
+            yref="paper",
+            x=0.012,
+            y=0.988,
+            xanchor="left",
+            yanchor="top",
+            align="left",
+            showarrow=False,
+            bgcolor="rgba(255,255,255,0.88)",
+            bordercolor="rgba(0,0,0,0.22)",
+            borderwidth=1,
+            borderpad=7,
+            font=dict(size=12, family="ui-monospace, SFMono-Regular, Menlo, monospace"),
+        )
     fig.update_layout(height=height, margin=dict(l=10, r=10, t=30, b=10))
-    st.plotly_chart(fig, width="stretch")
+
+    # Stable per configuration, so an unchanged chart is not remounted on rerun.
+    div_id = (
+        "reg-"
+        + hashlib.md5(f"{x}|{y}|{color}|{logx}|{logy}|{len(df)}".encode()).hexdigest()[
+            :12
+        ]
+    )
+    opts = json.dumps({"logx": bool(logx), "showStats": bool(show_stats)})
+    config = json.dumps({"responsive": True, "displaylogo": False})
+    components.html(
+        f"""
+<div id="{div_id}" style="width:100%;height:{height}px;"></div>
+<script src="{_PLOTLY_JS}" charset="utf-8"></script>
+<script>{_LIVE_STATS_JS}</script>
+<script>
+if (window.Plotly) {{
+  initLiveRegression("{div_id}", {pio.to_json(fig)}, {config}, {opts});
+}} else {{
+  document.getElementById("{div_id}").innerHTML =
+    "<p style='font:13px system-ui;color:#b00'>plotly.js could not be loaded "
+    + "from the CDN — this chart needs network access.</p>";
+}}
+</script>
+""",
+        height=height + 12,
+        scrolling=False,
+    )
 
 
 def show_box(

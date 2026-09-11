@@ -79,7 +79,8 @@ class RegistrationConfig:
     # dy from that pivot to every probe frame and takes the one sitting at the
     # median of the axial trajectory. The probe features are already in memory,
     # so this costs one regressor call per probe frame (<1 s).
-    reference_selection: Literal["area", "motion_medoid"] = "motion_medoid"
+    # An int fixes the reference frame index directly and skips the probe.
+    reference_selection: Literal["area", "motion_medoid"] | int = "motion_medoid"
 
     # Frames per forward pass of the fused stage. Separate from `batch_size`
     # (which sizes the classical warp): this one also holds encoder
