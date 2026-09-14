@@ -1,0 +1,185 @@
+---
+title: "Valider HR des réplicats"
+subtitle: "Une fréquence cardiaque cherchée sans a priori, sur deux signaux indépendants — l'intensité et l'épaisseur choroïdienne — passés au même passe-bande fixe 50–85 BPM"
+# Trois figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits
+# mais aucun script ne les dessine.
+include-in-header: figures_repro_hr/plotlyjs.html
+---
+
+Toute la chaîne de répétabilité repose sur une fréquence cardiaque (FC), et
+cette cohorte n'en a **aucune mesure**. La page *Strain repeatability* la
+remplace par un **consensus par participant** (`hr_prior.csv`). Tout ce qui en
+dépend est construit autour de cette valeur : le pouls d'intensité, le filtre
+FIR des traces d'épaisseur et la DMD, tous à FC ± 20 %. Aucun de ces nombres ne
+peut donc confirmer la FC sans raisonnement circulaire.
+
+Cette page refait la recherche **sans rien lui imposer**.
+
+::: {.callout-note}
+## Le test
+
+Pour chaque acquisition, deux signaux tirés de la même vidéo recalée par deux
+chaînes indépendantes, l'une sur les intensités, l'autre sur la segmentation :
+
+- **intensité** : même ROI (3/4 centraux des A-scans × moitié supérieure de la
+  choroïde) et même SVD de rang 100 que le lot de pouls. On retient la
+  composante dont la puissance Lomb-Scargle est la plus **concentrée dans
+  50–85 BPM**, et non la combinaison optimisée autour de l'a priori ;
+- **épaisseur choroïdienne** : épaisseur moyenne par frame lue sur les masques
+  recalés, la même grandeur que dans la page *Strain repeatability*.
+
+Les deux passent le **même FIR à phase linéaire**, celui de la méthode `1_fir`,
+mais avec des bornes **fixes** 50–85 BPM. La FC retenue est le **pic
+Lomb-Scargle** du signal filtré dans 50–85 BPM. Les 20 % de chaque bord sont
+exclus, à cause du transitoire du filtre.
+
+Un premier essai sur 30–100 BPM ne retrouvait pas de FC stable : ~33 BPM
+d'étendue par participant. La bande a donc été resserrée sur la plage de repos
+de l'adulte, ce qui écarte d'emblée la dérive lente et la plupart des
+sous-harmoniques.
+
+L'a priori n'est lu que pour être **tracé** : il n'entre dans aucun calcul.
+Calcul : `Reproducibility/compute_hr_bandpass.py`. Sorties :
+`E:/NASA_Rigidity/Reproducibility/SegmentationVariations/model1_scale_1.0_flatten_choroid_xcorr/hr_bandpass_50_85/`.
+L'essai 30–100 reste sous `hr_bandpass_30_100/`.
+:::
+
+::: {.callout-warning}
+## Deux pièges que la bande elle-même introduit
+
+- **Une bande étroite trouve toujours un pic.** Le maximum du spectre est
+  cherché *dans* la bande : un signal sans pouls y donne quand même une valeur,
+  forcément comprise entre 50 et 85 BPM. Resserrer la bande rapproche donc
+  mécaniquement les estimations entre elles et de l'a priori. Un accord ne vaut
+  validation que s'il fait **nettement mieux que le hasard**, c'est-à-dire que
+  des pics tirés uniformément dans la bande. C'est la référence utilisée partout
+  ci-dessous.
+- **Deux participants sont au bord ou hors de la bande.** Le consensus de
+  MCNEIL THOMAS (~102 BPM) est hors bande. Celui de DESCOVICH DENISE (~83 BPM)
+  est à 2 BPM de la borne haute, là où le FIR atténue déjà. Les spectres tracent
+  « a priori » et « a priori / 2 » pour que ces cas se reconnaissent d'un coup
+  d'œil.
+:::
+
+# Les traces, acquisition par acquisition
+
+Le menu déroulant parcourt toutes les acquisitions. Les deux signaux sont
+**centrés-réduits** : ils n'ont ni la même unité (intensité arbitraire contre
+µm) ni la même échelle, et seule leur période se compare ici. En haut, les
+signaux bruts sur les horodatages réels ; en bas, les mêmes après le FIR, sur la
+grille uniforme. Les bandes grises sont les bords exclus de la recherche du pic.
+
+{{< include figures_repro_hr/fig_traces.qmd >}}
+
+{{< include figures_repro_hr/fig_spectres.qmd >}}
+
+# La FC trouvée, par personne
+
+Le cœur est unique : les deux yeux et tous les réplicats d'une séance devraient
+retomber sur la même FC, à la dérive près. Chaque point est **une
+acquisition** : cercle pour OD, losange pour OS. Le tiret rouge est l'a priori
+consensus, les pointillés les bornes de la bande.
+
+{{< include figures_repro_hr/fig_boxplot_hr.qmd >}}
+
+{{< include figures_repro_hr/tab_hr.qmd >}}
+
+::: {.callout-important}
+## La réponse, en une ligne
+
+**À l'échelle de la personne, l'a priori est corroboré pour cinq participants
+sur huit ; à l'échelle de l'acquisition, la FC reste imprécise.** Sur
+BELANGER, MODICA, PLAYOUT, RICHER et ROY, la médiane des FC trouvées tombe à
+moins de 5 BPM du consensus, sur les deux signaux indépendants. Mais d'une
+acquisition à l'autre, les FC d'une même personne s'étalent encore sur
+~16 BPM. C'est mieux que le hasard (26 BPM), sans être la stabilité d'un cœur
+au repos.
+:::
+
+## Ce que disent les chiffres
+
+| | intensité (SVD) | épaisseur (masques) | au hasard |
+|:--|:--|:--|:--|
+| à ± 10 % de l'a priori | 27 / 54 | 28 / 54 | 17,5 / 54 |
+| étendue par participant, BPM (médiane [IQR]) | 15,9 [13,5 – 19,6] | 16,8 [13,8 – 18,1] | 25,6 |
+| étendue par œil, BPM | 14,1 [10,3 – 16,7] | 9,3 [6,1 – 14,2] | 17,5 |
+| écart absolu à l'a priori, BPM | 7,7 [1,3 – 15,2] | 6,7 [1,8 – 14,7] | — |
+
+Intensité et épaisseur s'accordent à ± 5 BPM sur **24 acquisitions sur 54**,
+contre 14 attendues au hasard. Deux signaux extraits par des chaînes
+indépendantes (intensités d'un côté, segmentation de l'autre) tombent donc
+ensemble plus souvent que par chance.
+**Aucun pic ne colle aux bornes** (0 / 54 à moins de 1,5 BPM) et **aucun ne
+tombe sur une sous-harmonique** : ces valeurs ne sont pas fabriquées par la
+bande.
+
+Par rapport à l'essai 30–100 BPM, tout va dans le même sens :
+
+| | 30–100 BPM | 50–85 BPM |
+|:--|:--|:--|
+| à ± 10 % de l'a priori (int. / ép.) | 14 / 16 | 27 / 28 |
+| étendue par participant (int. / ép.) | 34 / 32 BPM | 16 / 17 BPM |
+| accord intensité / épaisseur | 11 / 54 | 24 / 54 |
+
+Une partie de ce gain est **mécanique**, puisque la bande est 2,1 fois plus
+étroite. L'étendue au hasard passe elle-même de 52,5 à 26,3 BPM pour sept
+acquisitions. L'écart au hasard, en revanche, ne l'est pas.
+
+## Participant par participant
+
+**Cinq participants retrouvent leur consensus**, à moins de 5 BPM en médiane
+sur les deux signaux :
+
+| participant | a priori | médiane intensité | médiane épaisseur |
+|:--|--:|--:|--:|
+| MODICA GRAZIANA | 60,7 | 60,9 | 60,5 |
+| PLAYOUT CLEMENT | 62,2 | 61,7 | 66,2 |
+| RICHER EMMANUELLE | 75,0 | 73,9 | 72,4 |
+| ROY JOANNIE | 71,1 | 69,1 | 69,1 |
+| BELANGER CHARLES | 76,7 | 73,6 | 73,0 |
+
+MODICA reste le cas d'école : son épaisseur rend 60,5 BPM sur ses six
+acquisitions, avec **2,3 BPM** d'étendue.
+
+**Deux participants contredisent leur consensus, et les deux signaux le font
+ensemble.** Chez DESCOVICH DENISE, intensité et épaisseur s'accordent sur
+**~66 BPM**, contre un a priori de 82,9. Chez MARTINEZ ALEJANDRA, elles donnent
+**~58 BPM**, contre 66,6. Cet accord entre deux mesures indépendantes est
+troublant, mais il ne suffit pas à conclure :
+
+- l'a priori de DESCOVICH est à 2 BPM de la borne haute, où le FIR atténue
+  déjà ; le test est biaisé contre lui ;
+- MARTINEZ n'a que 5 acquisitions, dont OS3 n'est pas dans le lot (frames
+  vides à la source).
+
+Une FC mesurée trancherait. Ce sont les deux participants à vérifier en
+premier.
+
+**MCNEIL THOMAS n'est pas testable ici** : son a priori (102 BPM) est hors
+bande. Les valeurs trouvées (~67–72 BPM) ne disent rien de sa vraie FC.
+
+::: {.callout-note}
+## Ce que ce test prouve, et ce qu'il ne prouve pas
+
+Il **corrobore** le consensus au niveau de la personne pour cinq participants
+sur huit. Or c'est à ce niveau qu'il est défini, et c'est ce niveau que la
+chaîne utilise. Deux signaux indépendants y retombent à quelques BPM près, mieux
+que le hasard.
+
+Il ne **valide pas** la FC d'une acquisition prise seule : une étendue de
+~16 BPM par personne interdit de lire la FC d'un réplicat isolé sur ces
+signaux. Il laisse enfin **deux consensus en doute** (DESCOVICH, MARTINEZ) et
+un **hors d'atteinte** (MCNEIL).
+
+Deux choix du test pèsent sur ce résultat :
+
+- la composante SVD est choisie sur sa **concentration** dans la bande, et non
+  sur son poids. Avec une bande plus étroite, elle est de rang ≥ 20 dans
+  **26 acquisitions sur 54** (rang médian 19), loin des composantes
+  dominantes ;
+- l'épaisseur est une **moyenne sur les colonnes**, qui peut diluer une
+  pulsation qui ne serait pas en phase d'un bord à l'autre de la ROI.
+
+Une FC **mesurée** pendant l'acquisition (oxymètre, brassard) reste la seule
+validation qui ne dépende d'aucun de ces choix.
+:::

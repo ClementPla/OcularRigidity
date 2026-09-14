@@ -27,6 +27,7 @@ project:
     - sans-prediction-strain.qmd
     - sans-prediction-viscosity.qmd
     - repro-data-exploration.qmd
+    - repro-hr-validation.qmd
     - repro-strain-repeatability.qmd
     - explore-iceemdan-svd.qmd
   # Les <video> sont ecrites en HTML brut dans les fragments generes : le
@@ -211,6 +212,8 @@ website:
         contents:
           - text: "Data exploration"
             href: repro-data-exploration.qmd
+          - text: "Valider HR des réplicats"
+            href: repro-hr-validation.qmd
           - text: "Strain repeatability"
             href: repro-strain-repeatability.qmd
       - section: "Paths to explore"
