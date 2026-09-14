@@ -12,18 +12,23 @@ from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 from ocularrigidity.segmentation.closing_structures import trim_choroid
 import pickle
 from tqdm.auto import tqdm
+import numpy as np
 
 
 def extract_displacement(
-    video_path: Path,
-    mask_path: Path,
+    video_path: Path = None,
+    mask_path: Path = None,
+    video: np.ndarray = None,
+    mask: np.ndarray = None,
     N_cycles: int = DELTA_A.n_cycles,
     method=DELTA_A.method,
     smooth_window: int = DELTA_A.smooth_window,
     lk_window: int = DELTA_A.lk_window,
 ):
-    video = read_gray(video_path)
-    mask = load_mask(mask_path)
+    if video is None:
+        video = read_gray(video_path)
+    if mask is None:
+        mask = load_mask(mask_path)
 
     trimmed_masks = trim_choroid(
         mask,
@@ -64,18 +69,19 @@ def extract_displacement(
 
 
 if __name__ == "__main__":
-    input_dir = ROOT_CARDIAC_PIPELINE
-    segmented_dirs = list(input_dir.rglob("**/*segmented_cycles.npz"))
+    # Same layout as CohortPaths in run_cohort: the masks live under
+    # <root>/measures/<video>, the single-cycle videos under
+    # <root>/one_cycle/<video>, and <video> is what PROCESS_ANYWAY is keyed on.
+    root_measures = ROOT_CARDIAC_PIPELINE / "measures"
+    root_one_cycle = ROOT_CARDIAC_PIPELINE / "one_cycle"
+    segmented_dirs = list(root_measures.rglob("**/*segmented_cycles.npz"))
     for segmented_dir in tqdm(segmented_dirs):
         result_filepath = segmented_dir.parent / "deltaA_per_cycle.pkl"
-        relative_path = segmented_dir.relative_to(input_dir)
-        current_video = relative_path.parent
-        if result_filepath.exists() and (Path(current_video) not in PROCESS_ANYWAY):
+        current_video = segmented_dir.parent.relative_to(root_measures)
+        if result_filepath.exists() and (current_video not in PROCESS_ANYWAY):
             continue
         try:
-            video_path = input_dir / current_video / "one_cycle.mkv"
-            # We need to replace "measures_" with "one_cycle_" in the relative path to get the corresponding video path
-            video_path = Path(str(video_path).replace("measures_", "one_cycle_"))
+            video_path = root_one_cycle / current_video / "one_cycle.mkv"
             (
                 deltaA_per_cycle,
                 minA_per_cycle,
@@ -91,4 +97,5 @@ if __name__ == "__main__":
             with open(result_filepath, "wb") as f:
                 pickle.dump(results, f)
         except Exception as e:
-            print(f"Error processing {segmented_dir}: {e}")
+            print(f"Error processing {segmented_dir}: {type(e).__name__}: {e}")
+            continue

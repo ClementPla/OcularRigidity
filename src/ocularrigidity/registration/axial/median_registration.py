@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from tqdm.auto import tqdm
 
 from ocularrigidity.registration.axial.utils import temporal_median
+from ocularrigidity.registration.layout import restore_layout, to_bchw, to_gray
 
 
 def _axial_window_band(
@@ -140,8 +141,10 @@ def register_ascans_to_median(
 
     Parameters
     ----------
-    frames : (T, H, W)
-        Volume DEJA recale (sortie de ``register_masks_by_displacement``).
+    frames : (T, H, W) ou (T, H, W, 3)
+        Volume DEJA recale (sortie de ``register_masks_by_displacement``). En
+        couleur, le deplacement est mesure sur la luminance et applique a tous
+        les canaux ; la mise en page d'entree est rendue telle quelle.
     masks : (T, H, W), optional
         Masques a transporter avec les images (meme deplacement par colonne).
     max_vshift : int
@@ -150,20 +153,22 @@ def register_ascans_to_median(
     Returns
     -------
     (registered_frames, registered_masks, dy)
-        ``registered_frames`` (T, H, W) — MEME dtype que l'entree — CPU,
+        ``registered_frames`` MEME mise en page et MEME dtype que l'entree — CPU,
         ``registered_masks`` (T, H, W) bool CPU (ou ``None``), ``dy`` (T, W) float32
         CPU. Avec ``return_median``, renvoie en plus le template median (H, W) numpy.
     """
-    if isinstance(frames, np.ndarray):
-        frames = torch.from_numpy(frames)
     if masks is not None and isinstance(masks, np.ndarray):
         masks = torch.from_numpy(masks)
-    T, H, W = frames.shape
+    # Canaux en premier en interne (gris => C = 1) ; on rend la mise en page d'entree.
+    frames, layout = to_bchw(frames)
+    T, C, H, W = frames.shape
     frame_dtype = frames.dtype  # on preserve le dtype d'entree en sortie
 
-    # 1) mediane temporelle (volume en memoire) -> reference.
+    # 1) mediane temporelle (volume en memoire) -> reference. Le deplacement se
+    # mesure sur la luminance : c'est une propriete de la scene, pas d'un canal.
+    gray = to_gray(frames)  # (T, H, W)
     median = temporal_median(
-        frames, ignore_zeros=ignore_zeros_median, device=device
+        gray, ignore_zeros=ignore_zeros_median, device=device
     )  # (H, W) sur device
 
     y0, y1 = 0, H
@@ -182,7 +187,7 @@ def register_ascans_to_median(
     norm_x_full = (xs.view(1, 1, W).expand(1, H, W)) / (W - 1) * 2 - 1
 
     dy_out = torch.empty((T, W), dtype=torch.float32, device="cpu")
-    frames_out = torch.empty((T, H, W), dtype=frame_dtype, device="cpu")
+    frames_out = torch.empty((T, C, H, W), dtype=frame_dtype, device="cpu")
     masks_out = (
         torch.empty((T, H, W), dtype=torch.bool, device="cpu")
         if masks is not None
@@ -197,10 +202,10 @@ def register_ascans_to_median(
     ):
         end = min(start + batch_size, T)
         t = end - start
-        raw = frames[start:end].to(device).float()  # (t, H, W)
+        raw = frames[start:end].to(device).float()  # (t, C, H, W)
 
         dy = _phase_corr_vshift(
-            raw[:, y0:y1, :],
+            gray[start:end].to(device).float()[:, y0:y1, :],
             Fm_conj,
             win,
             band,
@@ -215,11 +220,12 @@ def register_ascans_to_median(
             dy = dy.round()
 
         # 5) application du deplacement par colonne aux pixels bruts (+ masque).
+        # Le masque voyage comme canal 0 pour subir exactement le meme warp.
         if masks is not None:
-            mk = masks[start:end].to(device).float()
-            data = torch.stack([mk, raw], dim=1)  # (t, 2, H, W)
+            mk = masks[start:end].to(device).float().unsqueeze(1)
+            data = torch.cat([mk, raw], dim=1)  # (t, 1 + C, H, W)
         else:
-            data = raw.unsqueeze(1)  # (t, 1, H, W)
+            data = raw  # (t, C, H, W)
 
         grid_y = ys.view(1, H, 1).expand(t, H, W)
         sample_y = grid_y + dy.view(t, 1, W)  # deplacement PAR COLONNE
@@ -233,15 +239,16 @@ def register_ascans_to_median(
 
         if masks is not None:
             masks_out[start:end] = (reg[:, 0] > 0.5).cpu()
-            frames_out[start:end] = reg[:, 1].to(frame_dtype).cpu()
+            frames_out[start:end] = reg[:, 1:].to(frame_dtype).cpu()
         else:
-            frames_out[start:end] = reg[:, 0].to(frame_dtype).cpu()
+            frames_out[start:end] = reg.to(frame_dtype).cpu()
         dy_out[start:end] = dy.cpu()
 
         del raw, data, reg
         if device != "cpu":
             torch.cuda.empty_cache()
 
+    frames_out = restore_layout(frames_out, layout)
     if return_median:
         return frames_out, masks_out, dy_out, median.cpu().numpy()
     return frames_out, masks_out, dy_out

@@ -2,7 +2,7 @@
 
 Wires the collaborators together:
 
-    VideoRegistrator → VideoTimelineAligner → MaskPulseExtractor
+    VideoRegistrator → VideoTimelineAligner → PulseExtractor
                                             → NCycleReconstructor
 
 and packages the outcome as a :class:`CardiacPipelineResults`.
@@ -13,13 +13,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from ocularrigidity.motion.pulsation.legacy import (
-    MaskPulseExtractor,
-    PulseExtractionConfig,
-)
+from ocularrigidity.motion.pulsation.extractor import PulseExtractor
 from ocularrigidity.motion.pulsation.n_cycle_reconstructor import (
     NCycleConfig,
     NCycleReconstructor,
+)
+from ocularrigidity.motion.pulsation.phase import (
+    IQDemodPhaseEstimator,
+    SelectBestComponent,
+)
+from ocularrigidity.motion.pulsation.rate import LombScargleRateEstimator
+from ocularrigidity.motion.pulsation.traces import (
+    BandPassFilterTraceSource,
+    CoherentTraceSource,
+    DecomposedTraceSource,
+    MaskThicknessTraceSource,
 )
 from ocularrigidity.motion.video_timeline_aligner import TimeUnits, VideoTimelineAligner
 from ocularrigidity.registration.config import RegistrationConfig
@@ -29,49 +37,67 @@ if TYPE_CHECKING:
     from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
 
-def run_cardiac_pipeline(
+def build_extractor(registrator, aligner, stage_configs: dict) -> PulseExtractor:
+    """The composed chain, from the per-stage configs.
+
+        thickness -> bandpass -> coherent selection -> PCA
+                  -> Lomb-Scargle rate -> IQ phase on the best component
+
+    ``stage_configs`` is what ``PulsationConfig.chain_for_video`` returns, so
+    the study config stays the single place the recipe is written down.
+    """
+    source = MaskThicknessTraceSource(registrator, aligner, stage_configs["trace"])
+    source = BandPassFilterTraceSource(source, stage_configs["bandpass"])
+    # source = CoherentTraceSource(source, stage_configs["coherence"])
+    # source = DecomposedTraceSource(source, stage_configs["decomposition"])
+    return PulseExtractor(
+        trace_source=source,
+        rate_estimator=LombScargleRateEstimator(stage_configs["rate"]),
+        phase_estimator=IQDemodPhaseEstimator(
+            stage_configs["phase"], aggregator=SelectBestComponent()
+        ),
+        registered_video=registrator,
+        aligner=aligner,
+    )
+
+
+def run_composed_pipeline(
     video_relpath: str,
     *,
     root_masks: str,
     root_data: str,
     timestamps_path: str,
-    config: Optional[PulseExtractionConfig] = None,
+    stage_configs: dict,
     fold_config: Optional[NCycleConfig] = None,
     registration_config: Optional[RegistrationConfig] = None,
     cache_dir: Optional[Path] = None,
     units_in_timestamps: TimeUnits = TimeUnits.MICROSECONDS,
-    # --- Orchestration ----------------------------------------------------
-    compute_n_cycle_video: bool = False,
+    compute_n_cycle_video: bool = True,
+    registrator: Optional[VideoRegistrator] = None,
     verbose: bool = True,
 ) -> CardiacPipelineResults:
-    """Run the mask-based cardiac pipeline and return the packaged results.
+    """End-to-end run of the composed chain, packaged as results.
 
-    ``config`` bundles the extraction knobs, ``fold_config`` the folding knobs
-    and ``registration_config`` the registration knobs (all default to their
-    dataclass defaults). ``cache_dir`` is forwarded to :class:`VideoRegistrator`:
-    registration is deterministic across ICA/PCA and phase methods, so caching
-    lets repeated runs of the same video reuse the registered frames/masks
-    instead of recomputing them.
+    ``registrator`` accepts an already-built :class:`VideoRegistrator` instead
+    of constructing one from the roots. A batch caller uses it to hand in a
+    registrator primed with a cache payload decoded ahead of time on another
+    process (see scripts/pulsation/infer.py); the roots are then unused.
     """
-    # Imported lazily to avoid a circular import: pipeline_results imports the
-    # pulsation package (for its config types), which imports this module.
     from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
-    if config is None:
-        config = PulseExtractionConfig(verbose=verbose)
-
-    registrator = VideoRegistrator(
-        video=video_relpath,
-        root_data=Path(root_data),
-        root_masks=Path(root_masks),
-        config=registration_config,
-        verbose=verbose,
-        cache_dir=cache_dir,
-    )
+    if registrator is None:
+        registrator = VideoRegistrator(
+            video=video_relpath,
+            root_data=Path(root_data),
+            root_masks=Path(root_masks),
+            config=registration_config,
+            verbose=verbose,
+            cache_dir=cache_dir,
+        )
     aligner = VideoTimelineAligner(
         registrator, timestamps_path, units_in_timestamps=units_in_timestamps
     )
-    extractor = MaskPulseExtractor(registrator, aligner, config)
+    extractor = build_extractor(registrator, aligner, stage_configs)
 
     if verbose:
         ts = extractor.timestamps_seconds
@@ -93,4 +119,6 @@ def run_cardiac_pipeline(
         reconstructor = NCycleReconstructor(extractor, fold_config)
         reconstructor.compute()
 
-    return CardiacPipelineResults.from_objects(extractor, reconstructor)
+    return CardiacPipelineResults.from_composed(
+        extractor, reconstructor, stage_configs=stage_configs
+    )

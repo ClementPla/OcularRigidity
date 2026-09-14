@@ -101,10 +101,28 @@ def process_cohort(root: Path, output_csv: Path, device: str = "cuda") -> pd.Dat
     rows = []
     # Overlap disk IO + zstd decompression with GPU compute: a few worker
     # threads prefetch masks while the main thread runs the GPU metrics.
+    def _load(p):
+        # Faults are carried through as a value: raising inside pool.map would
+        # surface on iteration and take the whole cohort down.
+        try:
+            return p, load_mask(p), None
+        except Exception as e:
+            return p, None, e
+
     with ThreadPoolExecutor(max_workers=4) as pool:
-        loaded = pool.map(lambda p: (p, load_mask(p)), paths)
-        for path, mask in tqdm(loaded, total=len(paths), desc="QC"):
+        loaded = pool.map(_load, paths)
+        for path, mask, load_error in tqdm(loaded, total=len(paths), desc="QC"):
             rel = path.relative_to(root)
+            if load_error is not None:
+                rows.append(
+                    {
+                        "source": rel.parts[0],
+                        "video": str(Path(*rel.parts[1:-1])),
+                        "flag": True,
+                        "reasons": f"unreadable: {type(load_error).__name__}: {load_error}",
+                    }
+                )
+                continue
             try:
                 metrics = compute_qc_metrics(mask, device=device)
             except Exception as e:  # keep going across the cohort

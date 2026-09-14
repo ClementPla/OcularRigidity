@@ -1,34 +1,21 @@
 # OcularRigidity
 
-**Automated analysis of the choroid from OCT B-scan videos, toward non-invasive estimation of ocular rigidity.**
+Choroid analysis on time-resolved OCT B-scan videos, for non-invasive estimation of ocular rigidity.
 
-> ⚠️ **Work in progress.** This repository is under active development. APIs, file formats, and module structure are subject to change without notice. Results should be considered preliminary.
+> **Work in progress.** APIs, file formats and module layout change without notice. Results are preliminary.
 
----
+## What it does
 
-## Overview
+Given an OCT video of a single B-scan location plus the matching IOP/OPA measurements, the pipeline runs:
 
-This project develops a pipeline for the quantitative analysis of the choroid in time-resolved optical coherence tomography (OCT) B-scans. The long-term goal is to estimate **ocular rigidity** - the biomechanical relationship between intraocular pressure (IOP) and ocular volume - from pairs of continuous tonometry and OCT video recordings.
+1. **Segmentation + registration** (one GPU pass). A Segformer (`mit_b2` encoder) segments the choroid, from Bruch's membrane to the choroid–sclera interface. A regressor reads the same encoder features and predicts a global lateral shift `dx` and a per-column axial shift `dy`. One encode feeds both heads, so the pass costs roughly what segmentation alone used to.
+2. **Pulsation.** Thickness traces from the registered masks, bandpassed on a cardiac band, coherence-selected, PCA-decomposed. Heart rate by Lomb-Scargle, phase by IQ demodulation on the best component. Frames are then folded into `N_CYCLES` cardiac cycles.
+3. **Cycle segmentation.** The folded cycles are re-segmented at full resolution.
+4. **ΔA / ΔCT.** Boundary displacement by optical flow, projected onto the CSI normal in physical units, giving peak-to-peak area and thickness change per cycle.
+5. **Rigidity.** Friedenwald coefficient `K` from ΔCT (or ΔA) and the pressure pair, through a shell volume model.
+6. **QC.** Per-video misregistration flags.
 
-The pipeline is being developed in stages:
-
-- ✅ **Choroid segmentation** - a deep learning model (U-Net) trained to delineate the choroidal layer (Bruch's membrane to choroid-sclera interface) on individual B-scans.
-- 🚧 **Temporal analysis** - cycle-aware processing of segmented video to extract area/thickness time series.
-- 🚧 **Rigidity estimation** - fitting pressure-area relationships to derive a rigidity coefficient, with appropriate propagation of segmentation uncertainty.
-
----
-
-## Current features
-
-- **Segmentation model** based on a U-Net architecture, trained on publicly available and in-house annotated OCT datasets.
-- **Batch inference pipeline** with GPU acceleration, sliding-batch processing for long videos, and automatic post-processing (largest connected component).
-- **Compressed mask storage** using bit-packing + zstd compression for efficient archival of boolean masks.
-- **Interactive viewer** (pygame) for browsing and visualizing segmentation results across multiple recordings.
-- **Flexible I/O layer** supporting local and SMB-mounted data sources.
-
----
-
-## Installation
+## Install
 
 ```bash
 git clone https://github.com/ClementPla/OcularRigidity.git
@@ -36,69 +23,131 @@ cd OcularRigidity
 pip install -e .
 ```
 
-Dependencies include PyTorch, PyTorch Lightning, numpy, scipy, zstandard, and pygame. A CUDA-capable GPU is strongly recommended for inference.
+`pyproject.toml` does not pin dependencies yet. You need at least: `torch`, `pytorch-lightning`, `segmentation-models-pytorch`, `huggingface-hub`, `numpy`, `scipy`, `pandas`, `opencv-python`, `scikit-image`, `kornia`, `numba`, `zstandard`, `smbclient`, `imageio`, `av`, `decord`, `tqdm`, `matplotlib`, `seaborn`, `statsmodels`, `streamlit`, `eyepy`, `SimpleITK`.
 
----
+A CUDA GPU is required in practice. `ffmpeg` must be on the system for the compressed-video readers — note that `data/compression.py` currently hardcodes a path to it.
 
-## Usage
+## Quick start
 
-I strongly recommend to read the [example notebook](notebook/example.ipynb).
-
-### Running segmentation on a single recording
+Segmentation and registration in one pass ([notebook/demo_seg_and_register.ipynb](notebook/demo_seg_and_register.ipynb)):
 
 ```python
+from pathlib import Path
 
-from ocularrigidity.data.compression import mp4_to_cube, read_gray
 from ocularrigidity.data.io import load_cube
-# We provide diffferents readers for the data.
-# load_cube : read a folder containing a cube.bin file
-# mp4_to_cube : read a .mp4 video
-# read_gray : read .mkv video (this name sucks)
-from ocularrigidity.data.io import save_mask
-from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
-from ocularrigidity.segmentation.inference import infer
+from ocularrigidity.registration.config import RegistrationConfig
+from ocularrigidity.registration.fused import segment_and_register
+from ocularrigidity.segmentation.utils import (
+    get_choroid_segmentation_model,
+    get_registration_model,
+)
 
-model = (
-    get_choroid_segmentation_model()
-)  # Model is automatically downloaded on first call.
+DEVICE = "cuda"
 
-# See the docstring of the infer function for more details on the parameters. The most important ones are scale_factor, which controls the resizing of the input, which controls the pixel size, and batch_size, which controls the speed of inference (the larger, the faster, but also the more VRAM you need).
-# The model was trained with a pixel size, axial of 1.95um and lateral of 5.95um (at a resolution of 1536x1024). Match to your data.
-mask = infer(model, data, scale_factor=0.5, batch_size=16, device="cuda:0")
-save_mask(mask, OUTPUT_MASK_PATH)  # Use packed + zstd compressed, so very light
+# Weights are pulled from the Hugging Face Hub on first call.
+# Move both models to the device yourself; segment_and_register only moves the data.
+seg_model = get_choroid_segmentation_model().to(DEVICE)
+reg_model = get_registration_model().to(DEVICE)
+
+frames = load_cube(Path("/path/to/folder"))  # folder holding cube.bin (+ timestamp.txt)
+frames = frames[20:-10]
+
+config = RegistrationConfig(fused_batch_size=8, batch_size=16, keep_largest_cc=False)
+result = segment_and_register(frames, seg_model, reg_model, config=config, device=DEVICE)
+
+result.raw_masks          # (T, H, W) bool, unregistered
+result.registered_masks   # (T, H, W) bool
+result.registered_frames  # (T, H, W) uint8
+result.transform          # {"dx": (T,), "dy": (T, W)}
 ```
 
-### Batch processing
+`fused_batch_size` is the memory-sensitive knob: it holds encoder activations for a 1536x1024 input plus both heads. `batch_size` only affects the warping pass.
 
-A script is provided to run inference over a dataset and mirror the input folder structure in an output directory. Errors on individual recordings are logged without interrupting the batch.
+Segmentation alone, without registration:
 
-### Visualization
+```python
+from ocularrigidity.segmentation.inference import infer
+from ocularrigidity.data.io import save_mask
 
-> [!WARNING]
-> DEPRECATED
+# The model was trained at an axial pixel size of 1.95 um and a lateral one of
+# 5.95 um (1536x1024). Use scale_factor to match your acquisition.
+mask = infer(model, data, scale_factor=0.5, batch_size=16, device="cuda:0")
+save_mask(mask, path)  # bit-packed + zstd
+```
 
+## Running the cohort
 
-A standalone viewer application lets you browse processed recordings and inspect segmentations over time:
+Two entry points produce the same artifacts.
 
 ```bash
-python -m ocularrigidity.viewer
+./scripts/pipeline.sh                     # stage by stage, resumable
+./scripts/pipeline.sh --stage pulsation   # re-run one stage
+OCULARRIGIDITY_SEG_GPUS=0 ./scripts/pipeline.sh
+
+python -m ocularrigidity.scripts.run_cohort --dry-run   # single process, one video at a time
 ```
 
-The viewer supports play/pause, frame stepping, speed control, and overlay toggling.
+`pipeline.sh` shards segmentation+registration over several GPUs and re-reads each stage's output from disk. `run_cohort` carries one video through every stage while it is still in RAM. Use the script when a single stage has to be re-run over the whole cohort.
 
+Both skip work whose output already exists, and both keep going past a failing video.
 
+## Configuration
 
----
+Paths and batch sizes come from [consts.py](src/ocularrigidity/consts.py), overridable by environment:
 
-## Roadmap
+| Variable | Meaning |
+| --- | --- |
+| `OCULARRIGIDITY_DATA_ROOT` | compressed source videos (shared across runs) |
+| `OCULARRIGIDITY_OUTPUT_ROOT`, `OCULARRIGIDITY_RUN` | outputs land in `OUTPUT_ROOT/RUN` |
+| `OCULARRIGIDITY_MASKS`, `OCULARRIGIDITY_REGISTERED_CACHE`, `OCULARRIGIDITY_CARDIAC` | per-stage overrides |
+| `OCULARRIGIDITY_CHECKPOINT`, `OCULARRIGIDITY_REGISTRATOR` | weights |
+| `OCULARRIGIDITY_FUSED_BATCH`, `OCULARRIGIDITY_SEGMENTATION_BATCH`, `OCULARRIGIDITY_REGISTRATION_BATCH` | memory/throughput only |
 
-- [x] Baseline U-Net segmentation of the choroid
-- [x] Efficient inference and storage pipeline
-- [x] Mask browser / viewer
-- [ ] Temporal regularization (warp-consistency loss, topology-preserving losses)
-- [x] Area / thickness time series extraction with artifact rejection
-- [ ] Synchronization with continuous tonometry
-- [x] Pressure-area curve fitting and rigidity estimation
-- [~] Validation study
+A run is keyed on its weights, so masks and the registration cache are per-run and never mixed between models.
 
----
+Algorithm parameters split in two: component configs (`RegistrationConfig`, `NCycleConfig`, ...) live next to the code they configure; the cohort-wide instances actually in force are the frozen singletons in [pipeline_config.py](src/ocularrigidity/pipeline_config.py).
+
+## Layout
+
+```
+src/ocularrigidity/
+  data/           readers (cube.bin, mp4/mkv, SMB), mask compression, clinical DBs
+  segmentation/   Segformer module, inference, post-processing, fovea, vessels
+  registration/   classical (rigid.py) and learned (deep_learning/) estimators
+                  fused.py -- the single-pass segment + register
+  motion/         pulsation (traces -> rate -> phase), cycle folding, displacement
+  thickness/      delta CT from boundary tracking
+  friedenwald.py  delta A / delta CT -> delta V -> K
+  stats/          longitudinal and cohort statistics
+  viewer/         streamlit cohort browser, gif/quiver renderers
+  scripts/        batch entry points, one per pipeline stage
+```
+
+## Models
+
+Weights are on the Hugging Face Hub and download on first use:
+
+- `ClementP/ChoroidSegmentationModule`, revision `version-2.0.0` — Segformer / `mit_b2`, 1 input channel, 1 class.
+- `ClementP/OCTVideoRegistration`, revision `cascade_v9` — cascade regressor over the frozen encoder pyramid.
+
+Both are returned in eval mode on the CPU. Move them to your device before use.
+
+The batch scripts do not use the Hub: they load local checkpoints from `CHECKPOINT_PATH` and `REGISTRATOR_CHECKPOINT` in `consts.py`, because the checkpoint path is part of the registration cache key.
+
+## Cohort browser
+
+```bash
+streamlit run src/ocularrigidity/viewer/streamlit_explorer/Home.py
+```
+
+One row per rigidity visit, with the cardiac metrics, the clinical scalars, the Heyex ONH sectors and the diagnosis register merged onto it. Pages: cases, regression, viewer, inference, registration, fovea estimation, longitudinal.
+
+The standalone pygame viewer described in earlier versions of this README is gone.
+
+## Status
+
+Done: choroid segmentation, learned registration, fused single-pass inference, compressed mask storage, cardiac phase extraction and cycle folding, ΔA/ΔCT measurement, Friedenwald fitting, cohort browser.
+
+Open: temporal regularization at training time (warp-consistency, topology-preserving losses), synchronization with continuous tonometry, validation study.
+
+The notebooks under [notebook/](notebook/) and [notebooks/](notebooks/) are exploratory and mostly out of date; [notebook/demo_seg_and_register.ipynb](notebook/demo_seg_and_register.ipynb) is the one kept current.

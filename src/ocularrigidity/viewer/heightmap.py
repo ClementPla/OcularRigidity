@@ -10,6 +10,7 @@ def visualize_csi_surface(
     gap_threshold_factor: float = 1.5,
     screenshot: str | None = None,
     off_screen: bool = False,
+    jupyter_backend: str | None = "static",
 ):
     """Render a (T, W) depth-map as a surface in 3D with gaps highlighted.
 
@@ -28,6 +29,13 @@ def visualize_csi_surface(
         If given, save the render to this path (implies off_screen=True).
     off_screen : bool
         Render without opening a GUI window (useful on headless servers).
+    jupyter_backend : str or None
+        PyVista Jupyter backend used by ``plotter.show()`` in a notebook.
+        Defaults to ``"static"`` (a server-side render embedded as an image),
+        which is robust in VS Code / remote kernels. The default ``"trame"``
+        backend uses an interactive widget/websocket that frequently crashes the
+        kernel there; use ``"trame"``/``"client"`` only for smaller (decimated)
+        surfaces where interactivity is needed. Ignored outside a notebook.
     """
     T, W = csi.shape
     t = np.asarray(timestamps) if timestamps is not None else np.arange(T, dtype=float)
@@ -51,23 +59,40 @@ def visualize_csi_surface(
     # ---- 2. Build the structured grid ----------------------------------
     # meshgrid with indexing="ij" -> arrays of shape (T, W).
     # PyVista sets dimensions=[T, W, 1] and internally ravels with F-order.
+    #
+    # VTK segfaults (crashing the kernel) on non-finite *point coordinates*, and
+    # the boundary signal legitimately has NaN gaps. Keep NaN/Inf out of the
+    # geometry by pinning those points to a finite floor value; every cell that
+    # touches such a point is hidden below, so the floor value is never shown.
+    finite = np.isfinite(csi)
+    if not finite.any():
+        raise ValueError("`csi` has no finite values to display.")
+    z_floor_val = float(csi[finite].min())
+    Z_grid = np.where(finite, csi, z_floor_val).astype(float) * z_scale
+
     T_grid, X_grid = np.meshgrid(t_norm, x_norm, indexing="ij")
-    Z_grid = csi * z_scale
     grid = pv.StructuredGrid(T_grid, X_grid, Z_grid)
 
     # ---- 3. Attach data in F-order to match PyVista's internal layout --
-    # Point data: (T, W) -> ravel("F"): point_id = i + T*j, i fastest.
+    # Point data: (T, W) -> ravel("F"): point_id = i + T*j, i fastest. NaN
+    # scalars are fine (rendered with the colormap's nan color); only NaN
+    # coordinates crash, and those were handled above.
     grid.point_data["depth"] = csi.ravel("F")
 
-    # Cell data: (T-1, W-1) where entry (i, j) = gap_mask[i]. In F-order
-    # this is simply gap_mask tiled W-1 times: cell_id = i + (T-1)*j.
+    # Cells to hide: temporal gaps OR any cell with a non-finite corner. A cell
+    # (i, j) spans corners (i, j), (i+1, j), (i, j+1), (i+1, j+1); it is kept
+    # only if all four are finite. Cell ids are F-order: cell_id = i + (T-1)*j.
     is_gap_cells = np.tile(gap_mask, W - 1)  # (T-1)*(W-1) bool
+    cell_finite = (
+        finite[:-1, :-1] & finite[1:, :-1] & finite[:-1, 1:] & finite[1:, 1:]
+    )  # (T-1, W-1)
+    hidden_cells = is_gap_cells | (~cell_finite).ravel("F")
     grid.cell_data["is_gap"] = is_gap_cells.astype(np.uint8)
 
-    # ---- 4. Hide gap cells (preserves StructuredGrid) ------------------
+    # ---- 4. Hide gap / NaN cells (preserves StructuredGrid) ------------
     # hide_cells keeps the grid structured; extract_cells would convert to
     # an UnstructuredGrid, which renders fine but loses structure info.
-    grid.hide_cells(is_gap_cells, inplace=True)
+    grid.hide_cells(hidden_cells, inplace=True)
 
     # ---- 5. Floor plane that flags gap columns in red ------------------
     floor_z = float(Z_grid.min() - 0.1 * np.ptp(Z_grid))
@@ -108,5 +133,5 @@ def visualize_csi_surface(
     if screenshot:
         plotter.show(screenshot=screenshot)
     else:
-        plotter.show()
+        plotter.show(jupyter_backend=jupyter_backend)
     return plotter

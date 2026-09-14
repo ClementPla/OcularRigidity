@@ -15,6 +15,7 @@ from ocularrigidity.motion.one_cycle import (
     _auto_n_bins,
     fold_video_numba_mean,
     fold_video_numba_median,
+    fold_video_numba_quantile,
 )
 from ocularrigidity.motion.pulsation.extractor import PulseExtractor
 
@@ -25,8 +26,8 @@ class NCycleConfig:
     n_bins: Optional[int] = None
     target_frames_per_bin: int = 25
     fold_method: str = "mean"
-    # Only honoured by the legacy ``MaskPulseExtractor``, which exposes both
-    # phases at once; a composed ``PulseExtractor`` already is one phase method.
+    # Vestigial: a ``PulseExtractor`` already is one phase method, so this only
+    # selects a peak-locked surface on an extractor that happens to expose one.
     phase_method: Literal["iq", "peak_locked"] = "peak_locked"
     verbose: bool = True
 
@@ -49,9 +50,9 @@ class NCycleReconstructor:
     def _default_phase(self):
         """Phase to fold by.
 
-        A composed ``PulseExtractor`` already *is* one phase method, so its
-        ``phase_per_frame`` is the answer. ``config.phase_method`` only applies
-        to the legacy ``MaskPulseExtractor``, which exposes both phases at once.
+        A ``PulseExtractor`` already *is* one phase method, so its
+        ``phase_per_frame`` is the answer unless the extractor also exposes a
+        peak-locked surface and ``config.phase_method`` asks for it.
         """
         ex = self.extractor
         if self.config.phase_method == "peak_locked" and hasattr(
@@ -106,12 +107,21 @@ class NCycleReconstructor:
                     f"Auto-selected n_bins = {n_bins} "
                     f"(per-chunk budget ~{n_good // max(1, n_cycle)} frames)"
                 )
-
-        fold_fn = (
-            fold_video_numba_mean
-            if cfg.fold_method == "mean"
-            else fold_video_numba_median
-        )
+        match cfg.fold_method:
+            case "mean":
+                if verbose:
+                    print("Folding method: mean")
+                fold_fn = fold_video_numba_mean
+            case "median":
+                if verbose:
+                    print("Folding method: median")
+                fold_fn = fold_video_numba_median
+            case "quantile":
+                if verbose:
+                    print("Folding method: quantile (0.25, 0.5, 0.75)")
+                fold_fn = fold_video_numba_quantile
+            case _:
+                raise ValueError(f"Unknown fold_method {cfg.fold_method!r}")
 
         t0 = timestamps[0]
         chunk_duration = (timestamps[-1] - t0) / n_cycle

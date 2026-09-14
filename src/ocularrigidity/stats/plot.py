@@ -22,18 +22,25 @@ def regression_plot_with_stats(
     ax=None,
     drop_outlier_quantile=None,
     print_stats=True,
+    legend_position="best",
 ):
     fed_ax = ax is not None
     if ax is None:
         figsize = (6, 6) if equal_axis else (7, 5)
         fig, ax = plt.subplots(figsize=figsize)
+    df = df.dropna(subset=[col1, col2])
     if drop_outlier_quantile is not None:
-        df = df.copy()
         for col in [col1, col2]:
-            q_low, q_high = df[col1].quantile(
+            q_low, q_high = df[col].quantile(
                 [1.0 - drop_outlier_quantile, drop_outlier_quantile]
             )
             df = df[(df[col] <= q_high) & (df[col] >= q_low)]
+    if len(df) < 2:
+        raise ValueError(
+            f"{title!r}: only {len(df)} usable point(s) for '{col1}' vs '{col2}' "
+            "-- the correlation needs at least 2. Check for all-NaN columns "
+            "upstream before blaming the outlier filter."
+        )
     sns.regplot(
         x=col1,
         y=col2,
@@ -118,6 +125,14 @@ def regression_plot_with_stats(
     ax.set_xlabel(x_label, fontsize=11, labelpad=8)
     ax.set_ylabel(y_label, fontsize=11, labelpad=8)
     ax.set_title(title, fontsize=13, fontweight="bold", pad=12)
+
+    # Set the legend position if there are any legends present
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.set_bbox_to_anchor((1.05, 1))
+        legend.set_title(None)
+        legend.set_frame_on(False)
+        legend.set_loc(legend_position)
 
     sns.despine()
     plt.tight_layout()

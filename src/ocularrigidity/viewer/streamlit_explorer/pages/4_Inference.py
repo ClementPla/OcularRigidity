@@ -3,10 +3,9 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 
-from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import render as R
 from ocularrigidity.viewer.streamlit_explorer._common import (
-    cached_case_table,
+    cached_cohort,
     require_selection,
 )
 
@@ -22,20 +21,21 @@ def get_model():
     return get_choroid_segmentation_model().cuda()
 
 
-def _mkv_one_cycle(root, suffix, case):
-    return Path(root) / f"one_cycle_{suffix}" / case / "one_cycle.mkv"
+def _mkv_one_cycle(root, case):
+    return Path(root) / "one_cycle" / case / "one_cycle.mkv"
 
 
-def _mkv_raw(root, suffix, case):
+def _mkv_raw(root, case):
     return Path(root) / ".." / "compressed" / case / "cube.mp4"
 
 
 # --- page --------------------------------------------------------------------
 
-root, suffix, iop = require_selection()
-st.title(f"Segmentation inference — {C.pretty_method(suffix)}")
+sel = require_selection()
+root = sel.root
+st.title("Segmentation inference")
 
-df = cached_case_table(root, suffix, iop)
+df = cached_cohort(sel)
 show_cols = [
     c
     for c in ["case_id", "PatientId", "Date", "Eye", "deltaA", "deltaCT", "K_thickness"]
@@ -100,9 +100,9 @@ def _segment_and_render():
     from ocularrigidity.segmentation.inference import infer
 
     if which_video == "raw":
-        mkv = _mkv_raw(root, suffix, case)
+        mkv = _mkv_raw(root, case)
     else:
-        mkv = _mkv_one_cycle(root, suffix, case)
+        mkv = _mkv_one_cycle(root, case)
     if not mkv.exists():
         st.error("This case has no `one_cycle.mkv`.")
         return None

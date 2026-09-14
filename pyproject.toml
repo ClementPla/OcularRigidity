@@ -8,6 +8,60 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    # Deep learning
+    "torch>=2.9",
+    "pytorch-lightning>=2.4",
+    "torchmetrics>=1.8",
+    "segmentation-models-pytorch>=0.5.0",
+    "monai>=1.5",
+    "kornia>=0.8",
+    "albumentations>=2.0",
+    "huggingface-hub>=1.21",
+    # Scientific stack
+    "numpy>=2.3",
+    "scipy>=1.15",
+    "pandas>=2.2",
+    "scikit-learn>=1.7",
+    "scikit-image>=0.25",
+    "statsmodels>=0.14",
+    "astropy>=7.2",
+    "numba>=0.63",
+    "SimpleITK>=2.4",
+    "connected-components-3d>=3.25",
+    # Imaging / video / IO
+    "opencv-python-headless>=4.10",
+    "imageio>=2.37",
+    "imageio-ffmpeg>=0.5",
+    "av>=16.1",
+    "decord>=0.6",
+    "zstandard>=0.24",
+    "smbprotocol>=1.16",
+    "python-dotenv>=1.0",
+    # Heyex / clinical data
+    "eyepy>=0.20",
+    "pydicom>=3.0",
+    "pypdfium2>=5.9",
+    "dateparser>=1.4",
+    # Plotting / viewer
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+    "plotly>=6.0",
+    "streamlit>=1.53",
+    "pyvista>=0.44",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# CUDA 12 builds. In a conda env, install cupy / cucim from conda-forge / rapidsai instead.
+gpu = [
+    "cupy-cuda12x>=13.2",
+    "cucim-cu12>=24.8",
+]
+train = [
+    "wandb>=0.19",
+]
+debug = [
+    "bokeh>=3.7",
 ]
 
 [tool.poetry]

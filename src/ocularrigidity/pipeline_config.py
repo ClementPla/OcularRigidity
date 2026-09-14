@@ -1,7 +1,7 @@
 """Study-level configuration: what settings *this* cohort is processed with.
 
 The distinction against the per-component configs (``RegistrationConfig``,
-``PulseExtractionConfig``, ``NCycleConfig``, …) is deliberate:
+``RegistrationConfig``, ``NCycleConfig``, …) is deliberate:
 
 - A **component** config is the argument list of one class. It lives next to
   that class, and its defaults say what the algorithm does by default.
@@ -19,8 +19,21 @@ output-file metadata.
 from dataclasses import dataclass, field, replace
 from typing import Literal, Optional
 
-from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
-from ocularrigidity.motion.pulsation import NCycleConfig, PulseExtractionConfig
+from ocularrigidity.consts import (
+    AXIAL_PIXEL_SIZE_MM,
+    SEGMENTATION_BATCH_SIZE,
+    TRANVERSAL_PIXEL_SIZE_MM,
+)
+from ocularrigidity.motion.pulsation import (
+    BandPassFilterTraceConfig,
+    CardiacBand,
+    DecompositionConfig,
+    IQPhaseConfig,
+    LombScargleConfig,
+    MaskTraceConfig,
+    NCycleConfig,
+)
+from ocularrigidity.motion.pulsation.traces.coherence import CoherenceConfig
 from ocularrigidity.registration.config import RegistrationConfig
 
 # Number of cardiac cycles that are folded, segmented and measured. Shared by
@@ -35,6 +48,7 @@ __all__ = [
     "N_CYCLES",
     "AXIAL_PIXEL_SIZE_MM",
     "RegistrationConfig",
+    "ChainConfig",
     "PulsationConfig",
     "DeltaYConfig",
     "SegmentationConfig",
@@ -52,77 +66,111 @@ __all__ = [
 
 
 @dataclass(frozen=True)
+class ChainConfig:
+    """The composed trace → rate → phase chain, as run in notebooks/pipeline/test.ipynb.
+
+    The differences that matter, established by comparing against the
+    July-2026 cohort run:
+
+    * ``SelectBestComponent`` for phase aggregation — averaging the PCA
+      components instead buries the cardiac one under the rest;
+    * ``sigma_col=5.0`` and ``col_slice`` trimming the noisy B-scan edges;
+    * an explicit bandpass stage, which the mask source no longer does itself.
+
+    ``band`` is per-video (it is anchored on the measured HR), so it lives in
+    :meth:`for_video` rather than in the frozen fields below.
+    """
+
+    trace: MaskTraceConfig = field(
+        default_factory=lambda: MaskTraceConfig(col_slice=slice(100, 924))
+    )
+    bandpass: BandPassFilterTraceConfig = field(
+        default_factory=lambda: BandPassFilterTraceConfig(sigma_col=5.0)
+    )
+    coherence: CoherenceConfig = field(
+        default_factory=lambda: CoherenceConfig(selection="quantile", keep_quantile=0.5)
+    )
+    decomposition: DecompositionConfig = field(
+        default_factory=lambda: DecompositionConfig(
+            method="PCA", n_components=64, random_state=0, whiten=False
+        )
+    )
+    rate: LombScargleConfig = field(
+        default_factory=lambda: LombScargleConfig(concentration_band_hz=0.1)
+    )
+    phase: IQPhaseConfig = field(
+        default_factory=lambda: IQPhaseConfig(
+            smoother_cycles=2.0,
+            density_threshold=0.5,
+            freq_tolerance=1e9,
+        )
+    )
+
+    def for_video(
+        self, *, expected_bpm: Optional[float] = None, verbose: bool = True
+    ) -> dict:
+        """The stage configs, with the measured HR stamped into the band.
+
+        One band object, shared by the trace bandpass and the periodogram, so
+        the two stages cannot disagree about what counts as cardiac.
+        """
+        band = CardiacBand(expected_bpm=expected_bpm)
+        return dict(
+            trace=replace(self.trace, verbose=verbose),
+            bandpass=replace(self.bandpass, band=band, verbose=verbose),
+            coherence=replace(self.coherence, verbose=verbose),
+            decomposition=self.decomposition,
+            rate=replace(self.rate, band=band, verbose=verbose),
+            phase=self.phase,
+        )
+
+
+@dataclass(frozen=True)
 class PulsationConfig:
     """Cardiac-cycle extraction + folding (pulsation/infer.py).
 
-    ``extraction`` and ``fold`` are the component configs handed straight to
-    :func:`run_cardiac_pipeline`; use :meth:`for_video` to stamp in the
-    per-video and per-sweep values. The remaining fields are the ones no
-    component owns: which variants to sweep, and the output video's fps.
+    ``chain`` and ``fold`` are the component configs; use
+    :meth:`chain_for_video` to stamp in the per-video values. The remaining
+    field is the one no component owns: the output video's fps.
 
-    ``extraction`` is the flat :class:`PulseExtractionConfig` because that is
-    what the pipeline entry point still takes. When ``run_cardiac_pipeline``
-    moves off the legacy ``MaskPulseExtractor`` facade, this field becomes the
-    per-stage configs (``MaskTraceConfig``, ``DecompositionConfig``, …) and
-    nothing else here has to change.
+    There is no method/phase sweep: the composed ``chain`` *is* the recipe, and
+    the decomposition and demodulation are fields of the stage configs it
+    holds, saved with every ``measure.pkl``. So the outputs carry no
+    ``<method>_<phase>`` suffix — what was ``one_cycle_pca_iq`` is just
+    ``one_cycle``.
     """
 
     # Values equal to the library defaults are still spelled out: a study
     # config should pin what it ran, so a later change to a library default
     # cannot silently change this cohort's settings.
-    extraction: PulseExtractionConfig = field(
-        default_factory=lambda: PulseExtractionConfig(
-            sigma_col=5.0,
-            expected_bpm_band_frac=0.3,
-            col_slice=slice(100, 924),
-        )
-    )
+    chain: ChainConfig = field(default_factory=ChainConfig)
     fold: NCycleConfig = field(
         default_factory=lambda: NCycleConfig(
             n_bins=30,
             n_cycle=N_CYCLES,
             fold_method="median",
+            # The composed chain already *is* one phase method; this only tells
+            # the reconstructor not to go looking for the legacy peak-locked one.
+            phase_method="iq",
         )
     )
 
-    # --- Sweep axes: one run per combination (pulsation/infer.py) ---------
-    methods: tuple[str, ...] = ("pca", "ica", "svd")
-    phase_methods: tuple[str, ...] = ("peak_locked", "iq")
     # fps written into the lossless one_cycle.mkv (display metadata only).
     output_fps: int = 30
 
-    def for_video(
-        self,
-        *,
-        method: Optional[str] = None,
-        phase_method: Optional[str] = None,
-        expected_bpm: Optional[float] = None,
-        verbose: bool = True,
-    ) -> tuple[PulseExtractionConfig, NCycleConfig]:
-        """The study settings, specialised for one video / one sweep point.
-
-        ``expected_bpm`` is the measured heart rate, which is per-video and so
-        cannot live in a cohort-wide config.
-        """
-        extraction = replace(
-            self.extraction,
-            expected_bpm=expected_bpm,
-            verbose=verbose,
-            **({"ICA_or_PCA": method} if method is not None else {}),
+    def chain_for_video(
+        self, *, expected_bpm: Optional[float] = None, verbose: bool = True
+    ) -> tuple[dict, NCycleConfig]:
+        """The composed chain's stage configs plus the fold config, for one video."""
+        return (
+            self.chain.for_video(expected_bpm=expected_bpm, verbose=verbose),
+            replace(self.fold, verbose=verbose),
         )
-        fold = replace(
-            self.fold,
-            verbose=verbose,
-            **({"phase_method": phase_method} if phase_method is not None else {}),
-        )
-        return extraction, fold
-
-
 @dataclass(frozen=True)
 class DeltaYConfig:
     """Choroid segmentation + cardiac-amplitude (deltaY) fit on one_cycle.mkv."""
 
-    batch_size: int = 32
+    batch_size: int = SEGMENTATION_BATCH_SIZE
     n_cycles: int = N_CYCLES
     n_harmonics: int = 1
     residual_threshold_percentile: float = 75.0
@@ -140,9 +188,13 @@ class DeltaYConfig:
 
 @dataclass(frozen=True)
 class SegmentationConfig:
-    """Per-cycle segmentation pass (cohort_analysis/segment_n_cycles.py)."""
+    """Segmentation passes (raw videos and folded cycles).
 
-    batch_size: int = 16
+    ``batch_size`` is a memory/throughput knob, not a study decision — override
+    it with OCULARRIGIDITY_SEGMENTATION_BATCH rather than editing this.
+    """
+
+    batch_size: int = SEGMENTATION_BATCH_SIZE
 
 
 @dataclass(frozen=True)
@@ -151,8 +203,10 @@ class DeltaAConfig:
 
     n_cycles: int = N_CYCLES
     method: Literal["optical_flow", "demons"] = "optical_flow"
-    smooth_window: int = 11
+    smooth_window: int = 25
     lk_window: int = 35
+    csi_normal_smooth_sigma: float = 0.0
+    csi_normal_slope_window: int = 51
 
 
 @dataclass(frozen=True)
@@ -176,7 +230,7 @@ class FriedenwaldConfig:
     # Vitreous-chamber fraction of axial length (choroid-vitreous interface).
     vitreous_chamber_frac: float = 0.83
     # Pressure convention: 'diastolic' (DCT) or 'mean' (Goldmann).
-    pressure_mode: Literal["diastolic", "mean"] = "diastolic"
+    pressure_mode: Literal["diastolic", "mean"] = "mean"
 
 
 @dataclass(frozen=True)
@@ -192,7 +246,17 @@ class MisregistrationConfig:
 
 
 # Singletons imported by the pipeline scripts.
-REGISTRATION = RegistrationConfig()
+# The cohort runs the *learned* registrator: one encoder pass per frame feeds
+# both the segmentation decoder and the (dx, dy) heads, which is what the fused
+# stage exists to exploit. The dataclass default stays "classical" so a direct
+# caller of `register_videos` is unaffected.
+#
+# `use_encoded_video=False`: this run reads the raw cube.bin off the share, not
+# the compressed mp4 beside it. The mp4 is lossy — mean |difference| 11.7 grey
+# levels against the raw cube — so it is not an equivalent input to a
+# segmentation, and a cohort measured from a mix of the two would not be
+# comparable within itself.
+REGISTRATION = RegistrationConfig(method="learned", use_encoded_video=False)
 PULSATION = PulsationConfig()
 DELTA_Y = DeltaYConfig()
 SEGMENTATION = SegmentationConfig()

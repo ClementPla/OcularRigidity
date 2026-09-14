@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from tqdm.auto import tqdm
 
 
-def load_cube_mp4(path: str) -> np.ndarray:
+def load_cube_mp4(path: str, collapse_rgb: bool = True) -> np.ndarray:
     """
     Decode an MP4 video to a (n_frames, H, W) uint8 grayscale numpy array.
 
@@ -19,11 +19,10 @@ def load_cube_mp4(path: str) -> np.ndarray:
     """
     video = iio.imread(path)  # shape (n, H, W, 3) or (n, H, W)
 
-    if video.ndim == 4:
-        # RGB — collapse to grayscale. Taking channel 0 is fine if the source
-        # was grayscale replicated to 3 channels. Use luminance formula if
-        # you want to be safe against color drift from chroma subsampling.
+    if video.ndim == 4 and collapse_rgb:
         return video[..., 0]
+    elif video.ndim == 4 and not collapse_rgb:
+        return video
     elif video.ndim == 3:
         return video
     else:
@@ -167,3 +166,31 @@ def load_mask(path) -> np.ndarray:
     shape = tuple(data["shape"])
     flat = np.unpackbits(packed)[: np.prod(shape)]
     return flat.reshape(shape).astype(bool)
+
+
+def load_mask_frames(path, indices) -> np.ndarray:
+    """Decode only ``indices`` frames of a packed mask, as ``(len(indices), H, W)``.
+
+    zstd has to inflate the whole payload (a few ms -- these files are tens of
+    KB), but ``np.unpackbits`` and the bool conversion are what actually cost:
+    they expand every frame to a byte per pixel. Callers that need a handful of
+    reference frames out of a folded cycle stack pay ~30x for frames they throw
+    away, so unpack per frame instead. Equivalent to ``load_mask(path)[indices]``.
+    """
+    data = np.load(path)
+    shape = tuple(int(v) for v in data["shape"])
+    T, H, W = shape
+    n_px = H * W
+    packed = np.frombuffer(
+        zstd.ZstdDecompressor().decompress(data["compressed"].tobytes()),
+        dtype=np.uint8,
+    )
+    out = np.empty((len(indices), H, W), dtype=bool)
+    for k, i in enumerate(indices):
+        i = int(i) % T
+        lo, hi = i * n_px, (i + 1) * n_px  # bit range of this frame
+        b0, b1 = lo // 8, -(-hi // 8)  # byte range covering it
+        bits = np.unpackbits(packed[b0:b1])
+        # view, not astype: unpackbits yields 0/1 uint8, same width as bool.
+        out[k] = bits[lo - b0 * 8 : lo - b0 * 8 + n_px].reshape(H, W).view(bool)
+    return out

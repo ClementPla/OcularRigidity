@@ -18,5 +18,5 @@ def smooth_masks_temporal(mask, timestamps, sigma_time=3.0, sigma_col=0):
         csi, timestamps, sigma_time=sigma_time, sigma_col=sigma_col
     )
 
-    mask = rebuild_mask(rpe, csi)
+    mask = rebuild_mask(rpe, csi, H)
     return mask

@@ -6,7 +6,6 @@ either stage.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -16,7 +15,7 @@ class CardiacBand:
     bpm_range: tuple[float, float] = (30.0, 180.0)
     # When set, the search band is narrowed to
     # [(1-frac), (1+frac)] * expected_bpm, overriding ``bpm_range``.
-    expected_bpm: Optional[float] = None
+    expected_bpm: float | None = None
     expected_bpm_band_frac: float = 0.3
     # Width (bpm) of the Gaussian prior around ``expected_bpm`` used to score
     # candidate peaks. Distinct from ``harmonic_tolerance_bpm``.

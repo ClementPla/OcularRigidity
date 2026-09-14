@@ -16,7 +16,7 @@ from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 class MaskTraceConfig(UniformTraceConfig):
     """Extra knobs specific to the segmented-thickness source."""
 
-    col_slice: Optional[slice] = None
+    col_slice: slice | None = None
     # A frame whose mean thickness deviates by more than this fraction of the
     # video median is treated as a bad frame.
     outlier_thickness_frac: float = 0.25
@@ -29,7 +29,7 @@ class MaskThicknessTraceSource(AbstractUniformTraceSource):
         self,
         registered_video,
         aligner: VideoTimelineAligner,
-        config: Optional[MaskTraceConfig] = None,
+        config: MaskTraceConfig | None = None,
     ):
         super().__init__(aligner, config or MaskTraceConfig())
         self.registered_video = registered_video
@@ -72,4 +72,5 @@ class MaskThicknessTraceSource(AbstractUniformTraceSource):
                 f"outlier thickness (median={med:.1f})"
             )
         thickness[bad_frames] = np.nan
+
         return thickness

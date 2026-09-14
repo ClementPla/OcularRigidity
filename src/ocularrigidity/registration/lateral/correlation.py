@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+from ocularrigidity.registration.layout import to_gray
+
 DEBUG = False
 
 
@@ -90,8 +92,10 @@ def frame_correlation_dx(
     return_confidence: bool = False,
     subpixel: bool = True,
 ) -> torch.Tensor:
-    if isinstance(frames, np.ndarray):
-        frames = torch.from_numpy(frames)
+    # Colour in, luminance out: the phase correlation, the FFT windows and the
+    # peak search below are all 2-D, and a lateral shift is a property of the
+    # scene rather than of the channel it is measured in.
+    frames = to_gray(frames)
     T, H, W = frames.shape
 
     h, w = int(H * scale_factor), int(W * scale_factor)
@@ -99,8 +103,12 @@ def frame_correlation_dx(
     crop_w = int(W * crop_factor)
     crop_x_start = (W - crop_w) // 2
 
-    frames = frames[:, :, crop_x_start : crop_x_start + crop_w]
-    ref = ref[:, crop_x_start : crop_x_start + crop_w] if ref is not None else None
+    # Columns are the last axis, so this crops W for a (T, H, W) stack and for a
+    # single (H, W) reference alike.
+    frames = frames[..., crop_x_start : crop_x_start + crop_w]
+    if ref is not None:
+        ref = to_gray(torch.as_tensor(ref)[None])[0]
+        ref = ref[..., crop_x_start : crop_x_start + crop_w]
 
     # Hann window kills FFT wrap-around edge artifacts.
     win = (

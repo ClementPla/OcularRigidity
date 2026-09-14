@@ -12,14 +12,16 @@ def train():
     datamodule = ChoroidSegmentationDataModule(
         root=OIMHS_ROOT,
         database=Database.OIMHS,
-        batch_size=16,
+        batch_size=8,
         num_workers=4,
     )
-    model = ChoroidSegmentationModule()
+    model = ChoroidSegmentationModule(
+        arch="segformer", encoder_name="mit_b1", w_smooth=0.1, w_gap=0.05
+    )
     checkpoint_callback = ModelCheckpoint(
         monitor="dice",
         dirpath="checkpoints",
-        filename="choroid-segmentation-{epoch:02d}-{dice:.2f}",
+        filename="segformer/choroid-segmentation-{epoch:02d}-{dice:.2f}",
         save_top_k=3,
         mode="max",
     )

@@ -39,38 +39,19 @@ _POLYORDER = 3
 class QuiverStyle(NamedTuple):
     """How the arrows are drawn. A tuple, so it can key a Streamlit cache.
 
-    Attributes
-    ----------
-    stride :
-        Draw every ``stride``-th anchor.
-    arrow_scale :
-        Displacements are magnified by this factor (pulsation is sub-pixel).
-    min_magnitude :
-        Anchors moving less than this (px, before scaling) are not drawn.
-    arrow_cmap, arrow_thickness, tip_length :
-        Arrow colour ramp (by magnitude) and shape.
-    smooth_window, cyclic :
-        Savitzky–Golay temporal smoothing of the displacement; ``cyclic`` wraps
-        the filter around the loop, which is right for a folded cardiac cycle.
-    only_y :
-        Keep the axial component only — the pulsation is mostly axial, and the
-        lateral component is dominated by residual registration jitter.
-    only_orthogonal_to_border :
-        Keep the component across the boundary (projected on the local mask
-        normal). Requires the masks.
-    border_normal_sigma :
-        Blur (px) applied to the mask before differentiating it for that normal.
-    show_csi_summary :
-        Draw one arrow (top-right) whose length is the mean across-interface
-        displacement of the CSI anchors — the thickness-change signal. Requires
-        the masks.
-    show_only_csi_anchors :
-        Drop the anchors sitting on the RPE, keeping the choroid-sclera
-        interface. Requires the masks.
-    annotate_scale :
-        Print the arrow magnification on each frame.
-    side_by_side :
-        Concatenate the untouched frame next to the overlay.
+    ``arrow_scale`` magnifies the displacement (pulsation is sub-pixel);
+    ``min_magnitude`` is in px *before* that scaling. ``cyclic`` wraps the
+    Savitzky-Golay temporal smoother around the loop, which is right for a
+    folded cardiac cycle.
+
+    ``only_y`` keeps the axial component only — the pulsation is mostly axial
+    and the lateral component is dominated by residual registration jitter.
+    ``only_orthogonal_to_border`` instead projects on the local mask normal,
+    blurred by ``border_normal_sigma`` (px) before differentiating.
+
+    ``show_csi_summary``, ``show_only_csi_anchors`` and
+    ``only_orthogonal_to_border`` all require the masks. The CSI summary arrow
+    is the mean across-interface displacement — the thickness-change signal.
     """
 
     stride: int = 8

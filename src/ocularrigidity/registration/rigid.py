@@ -7,7 +7,11 @@ from ocularrigidity.registration.axial.median_registration import (
     register_ascans_to_median,
 )
 
-from ocularrigidity.registration.postprocess import filter_bad_ascans_per_bms
+from ocularrigidity.registration.layout import restore_layout, to_bchw, to_gray
+from ocularrigidity.registration.postprocess import (
+    binarize_warped_mask,
+    filter_bad_ascans_per_bms,
+)
 from ocularrigidity.segmentation.postprocess.interfaces import (
     clean_boundaries,
     extract_boundaries_fast,
@@ -15,13 +19,13 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 from tqdm.auto import tqdm
 
 
-def _all_bm_boundaries(raw_masks, *, batch_size, device):
+def _all_bm_boundaries(raw_masks, *, device):
+    if isinstance(raw_masks, torch.Tensor):
+        raw_masks = raw_masks.cpu().numpy()
     """Cleaned BM boundary ``(T, W)`` of every frame, on ``device``."""
     bms = []
-    for start in range(0, len(raw_masks), batch_size):
-        chunk = raw_masks[start : start + batch_size].to(torch.float32).cpu().numpy()
-        bm, _ = clean_boundaries(*extract_boundaries_fast(chunk))
-        bms.append(torch.from_numpy(bm).to(device))
+    bm, _ = clean_boundaries(*extract_boundaries_fast(raw_masks))
+    bms.append(torch.from_numpy(bm).to(device))
     return torch.cat(bms, dim=0)
 
 
@@ -36,6 +40,10 @@ def register_videos(
 ):
     """Register a video by lateral (x) shift, then per-column vertical (y) BM alignment.
 
+    ``raw_frames`` is either gray ``(T, H, W)`` or colour ``(T, H, W, 3)``, and
+    comes back in the layout it went in. Colour channels are warped together (the
+    shifts are estimated once, on the luminance), so they stay in register.
+
     Returns ``(registered_masks, registered_frames)``, plus a ``params`` dict
     ``{"dx": (T,), "dy": (T, W), "bad_columns": (W,)}`` when ``return_params``.
 
@@ -49,9 +57,27 @@ def register_videos(
     Columns whose BM is unreliable (``filter_bad_ascans_per_bms``) are zeroed in
     both frames and masks, across all frames.
     """
+    if verbose:
+        print(
+            f"Registering {len(raw_frames)} frames | "
+            f"correct_transversal={config.correct_transversal if config else 'default'} | "
+            f"correct_axial={config.correct_axial if config else 'default'} | "
+            f"flatten_rpe={config.flatten_rpe if config else 'default'} | "
+            f"axial_refinement={config.axial_refinement if config else 'default'}"
+        )
     with torch.inference_mode(), torch.no_grad():
         if config is None:
             config = RegistrationConfig()
+        if config.method != "classical":
+            # This function *is* the classical estimator. Running it under a
+            # config that says otherwise would produce a classical transform
+            # stamped with the learned method in its cache key — a mislabelled
+            # cache that nothing downstream could detect.
+            raise ValueError(
+                f'register_videos is the classical estimator, but config.method '
+                f'is "{config.method}". Use '
+                "ocularrigidity.registration.fused.segment_and_register instead."
+            )
         # Unpack once here so the body (and the call sites) stay config-driven.
         correct_transversal = config.correct_transversal
         correct_axial = config.correct_axial
@@ -71,14 +97,16 @@ def register_videos(
         batch_size = config.batch_size
 
         raw_masks = torch.as_tensor(raw_masks)
-        raw_frames = torch.as_tensor(raw_frames)
+        # Work channels-first throughout (a gray video is just C = 1) and restore
+        # the caller's layout on the way out.
+        raw_frames, layout = to_bchw(torch.as_tensor(raw_frames))
+
         T, H, W = raw_masks.shape
         mask_dtype, frame_dtype = raw_masks.dtype, raw_frames.dtype
 
         # Reference frame: the one whose mask area is closest to the temporal median.
         mask_counts = raw_masks.sum(dim=(1, 2))
         ref_idx = (mask_counts - mask_counts.median()).abs().argmin()
-
         if fovea_correction_enabled:
             raw_masks, raw_frames = fovea_correction(
                 raw_frames,
@@ -94,16 +122,17 @@ def register_videos(
                 "dy": torch.zeros(T, W, dtype=torch.float32),
                 "bad_columns": torch.zeros(W, dtype=torch.bool),
             }
+            untouched = restore_layout(raw_frames, layout)
             if return_params:
-                return raw_masks, raw_frames, params
-            return raw_masks, raw_frames
-        all_bms = _all_bm_boundaries(raw_masks, batch_size=batch_size, device=device)
+                return raw_masks, untouched, params
+            return raw_masks, untouched
+        all_bms = _all_bm_boundaries(raw_masks, device=device)
         ref_bm = all_bms[ref_idx]
 
         # --- Lateral (x) registration: estimated once, decoupled from the y warp ---
         global_dx = (
             estimate_lateral_dx(
-                raw_frames,
+                to_gray(raw_frames),  # the shift is measured on the luminance
                 ref_idx,
                 lateral_method,
                 subpixel=subpixel,
@@ -126,8 +155,13 @@ def register_videos(
         # BM level every column is warped onto: a scalar (flatten) or the ref curve.
         target_bm = torch.nanmean(ref_bm) if flatten_rpe else ref_bm.unsqueeze(0)
 
-        registered_masks_chunks = []
-        registered_frames_chunks = []
+        # One preallocated buffer per output, written a batch at a time.
+        # Collecting chunks and torch.cat-ing them at the end holds the whole
+        # volume twice — ~9 GB extra for a 3000-frame cube — and pays a full
+        # copy to concatenate. The displacements are (T, W) and stay a list.
+        n_channels = raw_frames.shape[1]
+        registered_masks = torch.empty((T, H, W), dtype=mask_dtype)
+        registered_frames = torch.empty((T, n_channels, H, W), dtype=frame_dtype)
         displacement_chunks = []
 
         for start in tqdm(
@@ -139,9 +173,11 @@ def register_videos(
             end = min(start + batch_size, T)
             t = end - start
 
-            masks_chunk = raw_masks[start:end].to(device, torch.float32)
+            masks_chunk = raw_masks[start:end].to(device, torch.float32).unsqueeze(1)
             frames_chunk = raw_frames[start:end].to(device, torch.float32)
-            data = torch.stack([masks_chunk, frames_chunk], dim=1)  # t x 2 x H x W
+            # Mask rides along as channel 0, so it takes the exact same warp:
+            # t x (1 + C) x H x W — 2 channels for gray, 4 for colour.
+            data = torch.cat([masks_chunk, frames_chunk], dim=1)
 
             grid_y = ys.view(1, H, 1).expand(t, H, W)
             grid_x = xs.view(1, 1, W).expand(t, H, W)
@@ -187,11 +223,10 @@ def register_videos(
                 padding_mode="zeros",
                 align_corners=True,
             )
-            registered_masks_chunks.append(reg[:, 0].to(mask_dtype).cpu())
-            registered_frames_chunks.append(reg[:, 1].to(frame_dtype).cpu())
-
-        registered_masks = torch.cat(registered_masks_chunks, dim=0)
-        registered_frames = torch.cat(registered_frames_chunks, dim=0)
+            registered_masks[start:end] = binarize_warped_mask(
+                reg[:, 0], mask_dtype
+            ).cpu()
+            registered_frames[start:end] = reg[:, 1:].to(frame_dtype).cpu()
 
         params = None
         if return_params:
@@ -218,13 +253,16 @@ def register_videos(
                 params["dy_median"] = dy_median
 
         # Blank A-scan columns whose BM is unreliable, in both frames and masks.
+        # Columns are the last axis of both (frames are still channels-first), so
+        # the same indexing covers gray and colour.
         bad_cols = filter_bad_ascans_per_bms(registered_masks)
         if bool(bad_cols.any()):
-            registered_frames[:, :, bad_cols] = 0
-            registered_masks[:, :, bad_cols] = 0
+            registered_frames[..., bad_cols] = 0
+            registered_masks[..., bad_cols] = 0
         if params is not None:
             params["bad_columns"] = bad_cols
 
+        registered_frames = restore_layout(registered_frames, layout)
         if return_params:
             return registered_masks, registered_frames, params
         return registered_masks, registered_frames

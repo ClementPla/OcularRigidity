@@ -15,11 +15,20 @@ selection is not read as a discovery.
 
 import streamlit as st
 
+import numpy as np
+from scipy.stats import mannwhitneyu
+
+from ocularrigidity.data.measurements.cohort import (
+    DEFAULT_MEASURES,
+    PULSATION_METRICS,
+    STEEPEST_CHANGE_COLUMNS,
+    measure_columns,
+)
 from ocularrigidity.stats.inference import cluster_robust_ols
-from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import longitudinal as L
 from ocularrigidity.viewer.streamlit_explorer._common import (
     cached_clinical_long,
+    cached_cohort,
     cached_design,
     cached_screen,
     require_selection,
@@ -30,7 +39,7 @@ from ocularrigidity.viewer.streamlit_explorer._common import (
 st.set_page_config(page_title="Longitudinal", layout="wide")
 
 sel = require_selection()
-st.title(f"Longitudinal — {sel.method_label} · {sel.cohort_label}")
+st.title(f"Longitudinal — {sel.cohort_label}")
 
 if sel.study is None:
     st.info(
@@ -38,8 +47,9 @@ if sel.study is None:
         "sidebar to restrict the cohort to the longitudinal study."
     )
 
+cohort = cached_cohort(sel)
 long_df = cached_clinical_long(sel)
-measures = C.available_measures(long_df)
+measures = [m for m in measure_columns(cohort) if m in set(long_df["MeasureName_y"])]
 if not measures:
     st.error("No clinical measures joined onto these cases.")
     st.stop()
@@ -47,7 +57,7 @@ if not measures:
 c1, c2, c3 = st.columns([1, 2, 1])
 probe = c1.selectbox(
     "Probed metric",
-    [c for c in C.PROBE_COLUMNS if c in long_df.columns],
+    [c for c in PULSATION_METRICS if c in long_df.columns],
     index=0,
     help="The rigidity metric confronted with the clinical measures.",
 )
@@ -69,7 +79,7 @@ else:
     selected = c2.multiselect(
         "Clinical measures",
         measures,
-        default=[m for m in C.CLINICAL_MEASURES if m in measures] or measures[:3],
+        default=[m for m in DEFAULT_MEASURES if m in measures] or measures[:3],
     )
 logy = c3.checkbox("log Y (boxes)", value=False)
 
@@ -309,3 +319,84 @@ with tabs[5]:
             st.warning(f"Not enough rows to split {m} ({len(frame)}).")
             continue
         show_box(frame, value, group, logy=logy)
+
+    # --- eyes split by how fast their worst ONH sector is thinning ------------
+    st.divider()
+    st.subheader("Steepest ONH change")
+    st.caption(
+        "One point per **eye**, not per visit: the steepest-change columns are a "
+        "per-eye slope (µm/year over that eye's whole ONH series), so repeating "
+        "them once per visit would weight an eye by how often it was scanned. "
+        "The probe is the eye's median across its visits."
+    )
+    available = [c for c in STEEPEST_CHANGE_COLUMNS if c in cohort.columns]
+    if not available:
+        st.info("No steepest-change columns in this cohort table.")
+    else:
+        g1, g2, g3, g4 = st.columns([2, 2, 1, 1])
+        change_col = g1.selectbox("Progression measure", available)
+        split_how = g2.radio(
+            "Split", ["Median", "Extreme thirds"], horizontal=True,
+            help="Extreme thirds drops the middle third: a cleaner contrast on "
+            "fewer eyes.",
+        )
+        min_exams = g3.number_input("Min exams", 2, 20, 4, help="Slopes fit on two "
+            "exams are arithmetic, not progression.")
+        min_span = g4.number_input("Min span (yr)", 0.0, 5.0, 1.0, 0.5)
+
+        eyes = (
+            cohort[
+                (cohort["onh_slope_n_exams"] >= min_exams)
+                & (cohort["onh_slope_span_years"] >= min_span)
+            ]
+            .groupby(["PatientId", "Eye"], as_index=False)
+            .agg({probe: "median", change_col: "first"})
+            .dropna(subset=[probe, change_col])
+        )
+        if len(eyes) < 6:
+            st.warning(f"Only {len(eyes)} eyes pass the slope-quality filter.")
+        else:
+            # More negative = losing faster, so the *low* arm is the progressing one.
+            if split_how == "Median":
+                cut = eyes[change_col].median()
+                eyes["Group"] = np.where(
+                    eyes[change_col] <= cut, "Fast thinning", "Slow / stable"
+                )
+            else:
+                lo, hi = eyes[change_col].quantile([1 / 3, 2 / 3])
+                eyes["Group"] = np.where(
+                    eyes[change_col] <= lo,
+                    "Fastest third",
+                    np.where(eyes[change_col] >= hi, "Slowest third", None),
+                )
+                eyes = eyes[eyes["Group"].notna()]
+
+            arms = [g[probe].to_numpy() for _, g in eyes.groupby("Group")]
+            if len(arms) == 2 and min(len(a) for a in arms) >= 3:
+                u, p = mannwhitneyu(arms[0], arms[1], alternative="two-sided")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Eyes", len(eyes))
+                k2.metric("AUC", f"{u / (len(arms[0]) * len(arms[1])):.3f}",
+                          help="0.5 = the two arms are indistinguishable.")
+                k3.metric("p (Mann–Whitney)", f"{p:.3f}")
+                k4.metric(
+                    "Δ median",
+                    f"{np.median(arms[0]) - np.median(arms[1]):.4g}",
+                    help=f"{probe}: first arm minus second, in the units of the probe.",
+                )
+                st.caption(
+                    "Uncorrected: this is one more test in the same family as the "
+                    "screening above. And a *negative* steepest change is expected "
+                    "for almost every eye — it is the minimum of six noisy slopes — "
+                    "so the split ranks eyes against each other, it does not "
+                    "separate progressors from non-progressors."
+                )
+            show_box(eyes, probe, "Group", logy=logy)
+
+            with st.expander(f"Distribution of {change_col} itself"):
+                st.caption("Where the cut falls, and how heavy the tail is.")
+                st.dataframe(
+                    eyes.groupby("Group")[change_col]
+                    .describe()[["count", "mean", "50%", "min", "max"]],
+                    width="stretch",
+                )

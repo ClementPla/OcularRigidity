@@ -2,11 +2,17 @@ from pathlib import Path
 
 import cv2
 import imageio.v2 as imageio
+import matplotlib.pyplot as plt
 import numpy as np
 
 from scipy.signal import savgol_filter
-from matplotlib import cm
-from ocularrigidity.registration.sparse_demons import track_points_with_demons
+from ocularrigidity.viewer.quiver import (
+    QuiverStyle,
+    boundary_anchors,
+    draw_quiver,
+    track_anchors,
+)
+from tqdm.auto import tqdm
 
 
 def render_membrane_trace(
@@ -121,142 +127,164 @@ def render_mask_quiver(
     smooth_window: int = 4,
     cyclic: bool = True,
     only_y: bool = False,
+    only_orthogonal_to_border: bool = False,
+    border_normal_sigma: float = 2.0,
+    show_csi_summary: bool = True,
+    show_only_csi_anchors: bool = False,
 ) -> None:
+    """Track the mask boundary with optical flow and animate it as a quiver.
+
+    Anchors are sampled on the reference frame's mask boundary (every
+    ``stride``-th border pixel, so the flow only tracks what gets drawn) and
+    followed across the sequence; the drawing itself — and every option below —
+    is :func:`ocularrigidity.viewer.quiver.draw_quiver`, shared with the
+    stored-displacement renderer used by the Streamlit viewer.
+    """
     if frames.ndim != 3:
         raise ValueError(f"`frames` must have shape (T, H, W); got {frames.shape}.")
     if frames.shape != masks.shape:
         raise ValueError(
             f"`frames` and `masks` must share shape; got {frames.shape} vs {masks.shape}."
         )
+    if not 0 <= reference < frames.shape[0]:
+        raise ValueError(
+            f"`reference` must be in [0, {frames.shape[0]}); got {reference}."
+        )
+
+    ref_xy = boundary_anchors(
+        masks[reference], stride=stride, border_kernel_size=border_kernel_size
+    )
+    disp = track_anchors(
+        frames,
+        ref_xy,
+        reference=reference,
+        lk_window=lk_window,
+        lk_levels=lk_levels,
+    )
+    style = QuiverStyle(
+        stride=1,  # already applied when sampling the anchors
+        arrow_scale=arrow_scale,
+        min_magnitude=min_magnitude,
+        arrow_cmap=arrow_cmap,
+        arrow_thickness=arrow_thickness,
+        tip_length=tip_length,
+        smooth_window=smooth_window,
+        cyclic=cyclic,
+        only_y=only_y,
+        only_orthogonal_to_border=only_orthogonal_to_border,
+        border_normal_sigma=border_normal_sigma,
+        show_csi_summary=show_csi_summary,
+        show_only_csi_anchors=show_only_csi_anchors,
+        annotate_scale=annotate_scale,
+        side_by_side=side_by_side,
+    )
+    overlay = draw_quiver(
+        frames, ref_xy, disp, masks=masks, reference=reference, style=style
+    )
+    imageio.mimwrite(str(output_path), list(overlay), fps=fps, loop=0)
+
+
+def render_tissue_quiver_map(
+    frames: np.ndarray,
+    output_path: str | Path,
+    masks: np.ndarray | None = None,
+    *,
+    fps: int = 10,
+    win_size: int = 31,
+    window_len: int = 11,
+    poly_order: int = 3,
+    grid_step: int = 16,
+    arrow_scale: float = 3.0,
+    min_magnitude: float = 0.5,
+    cmap: str = "turbo",  # 'turbo', 'jet', or 'magma' are great for vector fields
+) -> None:
     T, H, W = frames.shape
-    if not 0 <= reference < T:
-        raise ValueError(f"`reference` must be in [0, {T}); got {reference}.")
+    raw_flows = np.zeros((T, H, W, 2), dtype=np.float32)
+    flow = None
 
-    kernel = np.ones((border_kernel_size, border_kernel_size), dtype=np.uint8)
-    ref_border = (
-        cv2.morphologyEx(masks[reference].astype(np.uint8), cv2.MORPH_GRADIENT, kernel)
-        > 0
+    # 1. Extract raw dense optical flow
+    for i in tqdm(range(1, T), desc="Analyzing tissue movement vectors"):
+        prev = frames[i - 1]
+        current = frames[i]
+
+        flow = cv2.calcOpticalFlowFarneback(
+            prev,
+            current,
+            flow,
+            pyr_scale=0.5,
+            levels=2,
+            winsize=win_size,
+            iterations=5,
+            poly_n=7,
+            poly_sigma=5.0,
+            flags=0 if flow is None else cv2.OPTFLOW_USE_INITIAL_FLOW,
+        )
+
+        if masks is not None:
+            raw_flows[i, ..., 0] = flow[..., 0]
+
+            raw_flows[i, ..., 1] = flow[..., 1]
+
+        else:
+            raw_flows[i] = flow
+
+    raw_flows[0] = raw_flows[1]
+
+    # 2. Temporal Filtering on X and Y independently to kill noise
+    print("Applying Savitzky-Golay filter to vector field...")
+    smoothed_flows = savgol_filter(
+        raw_flows,
+        window_length=window_len,
+        polyorder=poly_order,
+        axis=0,
+        mode="wrap",
     )
-    ys, xs = np.nonzero(ref_border)
-    if ys.size == 0:
-        raise ValueError(f"Reference frame {reference} has an empty boundary.")
-    ys, xs = ys[::stride], xs[::stride]
-    p0 = np.stack([xs, ys], axis=1).astype(np.float32).reshape(-1, 1, 2)
-    N = p0.shape[0]
 
-    lk_params = dict(
-        winSize=(lk_window, lk_window),
-        maxLevel=lk_levels,
-        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
-        minEigThreshold=1e-4,
-    )
+    all_mags = np.sqrt(smoothed_flows[..., 0] ** 2 + smoothed_flows[..., 1] ** 2)
+    global_max = np.max(all_mags)
 
-    # Track every frame against the reference. NaN marks lost tracks.
-    ref_frame = frames[reference]
-    positions = np.full((T, N, 2), np.nan, dtype=np.float32)
-    positions[reference] = p0[:, 0, :]
-    for t in range(T):
-        if t == reference:
-            continue
-        p1, status, _ = cv2.calcOpticalFlowPyrLK(
-            ref_frame, frames[t], p0, None, **lk_params
-        )
-        # p1, status = track_points_with_demons(ref_frame, frames[t], p0, std_dev=3.0)
-        ok = status[:, 0].astype(bool)
-        positions[t, ok] = p1[ok, 0, :]
+    colormap = plt.get_cmap(cmap)
 
-    if smooth_window > 0:
-        # Per-anchor linear interpolation through NaN gaps along time.
-        t_axis = np.arange(T)
-        for n in range(N):
-            valid = np.isfinite(positions[:, n, 0])
-            nv = int(valid.sum())
-            if nv == T:
-                continue
-            if nv < 2:
-                positions[:, n, :] = p0[n]
-                continue
-            idx = np.where(valid)[0]
-            for c in (0, 1):
-                positions[:, n, c] = np.interp(
-                    t_axis,
-                    idx,
-                    positions[idx, n, c],
-                    period=T if cyclic else None,
-                )
-        positions = savgol_filter(
-            positions,
-            window_length=smooth_window,
-            polyorder=3,
-            axis=0,
-            mode="wrap" if cyclic else "interp",
-        )
-    p0_xy = p0[:, 0, :]  # (N, 2) in (x, y)
+    # 3. Draw the Quiver Map
+    print("Rendering quiver overlay...")
+    overlay = np.zeros((T, H, W, 3), dtype=np.uint8)
 
-    overlay: list[np.ndarray] = []
-    # Find min and max magnitudes for color scaling.
-    disp = positions - p0_xy[None, :, :]  # (T, N, 2)
-    mags = np.hypot(disp[..., 0], disp[..., 1])  # (T, N)
-    valid = np.isfinite(mags) & (mags >= min_magnitude)
-    if valid.any():
-        vmin, vmax = mags[valid].min(), mags[valid].max()
-    else:
-        vmin, vmax = 0.0, 1.0
-    cmap = cm.get_cmap(arrow_cmap)
-    for i in range(T):
-        out = cv2.cvtColor(frames[i], cv2.COLOR_GRAY2RGB).copy()
+    for i in tqdm(range(T), desc="Drawing frames"):
+        bg = cv2.cvtColor(frames[i], cv2.COLOR_GRAY2BGR)
+        flow_field = smoothed_flows[i]
 
-        disp = positions[i] - p0_xy  # (N, 2)
-        mags = np.hypot(disp[:, 0], disp[:, 1])
-        valid = np.isfinite(mags) & (mags >= min_magnitude)
+        for y in range(0, H, grid_step):
+            for x in range(0, W, grid_step):
+                fx = flow_field[y, x, 0]
+                fy = flow_field[y, x, 1]
 
-        for (x0, y0), (dx, dy), mag in zip(p0_xy[valid], disp[valid], mags[valid]):
-            if only_y:
-                # Recompute magnitude and direction using only the y component, for better visualization of small vertical displacements.
-                mag = abs(dy)
-                dx = 0.0
-                
-            ex = x0 + dx * arrow_scale
-            ey = y0 + dy * arrow_scale
-            
-            norm = 0.0 if vmax == vmin else (mag - vmin) / (vmax - vmin)
-            arrow_color_rgb = tuple(int(c * 255) for c in cmap(norm)[:3])
-            cv2.arrowedLine(
-                out,
-                (int(round(x0)), int(round(y0))),
-                (int(round(ex)), int(round(ey))),
-                arrow_color_rgb,
-                arrow_thickness,
-                line_type=cv2.LINE_AA,
-                tipLength=tip_length,
-            )
+                mag = np.sqrt(fx**2 + fy**2)
 
-        cv2.putText(
-            out,
-            f"{i:04d} / {T}",
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (255, 255, 255),
-            2,
-        )
-        if annotate_scale:
-            cv2.putText(
-                out,
-                f"x{arrow_scale:g}",
-                (10, 60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 255),
-                2,
-            )
-        overlay.append(out)
+                if mag > min_magnitude:
+                    # Normalize magnitude to [0.0, 1.0] relative to the global max
+                    norm_mag = np.clip(mag / global_max, 0.0, 1.0)
 
-    if side_by_side:
-        overlay = [
-            np.concatenate(
-                [cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB), overlay[i]], axis=1
-            )
-            for i, frame in enumerate(frames)
-        ]
+                    # Get RGBA from Matplotlib, convert to BGR for OpenCV
+                    rgba = colormap(norm_mag)
+                    color_bgr = (
+                        int(rgba[2] * 255),  # Blue
+                        int(rgba[1] * 255),  # Green
+                        int(rgba[0] * 255),  # Red
+                    )
+
+                    start_pt = (x, y)
+                    end_pt = (int(x + fx * arrow_scale), int(y + fy * arrow_scale))
+
+                    cv2.arrowedLine(
+                        bg,
+                        start_pt,
+                        end_pt,
+                        color_bgr,
+                        thickness=1,
+                        tipLength=0.3,
+                        line_type=cv2.LINE_AA,
+                    )
+
+        overlay[i] = bg
+
     imageio.mimwrite(str(output_path), overlay, fps=fps, loop=0)

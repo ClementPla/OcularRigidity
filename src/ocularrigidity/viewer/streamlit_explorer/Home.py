@@ -1,24 +1,11 @@
-"""Streamlit cohort browser — home / overview.
-
-Launch with::
-
-    streamlit run src/ocularrigidity/viewer/streamlit_explorer/Home.py
-
-Pick an **experiments root** and a **method** in the sidebar (the choice carries
-across pages). Then use the pages:
-
-* **Cases** — per-case table of ΔA, ΔCT and Friedenwald K.
-* **Regression** — pick any two metrics and regress them interactively.
-
-Everything is read from precomputed cohort outputs; nothing is recomputed.
-"""
+"""Landing page: what the cohort table holds, and how well each source joined."""
 
 import numpy as np
 import streamlit as st
 
-from ocularrigidity.viewer import cohort_data as C
+from ocularrigidity.data.measurements.cohort import column_groups, coverage
 from ocularrigidity.viewer.streamlit_explorer._common import (
-    cached_case_table,
+    cached_cohort,
     require_selection,
 )
 
@@ -26,35 +13,66 @@ st.set_page_config(page_title="Ocular Rigidity — cohort browser", layout="wide
 
 st.title("Ocular Rigidity — cohort browser")
 st.markdown(
-    "Browse the precomputed cardiac-pipeline cohort outputs. Choose a **method** "
-    "in the sidebar, then open **Cases** or **Regression** from the page menu."
+    "One row per rigidity visit, every source merged onto it — the cardiac "
+    "pipeline's pulsatile metrics, the clinical scalars, the Heyex ONH sectors "
+    "and the diagnosis register. Choose a **method** and a **cohort** in the "
+    "sidebar, then open **Cases**, **Regression** or **Longitudinal**."
 )
 
-root, suffix, iop = require_selection()
-df = cached_case_table(root, suffix, iop)
+sel = require_selection()
+df = cached_cohort(sel)
+groups = column_groups(df)
 
-st.subheader(f"Overview — {C.pretty_method(suffix)}")
+st.subheader(f"Overview — {sel.cohort_label}")
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Cases", len(df))
-c2.metric("With clinical (K)", int(df["K_thickness"].notna().sum()))
-c3.metric("Median ΔA (px²)", f"{np.nanmedian(df['deltaA']):.0f}")
-c4.metric("Median K (1/µL)", f"{np.nanmedian(df['K_thickness']):.4f}")
+eyes = df[["PatientId", "Eye"]].astype(str).agg("/".join, axis=1)
+per_eye = eyes.value_counts()
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Visits", len(df))
+c2.metric("Eyes", int(per_eye.size), help=f"{df['PatientId'].nunique()} patients")
+c3.metric("Eyes with ≥ 2 visits", int((per_eye >= 2).sum()))
+c4.metric("With K", int(df["K"].notna().sum()))
+c5.metric("With ONH", int(df[groups["onh"][0]].notna().sum()) if groups["onh"] else 0)
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Median ΔCT (mm)", f"{np.nanmedian(df['deltaCT']):.4f}")
+m2.metric("Median minCT (mm)", f"{np.nanmedian(df['minCT']):.3f}")
+m3.metric("Median K (1/µL)", f"{np.nanmedian(df['K']):.4f}")
 
 st.markdown(
-    "- **ΔA** — pulsatile choroidal area change (px², median over cycles)\n"
-    "- **ΔCT** — measured choroidal-thickness change (µm); "
-    "**ΔCT_estimated** is derived from ΔA\n"
-    "- **K_area / K_thickness** — Friedenwald rigidity (1/µL) from ΔA and from ΔCT\n"
-    "- Clinical **IOP / OPA / AxialLength** are joined from the measurements DB"
+    "- **ΔCT** — pulsatile choroidal-thickness change (mm, median over the cycles), "
+    "tracked at the choroid-sclera interface; **ΔCT_Mask** is the mask-based "
+    "estimator of the same quantity\n"
+    "- **minCT** — absolute choroidal thickness (mm); **RelativeGrowth** = ΔCT / minCT\n"
+    "- **K** — Friedenwald rigidity (1/µL) from the measured ΔCT\n"
+    "- **thickening / thinning (µm/s), rate_asymmetry** — how fast the choroid fills "
+    "and drains within one cycle, and the ratio of the two limbs\n"
+    "- **ONH** — BMO-MRW and sector RNFL, as-of matched to the visit "
+    "(`onh_gap_days` is the realised gap; `onh_source` says which export it came from)"
 )
 
+with st.expander("Coverage — how many visits each variable actually reaches", expanded=True):
+    st.caption(
+        "The join audit. A variable that covers few visits cannot support an "
+        "association however good it looks: read this before the p-values."
+    )
+    cov = coverage(df)
+    st.dataframe(
+        cov,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "coverage": st.column_config.ProgressColumn(
+                "coverage", min_value=0.0, max_value=1.0, format="%.2f"
+            )
+        },
+        height=420,
+    )
+
 with st.expander("Distributions", expanded=True):
+    numeric = groups["pulsation"] + groups["covariates"]
     cols = st.multiselect(
-        "Columns",
-        [c for c in C.METRIC_COLUMNS if c in df.columns],
-        default=["deltaA", "deltaCT", "K_thickness"],
+        "Columns", numeric, default=[c for c in ["deltaCT", "minCT", "K"] if c in numeric]
     )
     if cols:
-        st.bar_chart(df[cols].describe().T[["mean", "50%", "std"]])
         st.dataframe(df[cols].describe().T, width="stretch")

@@ -3,10 +3,9 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 
-from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import render as R
 from ocularrigidity.viewer.streamlit_explorer._common import (
-    cached_case_table,
+    cached_cohort,
     require_selection,
 )
 from ocularrigidity.registration.rigid import register_videos
@@ -15,10 +14,11 @@ from ocularrigidity.registration.config import RegistrationConfig
 st.set_page_config(page_title="Registration", layout="wide")
 
 
-root, suffix, iop = require_selection()
-st.title(f"Registration — {C.pretty_method(suffix)}")
+sel = require_selection()
+root = sel.root
+st.title("Registration")
 
-df = cached_case_table(root, suffix, iop)
+df = cached_cohort(sel)
 show_cols = [
     c
     for c in ["case_id", "PatientId", "Date", "Eye", "deltaA", "deltaCT", "K_thickness"]
@@ -105,7 +105,7 @@ with sb:
     )
 
 
-def _mkv_raw(root, suffix, case):
+def _mkv_raw(root, case):
     return Path(root) / ".." / "compressed" / case / "cube.mp4"
 
 
@@ -151,7 +151,7 @@ def registration(
 
 
 def _register_and_render():
-    mkv = _mkv_raw(root, suffix, case)
+    mkv = _mkv_raw(root, case)
     max_frame = 512
     indices = np.arange(10, max_frame, 4)
     with st.spinner("Loading video…"):

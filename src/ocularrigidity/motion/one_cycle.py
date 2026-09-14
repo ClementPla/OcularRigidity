@@ -51,6 +51,81 @@ def fold_video_numba_median(frames, phase, good_mask, n_bins, verbose=False):
     return cycle, counts
 
 
+@njit(parallel=True, cache=True)
+def _quantile_kernel(frames, bin_offsets, frame_indices, n_bins, q):
+    T, H, W = frames.shape
+    cycle = np.zeros((n_bins, H, W), dtype=np.float32)
+
+    max_bin = 0
+    for b in range(n_bins):
+        sz = bin_offsets[b + 1] - bin_offsets[b]
+        if sz > max_bin:
+            max_bin = sz
+
+    for h in prange(H):
+        scratch = np.empty(max_bin, dtype=np.float32)
+        for w in range(W):
+            for b in range(n_bins):
+                start = bin_offsets[b]
+                n = bin_offsets[b + 1] - start
+                if n == 0:
+                    continue
+                for i in range(n):
+                    scratch[i] = frames[frame_indices[start + i], h, w]
+                view = scratch[:n]
+                view.sort()
+                # Linear interpolation between order statistics (numpy default).
+                pos = q * (n - 1)
+                lo = int(pos)
+                hi = lo + 1
+                if hi >= n:
+                    cycle[b, h, w] = view[n - 1]
+                else:
+                    frac = pos - lo
+                    cycle[b, h, w] = view[lo] * (1.0 - frac) + view[hi] * frac
+    return cycle
+
+
+def fold_video_numba_quantile(frames, phase, good_mask, n_bins, q=0.99, verbose=False):
+    """Fold a video onto one cycle, taking a per-pixel quantile within each bin.
+
+    Same binning as :func:`fold_video_numba_median` (which is the ``q=0.5`` case)
+    but with an arbitrary quantile, so e.g. ``q=0.75`` biases towards the brighter
+    samples of each bin and keeps dark/noisy regions readable.
+
+    Args:
+        frames (np.ndarray): ``(T, H, W)`` stack.
+        phase (np.ndarray): ``(T,)`` cycle phase in ``[0, 1)``.
+        good_mask (np.ndarray): ``(T,)`` boolean mask of usable frames.
+        n_bins (int): number of phase bins.
+        q (float): quantile in ``[0, 1]``; 0.5 reproduces the median fold.
+        verbose (bool): print per-bin occupancy stats.
+
+    Returns:
+        tuple: ``(cycle, counts)`` with ``cycle`` of shape ``(n_bins, H, W)``
+        (``float32``) and ``counts`` the number of frames per bin.
+    """
+    if not 0.0 <= q <= 1.0:
+        raise ValueError(f"q must be in [0, 1], got {q}")
+
+    bin_idx = (phase * n_bins).astype(np.int32) % n_bins
+    good = np.flatnonzero(good_mask).astype(np.int32)
+    bins = bin_idx[good]
+    order = np.argsort(bins, kind="stable")
+    frame_indices = good[order]
+    counts = np.bincount(bins, minlength=n_bins).astype(np.int32)
+    bin_offsets = np.zeros(n_bins + 1, dtype=np.int32)
+    bin_offsets[1:] = np.cumsum(counts)
+
+    cycle = _quantile_kernel(frames, bin_offsets, frame_indices, n_bins, float(q))
+    if verbose:
+        print(
+            f"Fold (q={q}): counts min/mean/max = "
+            f"{counts.min()}/{counts.mean():.1f}/{counts.max()}"
+        )
+    return cycle, counts
+
+
 @njit(parallel=True)
 def _numba_mean_kernel(frames, bin_idx, good_mask, n_bins):
     T, H, W = frames.shape

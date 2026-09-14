@@ -7,10 +7,9 @@ from ocularrigidity.segmentation.fovea.from_ilm import estimate_fovea_from_ilm
 from ocularrigidity.segmentation.postprocess.blob import (
     keep_largest_connected_component,
 )
-from ocularrigidity.viewer import cohort_data as C
 from ocularrigidity.viewer import render as R
 from ocularrigidity.viewer.streamlit_explorer._common import (
-    cached_case_table,
+    cached_cohort,
     require_selection,
 )
 import plotly.graph_objects as go
@@ -24,10 +23,11 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 st.set_page_config(page_title="Registration", layout="wide")
 
 
-root, suffix, iop = require_selection()
-st.title(f"Registration — {C.pretty_method(suffix)}")
+sel = require_selection()
+root = sel.root
+st.title("Registration")
 
-df = cached_case_table(root, suffix, iop)
+df = cached_cohort(sel)
 show_cols = [
     c
     for c in ["case_id", "PatientId", "Date", "Eye", "deltaA", "deltaCT", "K_thickness"]
@@ -55,7 +55,7 @@ case = df.iloc[rows[0]]["case_id"]
 sb = st.sidebar
 
 
-def _mkv_raw(root, suffix, case):
+def _mkv_raw(root, case):
     return Path(root) / ".." / "compressed" / case / "cube.mp4"
 
 
@@ -63,7 +63,7 @@ def mask_raw(root, case):
     return Path(root) / ".." / "masks" / case / "mask.npz"
 
 
-mkv = _mkv_raw(root, suffix, case)
+mkv = _mkv_raw(root, case)
 max_frame = 128
 indices = np.arange(10, max_frame, 4)
 with st.spinner("Loading video…"):

@@ -4,10 +4,12 @@ from ocularrigidity.registration.lateral.correlation import (
     frame_correlation_dx,
     profile_correlation_dx,
 )
+from ocularrigidity.registration.layout import restore_layout, to_bchw, to_gray
 from ocularrigidity.registration.lateral.utils import (
     robust_temporal_dx,
     smooth_translations,
 )
+from ocularrigidity.registration.postprocess import binarize_warped_mask
 from ocularrigidity.segmentation.fovea.from_ilm import (
     estimate_fovea,
 )
@@ -47,7 +49,11 @@ def estimate_lateral_dx(
     ``"fullframe"`` uses 2D phase correlation; ``"xcorr"`` cross-correlates the
     vertical-mean profiles. Temporal outliers are rejected and the trace smoothed;
     it is rounded to whole pixels unless ``subpixel``.
+
+    Colour frames are reduced to luminance: a lateral shift is a property of the
+    scene, so estimating it per channel would only add noise.
     """
+    raw_frames = to_gray(raw_frames)
     if lateral_method == "both":
         dx_fullframe = estimate_lateral_dx(
             raw_frames,
@@ -109,9 +115,13 @@ def estimate_lateral_dx(
 
 
 def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose):
-    """Estimate the fovea location from the ILM and shift the frames/masks accordingly."""
+    """Estimate the fovea location from the ILM and shift the frames/masks accordingly.
 
-    fovea_locations = estimate_fovea(raw_frames, raw_masks)
+    ``raw_frames`` may be gray or colour, in any layout; the fovea is located on
+    the luminance, and the frames come back in the layout they arrived in.
+    """
+    raw_frames, layout = to_bchw(torch.as_tensor(raw_frames))
+    fovea_locations = estimate_fovea(to_gray(raw_frames), raw_masks)
     ref_fovea_x = fovea_locations[ref_idx][None, 0]
     ref_fovea_y = fovea_locations[ref_idx][None, 1]
     dx_fovea = ref_fovea_x - fovea_locations[:, 0]
@@ -119,14 +129,26 @@ def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose
     dy_fovea = torch.as_tensor(
         ref_fovea_y - fovea_locations[:, 1], device=device, dtype=torch.float32
     )
+    # `estimate_fovea` returns NaN for frames it cannot fit, and a NaN in the
+    # sampling grid makes grid_sample return an all-NaN frame — which becomes an
+    # all-True mask under `.to(bool)` and noise under `.to(uint8)`, silently.
+    # A frame with no usable estimate is left where it is instead. Note this
+    # covers the reference frame too: if *its* fovea is NaN every shift is, and
+    # the whole volume would otherwise be destroyed.
+    dx_fovea = torch.nan_to_num(dx_fovea, nan=0.0)
+    dy_fovea = torch.nan_to_num(dy_fovea, nan=0.0)
     T, H, W = raw_masks.shape
     ys = torch.arange(H, device=device, dtype=torch.float32)
     xs = torch.arange(W, device=device, dtype=torch.float32)
-    registered_masks_chunks = []
-    registered_frames_chunks = []
     raw_masks = torch.as_tensor(raw_masks)
-    raw_frames = torch.as_tensor(raw_frames)
     mask_dtype, frame_dtype = raw_masks.dtype, raw_frames.dtype
+
+    # One preallocated buffer per output, written a batch at a time. Collecting
+    # chunks and torch.cat-ing them at the end holds the whole volume twice —
+    # ~9 GB extra for a 3000-frame cube — and pays a full copy to concatenate.
+    n_channels = raw_frames.shape[1]
+    registered_masks = torch.empty((T, H, W), dtype=mask_dtype)
+    registered_frames = torch.empty((T, n_channels, H, W), dtype=frame_dtype)
 
     for start in tqdm(
         range(0, T, batch_size),
@@ -137,9 +159,10 @@ def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose
         end = min(start + batch_size, T)
         t = end - start
 
-        masks_chunk = raw_masks[start:end].to(device, torch.float32)
+        masks_chunk = raw_masks[start:end].to(device, torch.float32).unsqueeze(1)
         frames_chunk = raw_frames[start:end].to(device, torch.float32)
-        data = torch.stack([masks_chunk, frames_chunk], dim=1)  # t x 2 x H x W
+        # Mask as channel 0, so it takes the same warp: t x (1 + C) x H x W.
+        data = torch.cat([masks_chunk, frames_chunk], dim=1)
 
         grid_y = ys.view(1, H, 1).expand(t, H, W)
         grid_x = xs.view(1, 1, W).expand(t, H, W)
@@ -157,8 +180,6 @@ def fovea_correction(raw_frames, raw_masks, ref_idx, batch_size, device, verbose
             padding_mode="zeros",
             align_corners=True,
         )
-        registered_masks_chunks.append(data[:, 0].to(mask_dtype).cpu())
-        registered_frames_chunks.append(data[:, 1].to(frame_dtype).cpu())
-    return torch.cat(registered_masks_chunks, dim=0), torch.cat(
-        registered_frames_chunks, dim=0
-    )
+        registered_masks[start:end] = binarize_warped_mask(data[:, 0], mask_dtype).cpu()
+        registered_frames[start:end] = data[:, 1:].to(frame_dtype).cpu()
+    return registered_masks, restore_layout(registered_frames, layout)
