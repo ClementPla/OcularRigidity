@@ -56,6 +56,7 @@ Lancer (kernel pyOR, depuis la racine du depot) :
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -88,6 +89,18 @@ SEGVAR_ROOT = Path(os.environ.get(
 MASK_VARIANT = os.environ.get("OR_VARIANT", "model1_scale_1.0_flatten_choroid_xcorr")
 VARIANT_ROOT = SEGVAR_ROOT / MASK_VARIANT
 HR_PRIOR_CSV = Path("E:/NASA_Rigidity/Reproducibility/hr_prior.csv")
+# La liste des conditions et la taille de pixel viennent TOUJOURS de la variante
+# de reference, qui a les tables ``pulse_from_data`` et ``demons_strain``. Une
+# variante recalee autrement ne les a pas, et n'en a pas besoin : les
+# acquisitions et leur geometrie sont les memes.
+REF_ROOT = Path(os.environ.get(
+    "OR_REF_ROOT", str(SEGVAR_ROOT / "model1_scale_1.0_flatten_choroid_xcorr")))
+# Non vide : les videos et masques recales sont relus A COTE DES DONNEES,
+# ``<path>/RawImages/<OR_DATA_SUBDIR>/{registered_video.mp4, mask.npz}`` (format
+# de ``export_registered_videos.py`` et ``register_newmodel.py``), au lieu de
+# ``VARIANT_ROOT/registered_frames`` et ``registered_masks``. Vide : comportement
+# d'origine, inchange.
+DATA_SUBDIR = os.environ.get("OR_DATA_SUBDIR", "")
 
 OVERWRITE = bool(os.environ.get("OR_OVERWRITE"))
 LIMIT = int(os.environ["OR_LIMIT"]) if os.environ.get("OR_LIMIT") else None
@@ -191,8 +204,13 @@ def signe_sur(y, ref, tt, f_hz) -> np.ndarray:
 def process(row, um_y: float, hr_prior: float) -> tuple[dict, dict]:
     slug = row["slug"]
     astro, moment, condition = row["astro"], row["moment"], row["condition"]
-    frames_path = VARIANT_ROOT / "registered_frames" / astro / moment / condition / "cube.mp4"
-    mask_path = VARIANT_ROOT / "registered_masks" / astro / moment / condition / "mask.npz"
+    if DATA_SUBDIR:
+        data_dir = Path(row["path"]) / "RawImages" / DATA_SUBDIR
+        frames_path = data_dir / "registered_video.mp4"
+        mask_path = data_dir / "mask.npz"
+    else:
+        frames_path = VARIANT_ROOT / "registered_frames" / astro / moment / condition / "cube.mp4"
+        mask_path = VARIANT_ROOT / "registered_masks" / astro / moment / condition / "mask.npz"
     for p in (frames_path, mask_path):
         if not p.exists():
             raise FileNotFoundError(p)
@@ -291,18 +309,32 @@ def process(row, um_y: float, hr_prior: float) -> tuple[dict, dict]:
 # Lot
 # --------------------------------------------------------------------------- #
 def main() -> int:
-    csv_pulse = VARIANT_ROOT / "pulse_from_data" / "conditions.csv"
+    csv_pulse = REF_ROOT / "pulse_from_data" / "conditions.csv"
     if not csv_pulse.exists():
         print(f"{csv_pulse} absent -- lancer d'abord run_batch.py pulse")
         return 2
     conditions = pd.read_csv(csv_pulse)
     conditions = conditions[conditions["status"] == "ok"].sort_values("slug")
     conditions = conditions.reset_index(drop=True)
+    if DATA_SUBDIR:
+        # Une acquisition dont CE recalage a echoue n'a pas de video a lire : on
+        # l'ecarte ici, avec un compte, plutot que de la marquer en echec.
+        def _registration_ok(path) -> bool:
+            f = Path(path) / "RawImages" / DATA_SUBDIR / "registration_params.json"
+            try:
+                return json.loads(f.read_text(encoding="utf-8")).get("status") == "ok"
+            except Exception:  # noqa: BLE001
+                return False
+
+        keep = conditions["path"].map(_registration_ok)
+        print(f"recalage lu dans RawImages/{DATA_SUBDIR}/ : {int(keep.sum())} valide(s), "
+              f"{int((~keep).sum())} ecartee(s)")
+        conditions = conditions[keep].reset_index(drop=True)
     if LIMIT is not None:
         conditions = conditions.head(LIMIT)
 
     um = {}
-    csv_strain = VARIANT_ROOT / "demons_strain" / "conditions.csv"
+    csv_strain = REF_ROOT / "demons_strain" / "conditions.csv"
     if csv_strain.exists():
         d = pd.read_csv(csv_strain)
         um = dict(zip(d["slug"], pd.to_numeric(d["um_per_px_y"], errors="coerce")))

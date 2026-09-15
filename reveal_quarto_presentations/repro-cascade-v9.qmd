@@ -1,0 +1,191 @@
+---
+title: "Recalage appris cascade_v9"
+subtitle: "Le recaleur appris de Clément appliqué aux réplicats : à quelle condition il fonctionne sur les B-scans Spectralis, ce qu'il vaut face aux autres recalages, et si la fréquence cardiaque trouvée sans a priori en dépend"
+# Quatre figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits
+# mais aucun script ne les dessine.
+include-in-header: figures_repro_cascade/plotlyjs.html
+---
+
+Jusqu'ici, toutes les vidéos des réplicats étaient recalées par une chaîne
+**classique** : repère fovéal, aplatissement de la RPE, corrélation latérale
+sur la choroïde, puis alignement des A-scans sur la médiane. Clément a publié
+depuis un recaleur **appris**, `ClementP/OCTVideoRegistration`, révision
+`cascade_v9`. Cette page le fait tourner sur toute l'étude de répétabilité,
+puis refait sur ses vidéos le test de fréquence cardiaque sans a priori de la
+page *Valider HR des réplicats*.
+
+::: {.callout-note}
+## Ce que fait le recaleur appris
+
+Une seule passe de l'encodeur SegFormer (`ChoroidSegmentationModule`, révision
+`version-2.0.0`) sert à deux choses : la tête de segmentation produit le
+masque, et un régresseur en cascade lit la pyramide de caractéristiques pour
+prédire, contre une frame de référence :
+
+- `dx`, un déplacement **latéral** par frame ;
+- `dy`, un déplacement **axial** par colonne.
+
+La référence est la frame placée au milieu de la trajectoire axiale.
+Le code est `registration/fused.py::segment_and_register`, sur la branche
+`main` de Clément. Aucun lissage temporel n'est appliqué au transform.
+
+Le recaleur a été entraîné sur l'encodeur de **ce** modèle de segmentation :
+les deux vont par paire. La segmentation change donc en même temps que le
+recalage, SegFormer au lieu du U-Net des autres variantes.
+:::
+
+# La condition pour qu'il fonctionne : la taille d'image
+
+Le régresseur a été entraîné sur des frames **1536 × 1024**, alors que les
+B-scans Spectralis font **496 × 768**. Deux façons de concilier les deux ont
+été essayées sur `MODICA_GRAZIANA_OS3` :
+
+| essai | NCC frame/médiane | frames < 0,5 | `dy` global crête à crête |
+|:--|:--|--:|--:|
+| images natives, `img_shape` du modèle forcé à 496 × 768 | 0,545 | 134 / 348 | 52,7 px |
+| **images agrandies à 1536 × 1024** | **0,786** | **0** | 1,7 px |
+
+En natif, le modèle invente près de 53 px de mouvement axial sur une vidéo où
+les autres recalages en mesurent moins de 1,5. Une fois agrandies à sa taille
+d'entraînement, il redevient plausible.
+
+::: {.callout-note}
+## Le protocole retenu (`Reproducibility/register_newmodel.py --resize 1536x1024`)
+
+1. Le cube est agrandi en bilinéaire à 1536 × 1024, et le modèle tourne tel qu'entraîné.
+2. Le transform prédit est appliqué aux frames et masques **natifs** par
+   `losses.warp`, la fonction de Clément. Elle convertit `dx` et `dy` de la
+   grille du modèle vers celle des images : c'est la conversion que le
+   régresseur applique à sa propre pyramide.
+3. Le masque SegFormer est réduit par moyenne de surface et seuillé à 0,5.
+   Les colonnes à membrane de Bruch inexploitable sont noircies comme dans
+   `fused.py`.
+4. La sortie est en 496 × 768, avec les mêmes cinq fichiers que les autres
+   variantes, sous `RawImages/registered_cascade_v9_1536x1024/`.
+
+`RegistrationConfig.scale_factor` n'y joue **aucun** rôle : il n'est lu que
+par le recalage classique, et le vérifier donne un résultat identique bit pour
+bit à 0,5, 1 et 2. Deux détails pratiques :
+
+- **cuCIM** est absent de l'environnement : la plus grande composante connexe
+  est calculée par cc3d, une version donnée pour bit-identique ;
+- **lot de 2 frames** : à 1536 × 1024 sur une carte de 12 Go, le lot par
+  défaut de 8 déborde en mémoire partagée sous Windows sans lever d'erreur.
+:::
+
+# Qualité du recalage sur toute l'étude
+
+Toutes les variantes sont jugées sur **le même critère** : NCC de chaque frame
+recalée à la médiane temporelle de sa vidéo, sur la bande de choroïde, dans la
+géométrie propre à la variante, puis médiane par acquisition. La référence
+« aucun recalage » passe les frames natives et le masque SegFormer par le même
+warp, à transform nul, et le même filtre de colonnes.
+
+::: {.callout-warning}
+## Deux biais de lecture à garder en tête
+
+- **L'aplatissement de la RPE avantage les chaînes « actuelles » sur ce critère.**
+  Il pose la membrane de Bruch sur une ligne droite et rend la bande de choroïde
+  plus homogène d'une frame à l'autre. cascade_v9 et le fullframe n'aplatissent
+  pas : c'est à eux, et à l'absence de recalage, qu'il faut le comparer d'abord.
+- **Les B-scans Spectralis sont déjà stabilisés par l'appareil.** Un recalage
+  qui ne fait presque rien obtient déjà une bonne NCC. La référence « aucun
+  recalage » dit ce que chaque méthode ajoute réellement.
+:::
+
+{{< include figures_repro_cascade/fig_qualite_recalage.qmd >}}
+
+{{< include figures_repro_cascade/tab_qualite.qmd >}}
+
+::: {.callout-important}
+## La réponse, en une ligne
+
+**cascade_v9 recale réellement, mais ne fait pas mieux que la chaîne actuelle.**
+Sur 54 acquisitions sur 55, il améliore l'absence de recalage **à chaque
+fois** et l'ancien moteur fullframe 53 fois sur 54. Il reste légèrement en
+dessous de la chaîne actuelle (−0,011 de NCC en médiane) : il ne la bat que
+sur 16 acquisitions. En revanche, c'est lui qui laisse le moins de frames mal
+alignées.
+:::
+
+## Ce que disent les chiffres
+
+- **Tout recalage n'apporte pas quelque chose.** Sans recalage, la NCC médiane
+  vaut déjà **0,863** : les B-scans Spectralis sont stabilisés par l'appareil.
+  L'ancien moteur fullframe fait **0,862**, donc rien de plus sur ce critère.
+  cascade_v9 monte à **0,892** (+0,030 [0,025 – 0,041] sur l'identité), et la
+  chaîne actuelle à **0,895** (U-Net) ou **0,898** (SegFormer).
+- **L'écart avec la chaîne actuelle est petit et de sens variable.** La
+  différence appariée vaut −0,011 [−0,017 – +0,004], et cascade_v9 est
+  meilleur sur 16 acquisitions sur 54. Cet écart est du même ordre que
+  l'avantage que l'aplatissement de la RPE peut procurer à la chaîne actuelle
+  sur ce critère : il ne suffit pas à dire qu'elle recale mieux.
+- **cascade_v9 limite le mieux les frames ratées.** Il en laisse 68 sous 0,5
+  sur toute l'étude, contre 74 et 72 pour la chaîne actuelle, 122 pour le
+  fullframe et 153 sans recalage. Sa pire frame typique reste en revanche un
+  peu moins bonne (p5 médian 0,750, contre 0,766 et 0,770).
+- **Quatre acquisitions sont à regarder de près.** Le modèle y prédit de 24 à
+  39 px de déplacement axial global au cours de la vidéo :
+  `DESCOVICH_DENISE_OD2`, `BELANGER_CHARLES_OD3`, `ROY_JOANNIE_OD2` et
+  `MCNEIL_THOMAS_OD3`. Sur les 50 autres, ce déplacement vaut 1,3 px en
+  médiane [1,1 – 2,6] et 13 px au plus. Ces quatre vidéos concentrent à elles
+  seules **31 des 68 frames sous 0,5**. Mouvement réel de l'œil ou dérive du
+  modèle : ce critère ne permet pas de trancher.
+- **Un seul échec**, le même que pour toutes les autres variantes :
+  `MARTINEZ_ALEJANDRA_OS3`, dont 238 frames sur 348 sont noires à la source.
+
+# La fréquence cardiaque sur les vidéos cascade_v9
+
+Même test que la page *Valider HR des réplicats*, sans rien changer d'autre
+que les vidéos lues :
+
+- **deux signaux** : intensités (SVD) et épaisseur choroïdienne ;
+- **même FIR fixe** 50–85 BPM, puis pic Lomb-Scargle dans la bande ;
+- **même code de calcul**, celui qui a produit la FC de référence.
+
+La comparaison se fait sur les acquisitions recalées avec succès par les deux
+chaînes.
+
+{{< include figures_repro_cascade/fig_boxplot_hr.qmd >}}
+
+{{< include figures_repro_cascade/fig_hr_paires.qmd >}}
+
+{{< include figures_repro_cascade/tab_hr.qmd >}}
+
+::: {.callout-important}
+## La réponse, en une ligne
+
+**Changer de recalage ne change pas le bilan de la FC, mais change la FC d'une
+acquisition sur deux.** Sur les 54 acquisitions communes, tous les indicateurs
+globaux restent du même ordre. Pour une acquisition prise seule, en revanche,
+la FC trouvée diffère de plus de 5 BPM entre les deux recalages dans près d'un
+cas sur deux.
+:::
+
+## Ce que disent les chiffres
+
+| | recalage de référence | cascade_v9 | au hasard |
+|:--|:--|:--|--:|
+| à ± 10 % de l'a priori (intensité / épaisseur) | 27 / 28 | 28 / 31 | 17,5 |
+| étendue par participant (BPM) | 15,9 / 16,8 | 17,8 / 14,0 | 25,6 |
+| étendue par œil (BPM) | 14,1 / 9,3 | 12,0 / 9,3 | 17,5 |
+| intensité et épaisseur à ± 5 BPM | 24 | 22 | 14,3 |
+
+- **Le bilan est inchangé.** Les écarts entre les deux colonnes ne dépassent
+  pas 3 acquisitions ou 2 BPM, et vont dans les deux sens. Les deux recalages
+  battent le hasard de la même marge. Aucun pic ne colle aux bornes de la
+  bande, ni d'un côté ni de l'autre. La conclusion de la page *Valider HR des
+  réplicats* (a priori corroboré par personne, pas par acquisition) ne
+  dépend donc pas du recalage choisi.
+- **La FC d'une acquisition, elle, est fragile.** En comparant acquisition par
+  acquisition, la FC tirée des intensités reste à ± 5 BPM dans **31 cas sur
+  54** (écart médian 2,9 BPM [0,6 – 9,2]). Pour celle tirée de l'épaisseur,
+  c'est **30 sur 54** (4,2 BPM [0,3 – 7,8]). Pour les autres, un pic différent
+  du spectre l'emporte dès que la vidéo change un peu.
+- **Le goulot d'étranglement n'est donc pas le recalage.** Une meilleure vidéo
+  ne rend pas la FC plus stable : l'instabilité vient du signal et de la
+  recherche du pic dans une bande large, pas de l'alignement des images.
+
+## Les traces, acquisition par acquisition
+
+{{< include figures_repro_cascade/fig_traces.qmd >}}
