@@ -3,11 +3,17 @@ from __future__ import annotations
 from typing import List, Optional, Sequence, Tuple
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from ocularrigidity.registration.deep_learning.models.losses import warp
 
-__all__ = ["estimate_transform", "cost_volume", "normalize_features"]
+__all__ = [
+    "CorrelationBaseline",
+    "estimate_transform",
+    "cost_volume",
+    "normalize_features",
+]
 
 
 def normalize_features(x: torch.Tensor, center: bool = True) -> torch.Tensor:
@@ -162,3 +168,73 @@ def estimate_transform(
             )
 
     return (dx, dy, trace) if return_trace else (dx, dy)
+
+
+class CorrelationBaseline(nn.Module):
+    """``(dx, dy)`` read straight off the correlation peak. No training, no
+    parameters.
+
+    A drop-in for :class:`RegistrationRegressor`: the same ``forward``
+    signature, so it can be handed to ``fused.register`` or to the trainer's
+    evaluation pass anywhere the regressor goes, and scored on the same ruler.
+
+    This is the one comparison the ablation arms cannot make. All twelve share
+    the same backbone, so they only ever measure learned against learned; this
+    measures against no learning at all -- the frozen pyramid and an argmax,
+    which is precisely what :class:`CorrelationVolume`'s docstring contrasts
+    its learned head with ("the peak is picked by a learned, context-aware head
+    instead of an ``argmax``").
+
+    ``scales=None`` walks the whole pyramid coarse-to-fine, the training-free
+    analogue of the cascade. ``scales=[3]`` uses the coarsest level alone, which
+    is what the cascade is worth with no learned head anywhere in the
+    comparison -- unlike the ``no_cascade`` arm, whose dx head collapsed
+    (``val/shift`` pinned at 4.0, the value a dx-invariant model scores).
+
+    Parameter-free, so ``.to(device)`` and ``.eval()`` are no-ops kept only for
+    interface compatibility.
+    """
+
+    def __init__(
+        self,
+        img_shape: Tuple[int, int] = (1536, 1024),
+        *,
+        dy_radius: int = 6,
+        dx_radius: int = 3,
+        aggregate: int = 9,
+        center: bool = True,
+        scales: Optional[Sequence[int]] = None,
+    ):
+        super().__init__()
+        self.img_shape = tuple(img_shape)
+        self.dy_radius = int(dy_radius)
+        self.dx_radius = int(dx_radius)
+        self.aggregate = int(aggregate)
+        self.center = bool(center)
+        self.scales = None if scales is None else list(scales)
+        # Mirrors the checkpoint fields fused.py and the notebooks report on.
+        self.cascade = self.scales is None or len(self.scales) > 1
+        self.use_correlation = True
+
+    def forward(
+        self,
+        fixed_feats: Sequence[torch.Tensor],
+        moving_feats: Sequence[torch.Tensor],
+        img_shape: Optional[Tuple[int, int]] = None,
+        detach_dy: bool = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """``(dx (B,), dy (B, W))`` in pixels of ``img_shape``.
+
+        ``detach_dy`` is accepted and ignored: there is no gradient here for it
+        to cut, but the trainer passes it on the triplet and shift batches.
+        """
+        return estimate_transform(
+            fixed_feats,
+            moving_feats,
+            img_shape if img_shape is not None else self.img_shape,
+            dy_radius=self.dy_radius,
+            dx_radius=self.dx_radius,
+            aggregate=self.aggregate,
+            center=self.center,
+            scales=self.scales,
+        )

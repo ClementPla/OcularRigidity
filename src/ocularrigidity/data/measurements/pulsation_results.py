@@ -4,10 +4,10 @@ from tqdm.auto import tqdm
 import pickle
 import numpy as np
 from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
-from ocularrigidity.pipeline_config import N_CYCLES
+from ocularrigidity.pipeline_config import FRIEDENWALD, N_CYCLES
 from ocularrigidity.data.io import load_mask_frames
 from ocularrigidity.data.measurements.dataframe import load_measurements
-from ocularrigidity.friedenwald import K_from_deltaCT_mm
+from ocularrigidity.friedenwald import K_from_deltaCT_mm, deltaCT_to_deltaV_uL
 from ocularrigidity.motion.pipeline_results import (
     CardiacPipelineResults,
     peek_cardiac_freq,
@@ -133,9 +133,25 @@ def load_pulsation_results(
                 "deltaCT": median_ct,
                 "deltaCT_Mask": median_ct_mask,
                 "minCT": choroid_thickness,
-                "K": K_from_deltaCT_mm(median_ct, row.AxialLength, row.IOP, row.OPA),
+                "K": K_from_deltaCT_mm(
+                    median_ct,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,
+                    choroidal_thickness_mm=choroid_thickness,
+                ),
+                "dV": deltaCT_to_deltaV_uL(
+                    np.asarray(median_ct, dtype=float) * 1000.0,
+                    row.AxialLength,
+                    choroid_thickness,
+                    cfg=FRIEDENWALD,
+                ),
                 "K_Mask": K_from_deltaCT_mm(
-                    median_ct_mask, row.AxialLength, row.IOP, row.OPA
+                    median_ct_mask,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,
+                    choroidal_thickness_mm=choroid_thickness,
                 ),
                 "thickening_um_s": np.nanmedian(ups)
                 if np.any(np.isfinite(ups))

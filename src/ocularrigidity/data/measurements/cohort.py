@@ -122,6 +122,7 @@ PULSATION_METRICS = [
     "minCT",
     "RelativeGrowth",
     "K",
+    "dV",
     "K_Mask",
     "thickening_um_s",
     "thinning_um_s",

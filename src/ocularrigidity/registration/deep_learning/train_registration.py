@@ -16,6 +16,9 @@ from ocularrigidity.registration.deep_learning.models.losses import (
     cycle_consistency_loss,
     shift_equivariance_loss,
 )
+from ocularrigidity.registration.deep_learning.correlation_estimator import (
+    CorrelationBaseline,
+)
 from ocularrigidity.registration.deep_learning.models.regressor import (
     RegistrationRegressor,
 )
@@ -1079,6 +1082,23 @@ def main():
         "already removes most encoder calls, so there is little left to speed up.",
     )
     ap.add_argument(
+        "--eval-correlation",
+        action="store_true",
+        help="score the training-free correlation-peak estimator on the "
+        "validation set, under the same objective, and exit. The zero-parameter "
+        "null the ablation arms cannot provide: they all share this backbone, "
+        "so they only compare learned against learned.",
+    )
+    ap.add_argument(
+        "--eval-correlation-scales",
+        type=int,
+        nargs="*",
+        default=None,
+        help="pyramid levels for --eval-correlation (default: all, coarse-to-"
+        "fine). A single level, e.g. 3, is the same estimator without the "
+        "coarse-to-fine refinement.",
+    )
+    ap.add_argument(
         "--eval-baseline",
         action="store_true",
         help="also score the classical transform under the same objective",
@@ -1354,6 +1374,36 @@ def main():
         if run is not None:
             for k, v in baseline_metrics.items():
                 run.summary[f"baseline/{k}"] = v
+
+    if args.eval_correlation and val_loader is not None:
+        # Scored exactly as an arm is: same val loader, same eval_criterion,
+        # same cycle/shift batches -- so val/total lands on the sweep's ruler.
+        corr_model = CorrelationBaseline(
+            img_shape=(H, W), scales=args.eval_correlation_scales
+        ).to(device)
+        corr_metrics = run_epoch(
+            corr_model,
+            val_loader,
+            eval_criterion,
+            cache,
+            device,
+            triplet_loader=val_triplet_loader,
+            w_cycle=eval_obj["w_cycle"],
+            shift_loader=val_shift_loader,
+            w_shift=eval_obj["w_shift"],
+            shift_beta=1.0,
+        )
+        tag = (
+            "all scales"
+            if args.eval_correlation_scales is None
+            else f"scales {args.eval_correlation_scales}"
+        )
+        print(_fmt(f"[correlation peak, no training: {tag}] val", corr_metrics))
+        if run is not None:
+            for k, v in corr_metrics.items():
+                run.summary[f"correlation/{k}"] = v
+            run.finish()
+        return
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay

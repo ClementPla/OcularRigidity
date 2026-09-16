@@ -91,8 +91,7 @@ def K_from_deltaCT_mm(
     """Friedenwald K (1/µL) from a peak-to-peak thickness change (mm).
 
     Elementwise, so all arguments may be scalars or pandas Series / arrays.
-    Unusable inputs (non-positive volume or pressures) give NaN instead of
-    raising, which keeps cohort loops from dying on a single bad eye.
+
 
     ``choroidal_thickness_mm`` seats the shell on top of the choroid; see
     :func:`inner_radius_mm`.
@@ -107,9 +106,7 @@ def K_from_deltaCT_mm(
     P_d = np.asarray(P_d, dtype=float)
     P_s = np.asarray(P_s, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        K = np.where(
-            (dV > 0) & (P_d > 0) & (P_s > 0), np.log10(P_s / P_d) / dV, np.nan
-        )
+        K = np.where((dV > 0) & (P_d > 0) & (P_s > 0), np.log10(P_s / P_d) / dV, np.nan)
     return K[()] if K.ndim == 0 else K
 
 
@@ -173,7 +170,9 @@ def friedenwald_K(
     if from_area:
         g["dV_uL"] = deltaA_to_deltaV_uL(g["deltaA"], g["AxialLength"], ct_mm, cfg=cfg)
     else:
-        g["dV_uL"] = deltaCT_to_deltaV_uL(g["deltaCT"], g["AxialLength"], ct_mm, cfg=cfg)
+        g["dV_uL"] = deltaCT_to_deltaV_uL(
+            g["deltaCT"], g["AxialLength"], ct_mm, cfg=cfg
+        )
 
     bad = (g["dV_uL"] <= 0) | P_d.isna() | (P_d <= 0) | (P_s <= 0) | g["OPA"].isna()
     g["K"] = np.where(bad, np.nan, np.log10(P_s / P_d) / g["dV_uL"])

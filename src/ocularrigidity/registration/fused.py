@@ -1,34 +1,3 @@
-"""Segment and register a volume in a single pass over the GPU.
-
-Run as separate stages, segmentation and registration each encode every frame,
-and the encoder dominates the per-frame cost. One encode feeding both heads is
-therefore close to a halving, and is why this module exists.
-``model.encoder(x)[2:]`` is bit-identical to ``encoder.forward_features(x)``
-and ``segmentation_head(decoder(encoder(x)))`` reproduces ``model(x)``, so the
-split costs no accuracy — both are asserted by the tests.
-
-Choosing the *reference frame* is the part that does not fall out for free: it
-must be fixed before the pass begins, by a rule needing mask areas the pass has
-not produced yet, and holding every frame's pyramid instead would be tens of GB
-per volume. A short probe pass over ``config.probe_frames`` frames supplies
-them; the chosen frame's percentile against the *full* area distribution is
-reported afterwards, so an under-sized probe is visible rather than silent.
-
-Median area alone is not enough — a frame at the median area can sit at an
-extreme of the eye's axial drift, and registering onto it pushes far-drift
-frames off the canvas as all-zero warps. Area only picks a *pivot*; the
-reference is the probe frame at the median of the axial trajectory measured
-from it (``reference_selection="motion_medoid"``), which minimises the largest
-warp in the volume.
-
-    probe   N frames  ->  encode -> mask -> area        -> reference frame
-    main    all frames ->  encode -> mask                       (segmentation)
-                                  \\-> regressor(ref, .) -> dx, dy  (registration)
-    warp    all frames ->  grid_sample(mask+frame by dx, dy)
-
-Only the warp revisits the frames, and it is a grid_sample, not an encode.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -36,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 
 from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.registration.deep_learning.models.losses import warp
@@ -64,7 +34,9 @@ class FusedResult:
     timings: dict
     raw_masks: np.ndarray | None = None  # (T, H, W) bool, unregistered
     registered_masks: np.ndarray | None = None  # (T, H, W) bool
-    ref_percentile: float | None = None  # of the reference's area in the full distribution
+    ref_percentile: float | None = (
+        None  # of the reference's area in the full distribution
+    )
 
 
 def _normalise(frames_u8: torch.Tensor) -> torch.Tensor:
@@ -103,13 +75,19 @@ def _encode_segment(
 
 
 @torch.inference_mode()
-def _encode(seg_model, batch_u8: torch.Tensor, amp_dtype: torch.dtype) -> list[torch.Tensor]:
+def _encode(
+    seg_model, batch_u8: torch.Tensor, amp_dtype: torch.dtype
+) -> list[torch.Tensor]:
     with torch.autocast("cuda", dtype=amp_dtype):
         return list(seg_model.model.encoder(_normalise(batch_u8))[2:])
 
 
 def _trajectory_medoid(
-    reg_model, pyramid: list[torch.Tensor], pivot: int, batch: int, amp_dtype: torch.dtype
+    reg_model,
+    pyramid: list[torch.Tensor],
+    pivot: int,
+    batch: int,
+    amp_dtype: torch.dtype,
 ) -> int:
     n = pyramid[0].shape[0]
     if n <= 2:
@@ -126,7 +104,9 @@ def _trajectory_medoid(
     return int((traj - traj.median()).abs().argmin().item())
 
 
-def _resolve_ref_idx(ref_idx: int | None, config: RegistrationConfig, T: int) -> int | None:
+def _resolve_ref_idx(
+    ref_idx: int | None, config: RegistrationConfig, T: int
+) -> int | None:
     if ref_idx is None and isinstance(config.reference_selection, int):
         ref_idx = config.reference_selection
     return None if ref_idx is None else range(T)[ref_idx]
@@ -359,7 +339,7 @@ def register(
     dx = torch.empty(T, dtype=torch.float32)
     dy = torch.empty(T, W, dtype=torch.float32)
     registered_frames = np.empty((T, H, W), dtype=np.uint8)
-    for s in range(0, T, batch):
+    for s in tqdm(range(0, T, batch), desc="registering frames", disable=not verbose):
         e = min(s + batch, T)
         feats = _encode(seg_model, d_frames[s:e], amp_dtype)
         fixed = [f.expand(e - s, -1, -1, -1) for f in ref_feats]
