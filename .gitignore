@@ -11,7 +11,8 @@ __pycache__/
 # C extensions
 *.so
 .claude/
-
+*.mp4
+*.mkv
 # Distribution / packaging
 .Python
 build/
@@ -270,3 +271,14 @@ test/previous_masks/
 
 # LLM context dump of the repo, regenerated on demand
 repomix-output.xml
+
+# --- Quarto manuscript (published to GitHub Pages) ---------------------------
+# Re-include what the site needs despite the global rules above.
+!manuscript/notebooks/
+!manuscript/**/*.png
+!manuscript/**/*.jpg
+!manuscript/**/*.gif
+manuscript/_book/
+manuscript/_manuscript/
+manuscript/.quarto/
+manuscript/**/*.blend1

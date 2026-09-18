@@ -1,0 +1,47 @@
+# Predictive analysis {#sec-predictive}
+
+In @sec-correlation, each point is a visit and both variables are measured at the same time. Here we take a variable at the first visit and correlate it with the slope of another variable over the follow-up, in unit per year. Each point is therefore an eye and not a visit. We have {{< var pred.n_eyes >}} eyes, with {{< var pred.visits_min >}} to {{< var pred.visits_max >}} visits each and a median follow-up of {{< var pred.median_followup >}} years.
+
+Progression in glaucoma has no good predictor, and the IOP, which is what we treat, is a weak one. So we keep the IOP in every comparison below and read the other variables against it. The question is not whether a variable predicts progression well, it is whether it does better than what we already rely on.
+
+## Slopes and follow-up
+
+A slope computed on two visits a few months apart is not progression. @fig-slope-reliability shows the ocular rigidity at the first visit against the MD slope, with all the eyes on the left, and only the eyes with at least {{< var pred.min_visits >}} visits over at least {{< var pred.min_span >}} year on the right. The trend on the left is carried by the eyes with the shortest follow-up.
+
+{{< embed ../../notebooks/predictive.ipynb#fig-slope-reliability >}}
+
+The worst MD slope, at {{< var pred.worst_md_slope >}} dB/year, comes from an eye with {{< var pred.worst_md_visits >}} visits over {{< var pred.worst_md_span >}} year (@fig-slope-vs-followup).
+
+{{< embed ../../notebooks/predictive.ipynb#fig-slope-vs-followup >}}
+
+::: {.callout-warning}
+The figures below keep only the eyes with at least {{< var pred.min_visits >}} visits over at least {{< var pred.min_span >}} year ({{< var pred.n_kept_min >}} to {{< var pred.n_kept_max >}} eyes depending on the endpoint).
+:::
+
+## Comparing the predictors
+
+@fig-predictor-comparison puts every baseline variable against the four endpoints, with the IOP in red.
+
+{{< embed ../../notebooks/predictive.ipynb#fig-predictor-comparison >}}
+
+The IOP is flat on the three structural endpoints and only moves on the MD slope, where it goes the wrong way: a higher pressure at the first visit goes with a slower MD loss. That is what we would expect if the eyes with the highest pressure are also the ones whose treatment was adjusted.
+
+Against that, the ocular rigidity matches the IOP on the MD slope and in the direction we expect, a stiffer eye losing MD faster (@fig-k-vs-progression). It also tracks the PSD and the BMO-MRW slopes, where the IOP does nothing.
+
+{{< embed ../../notebooks/predictive.ipynb#fig-K-vs-progression >}}
+
+{{< embed ../../notebooks/predictive.ipynb#fig-IOP-vs-progression >}}
+
+## Choroidal thickness
+
+The choroidal thickness at the first visit gives the strongest trend of the table, on the BMO-MRW slope (@fig-ct-vs-progression). It says nothing about the MD or the RNFL slope.
+
+{{< embed ../../notebooks/predictive.ipynb#fig-CT-vs-progression >}}
+
+A thicker choroid at the first visit goes with a rim that thins more slowly (@fig-ct-vs-mrw-slope). The change in choroidal thickness points the same way, slightly weaker. Both are well ahead of the IOP on this endpoint.
+
+{{< embed ../../notebooks/predictive.ipynb#fig-CT-vs-MRW-slope >}}
+
+None of these trends is strong on its own, but they are overall more consistent than the IOP.
+
+{{< embed ../../notebooks/predictive.ipynb#fig-predictor-comparison >}}

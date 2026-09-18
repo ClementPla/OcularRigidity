@@ -1,0 +1,12 @@
+# Cross-sectional study
+
+::: {.callout-warning title="Missing patients"}
+There are 53 missing patients in the cross-sectional study currently.
+:::
+
+
+Using a Mann-Whitney U test, Holm-corrected, we found out the only significant different between the groups was between the Normal and GPAO groups for $\Delta$CT. The other comparisons were not significant (p>0.05). The results are summarized in @fig-cross-sectional-study.
+
+{{< embed ../../notebooks/cross_sectional_study.ipynb#fig-cross-sectional-study >}}
+
+This contredicts previous results from @Sayah2020-ym, which found a significant difference in ocular rigidity between the normal and glaucoma groups (glaucoma having less rigid eyes).

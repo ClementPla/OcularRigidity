@@ -1,0 +1,50 @@
+project:
+  type: book
+  output-dir: _book
+  execute-dir: project
+
+book:
+  title: "Ocular Rigidity - Prospective Study"
+  author:
+    - name: Clément Playout
+      orcid: 0000-0002-0978-3588
+      email: clement.playout.cemtl@ssss.gouv.qc.ca
+      affiliations:
+        - Centre de Recherche de l'Hôpital Maisonneuve-Rosemont, Montreal, Quebec, Canada
+  date: last-modified
+  search: true
+  chapters:
+    - index.qmd
+    - chapters/introduction.qmd
+    - part: "Background"
+      chapters:
+        - chapters/review/review.qmd
+        - chapters/review/statistical_analysis.qmd
+    - part: "Methods"
+      chapters:
+        - chapters/method/methods.qmd
+    - part: "Analysis"
+      chapters:
+        - chapters/analysis/replicability.qmd
+        - chapters/analysis/cross_sectional_study.qmd
+        - chapters/analysis/correlation_analysis.qmd
+        - chapters/analysis/predictive_analysis.qmd
+    - references.qmd
+
+bibliography: references.bib
+number-sections: true
+jupyter: python3
+
+execute:
+  freeze: auto
+
+format:
+  html:
+    toc: true
+    page-layout: full
+    grid:
+      body-width: 1000px
+      margin-width: 200px
+      sidebar-width: 250px
+    comments:
+      hypothesis: true

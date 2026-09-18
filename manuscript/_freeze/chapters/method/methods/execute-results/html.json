@@ -1,0 +1,12 @@
+{
+  "hash": "203b5428c720a1287b46cb898610f821",
+  "result": {
+    "engine": "jupyter",
+    "markdown": "# Methods \n## Cohort description {#sec-cohort}\n\n\n\nWe have a total of 135 patients in the study, with a total of 534 visits. \n\n",
+    "supporting": [
+      "methods_files"
+    ],
+    "filters": [],
+    "includes": {}
+  }
+}

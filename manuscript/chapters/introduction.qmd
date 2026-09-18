@@ -1,0 +1,47 @@
+# Introduction
+## Deformation under blood pressure
+### The Three Hypothesis
+
+## Three hypotheses
+
+![Eye inflation under the three hypotheses.](/illustrations/render/eye_inflation.gif){#fig-eye-inflation width=70% fig-align="center"}
+
+As shown in @fig-eye-inflation, ...
+
+## Friedenwald's equation of ocular rigidity
+The original Freidenwald's equation of ocular rigidity assumes that:
+$$
+\frac{\partial P}{\partial V} = K \cdot P \Leftrightarrow P = P_0 e^{K \cdot V}
+$$
+We estimate the ocular rigidity $K$ using two measurements of intraocular pressure $P_1$ and $P_2$ and the corresponding ocular volumes $V_1$ and $V_2$:
+$$
+K = \log \left( \frac{P_2}{P_1} \right) / (V_2 - V_1)
+$$ {#eq-Friedenwald}
+
+We estimate $V_2$ and $V_1$ using $CT$ and $\Delta CT$ where $CT$ is the choroidal thickness and $\Delta CT$ is the change in choroidal thickness between two measurements. $P_2$ and $P_1$ are the intraocular pressures at the two measurements.
+Let's note the axial length $\alpha$. It is the distance from the corneal surface to an interference peak corresponding to the RPE. We introduce a the corrected axial length $\hat{\alpha} = 0.83 \alpha$. The spherical radius during diastole and (end of) systole are estimated as:
+$$
+r_1 = \frac{\hat{\alpha}}{2} + CT
+$$
+and
+$$
+r_2 = \frac{\hat{\alpha}}{2} + CT + \Delta CT
+$$
+From which we estimate the change in ocular volume $\Delta V$ as:
+$$
+\Delta V = \frac{4}{3} \pi (r_2^3 - r_1^3)
+$$
+In practise, we also introduce a correction factor $c$ to account for the fact that the eye is not a perfect sphere. The corrected change in ocular volume is then:
+$$
+\Delta V_{corr} = c \Delta V $$
+with $c = 2/3$.
+
+## Visual field characteristics
+The Humphrey Visual Field (HVF) is a common test to assess the visual field of patients.
+
+::: {.callout-note}
+[Taken from https://eyerounds.org/tutorials/VF-testing/#gsc.tab=0](https://eyerounds.org/tutorials/VF-testing/#gsc.tab=0)
+*During Humphrey Visual Field (HVF) testing, the patient places his head in the chinrest and fixes his gaze toward a central fixation point in a large, white bowl. [...] It assesses the ability to see a non-mobile stimulus which remains for a brief moment (200 ms) in the visual field. When the patient sees a presented stimulus, he presses the button on a handheld remote control. Different locations within a given region of the visual field are tested until the threshold, or the stimulus intensity seen 50% of the time, is seen at each test location.* 
+:::
+
+The HVF test provides several metrics, including the mean deviation (MD), pattern standard deviation (PSD), and visual field index (VFI). @Yaqub2012-dd is a good reference on how to interpret these values. In short: MD is a measure of the overall deviation of the visual field from normal, PSD measures localized irregularities in the visual field, and VFI is a summary measure of the overall visual field status. In even shorter: the lower the MD, the worse the visual field. The higher the PSD, the worse the visual field. The lower the VFI, the worse the visual field.

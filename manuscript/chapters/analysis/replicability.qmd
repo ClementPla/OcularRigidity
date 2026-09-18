@@ -1,0 +1,9 @@
+# Replicability study
+
+
+## Across cycles
+
+We have generated three "one-cycle" videos, corresponding to three cardiac pulsation. 
+
+
+{{< embed ../../notebooks/cycles.ipynb#fig-cycles-comparison >}}

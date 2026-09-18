@@ -1,0 +1,15 @@
+---
+keywords:
+  - Glaucoma
+  - OCT
+  - Ocular Rigidity
+  - Deep Learning
+abstract: |
+  This document presents a prospective study on ocular rigidity using OCT data and deep learning techniques.
+plain-language-summary: |
+  This study investigates the rigidity of the eye using optical coherence tomography (OCT) data and machine learning algorithms.
+citation:
+  container-title: Earth and Space Science
+---
+
+# Preface {.unnumbered}
