@@ -10,3 +10,7 @@ Using a Mann-Whitney U test, Holm-corrected, we found out the only significant d
 {{< embed ../../notebooks/cross_sectional_study.ipynb#fig-cross-sectional-study >}}
 
 This contredicts previous results from @Sayah2020-ym, which found a significant difference in ocular rigidity between the normal and glaucoma groups (glaucoma having less rigid eyes).
+
+
+
+{{< embed ../../notebooks/cross_sectional_study.ipynb#fig-cross-sectional-study-severity >}}
