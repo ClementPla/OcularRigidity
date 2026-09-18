@@ -300,7 +300,7 @@ Missing patients
 </div>
 <p>Using a Mann-Whitney U test, Holm-corrected, we found out the only significant different between the groups was between the Normal and GPAO groups for <span class="math inline">\(\Delta\)</span>CT. The other comparisons were not significant (p&gt;0.05). The results are summarized in <a href="#fig-cross-sectional-study" class="quarto-xref">Figure&nbsp;<span>6.1</span></a>.</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/cross_sectional_study.ipynb" data-notebook-cellid="cell-fig-cross-sectional-study">
-<div id="cell-fig-cross-sectional-study" class="cell" data-execution_count="9">
+<div id="cell-fig-cross-sectional-study" class="cell" data-execution_count="15">
 <div class="cell-output cell-output-display">
 <div id="fig-cross-sectional-study" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -316,6 +316,36 @@ Figure&nbsp;6.1
 </div>
 </div>
 <p>This contredicts previous results from <span class="citation" data-cites="Sayah2020-ym">Sayah et al. (<a href="../../references.html#ref-Sayah2020-ym" role="doc-biblioref">2020</a>)</span>, which found a significant difference in ocular rigidity between the normal and glaucoma groups (glaucoma having less rigid eyes).</p>
+<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/cross_sectional_study.ipynb" data-notebook-cellid="cell-fig-cross-sectional-study-severity">
+<div id="cell-fig-cross-sectional-study-severity" class="cell">
+<div class="cell-output cell-output-error">
+<div class="ansi-escaped-output">
+<pre><span class="ansi-red-fg">---------------------------------------------------------------------------</span>
+<span class="ansi-red-fg">IndexError</span>                                Traceback (most recent call last)
+Cell <span class="ansi-green-fg">In[16], line 67</span>
+<span class="ansi-green-fg ansi-bold">     65</span> axes <span style="color:rgb(98,98,98)">=</span> axes<span style="color:rgb(98,98,98)">.</span>flatten()
+<span class="ansi-green-fg ansi-bold">     66</span> <span style="font-weight:bold;color:rgb(0,135,0)">for</span> i, (var, label) <span style="font-weight:bold;color:rgb(175,0,255)">in</span> <span style="color:rgb(0,135,0)">enumerate</span>(variables_to_test):
+<span class="ansi-green-fg">---&gt; 67</span>     ax <span style="color:rgb(98,98,98)">=</span> <span class="ansi-yellow-bg">axes</span><span class="ansi-yellow-bg">[</span><span class="ansi-yellow-bg">i</span><span class="ansi-yellow-bg">]</span>
+<span class="ansi-green-fg ansi-bold">     68</span>     sns<span style="color:rgb(98,98,98)">.</span>boxenplot(data<span style="color:rgb(98,98,98)">=</span>df, y<span style="color:rgb(98,98,98)">=</span>var, x<span style="color:rgb(98,98,98)">=</span><span style="color:rgb(175,0,0)">"</span><span style="color:rgb(175,0,0)">Type</span><span style="color:rgb(175,0,0)">"</span>, order<span style="color:rgb(98,98,98)">=</span>ORDER, ax<span style="color:rgb(98,98,98)">=</span>ax)
+<span class="ansi-green-fg ansi-bold">     69</span>     ax<span style="color:rgb(98,98,98)">.</span>set_title(label)
+
+<span class="ansi-red-fg">IndexError</span>: index 6 is out of bounds for axis 0 with size 6</pre>
+</div>
+</div>
+<div class="cell-output cell-output-display">
+<div id="fig-cross-sectional-study-severity" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-cross-sectional-study-severity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="cross_sectional_study_files/figure-html/..-..-notebooks-cross_sectional_study-fig-cross-sectional-study-severity-output-2.png" id="fig-cross-sectional-study-severity" class="img-fluid figure-img">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-cross-sectional-study-severity-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.2
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
 
 
 <div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list" style="display: none">
