@@ -1,0 +1,226 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Ocular Rigidity - Prospective Study",
+    "section": "",
+    "text": "Preface",
+    "crumbs": [
+      "Preface"
+    ]
+  },
+  {
+    "objectID": "chapters/introduction.html",
+    "href": "chapters/introduction.html",
+    "title": "1  Introduction",
+    "section": "",
+    "text": "1.1 Deformation under blood pressure",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>Introduction</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/introduction.html#deformation-under-blood-pressure",
+    "href": "chapters/introduction.html#deformation-under-blood-pressure",
+    "title": "1  Introduction",
+    "section": "",
+    "text": "1.1.1 The Three Hypothesis",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>Introduction</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/introduction.html#three-hypotheses",
+    "href": "chapters/introduction.html#three-hypotheses",
+    "title": "1  Introduction",
+    "section": "1.2 Three hypotheses",
+    "text": "1.2 Three hypotheses\n\n\n\n\n\n\nFigure 1.1: Eye inflation under the three hypotheses.\n\n\n\nAs shown in Figure 1.1, …",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>Introduction</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/introduction.html#friedenwalds-equation-of-ocular-rigidity",
+    "href": "chapters/introduction.html#friedenwalds-equation-of-ocular-rigidity",
+    "title": "1  Introduction",
+    "section": "1.3 Friedenwald’s equation of ocular rigidity",
+    "text": "1.3 Friedenwald’s equation of ocular rigidity\nThe original Freidenwald’s equation of ocular rigidity assumes that: \\[\n\\frac{\\partial P}{\\partial V} = K \\cdot P \\Leftrightarrow P = P_0 e^{K \\cdot V}\n\\] We estimate the ocular rigidity \\(K\\) using two measurements of intraocular pressure \\(P_1\\) and \\(P_2\\) and the corresponding ocular volumes \\(V_1\\) and \\(V_2\\): \\[\nK = \\log \\left( \\frac{P_2}{P_1} \\right) / (V_2 - V_1)\n\\tag{1.1}\\]\nWe estimate \\(V_2\\) and \\(V_1\\) using \\(CT\\) and \\(\\Delta CT\\) where \\(CT\\) is the choroidal thickness and \\(\\Delta CT\\) is the change in choroidal thickness between two measurements. \\(P_2\\) and \\(P_1\\) are the intraocular pressures at the two measurements. Let’s note the axial length \\(\\alpha\\). It is the distance from the corneal surface to an interference peak corresponding to the RPE. We introduce a the corrected axial length \\(\\hat{\\alpha} = 0.83 \\alpha\\). The spherical radius during diastole and (end of) systole are estimated as: \\[\nr_1 = \\frac{\\hat{\\alpha}}{2} + CT\n\\] and \\[\nr_2 = \\frac{\\hat{\\alpha}}{2} + CT + \\Delta CT\n\\] From which we estimate the change in ocular volume \\(\\Delta V\\) as: \\[\n\\Delta V = \\frac{4}{3} \\pi (r_2^3 - r_1^3)\n\\] In practise, we also introduce a correction factor \\(c\\) to account for the fact that the eye is not a perfect sphere. The corrected change in ocular volume is then: \\[\n\\Delta V_{corr} = c \\Delta V \\] with \\(c = 2/3\\).",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>Introduction</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/introduction.html#visual-field-characteristics",
+    "href": "chapters/introduction.html#visual-field-characteristics",
+    "title": "1  Introduction",
+    "section": "1.4 Visual field characteristics",
+    "text": "1.4 Visual field characteristics\nThe Humphrey Visual Field (HVF) is a common test to assess the visual field of patients.\n\n\n\n\n\n\nNote\n\n\n\nTaken from https://eyerounds.org/tutorials/VF-testing/#gsc.tab=0 During Humphrey Visual Field (HVF) testing, the patient places his head in the chinrest and fixes his gaze toward a central fixation point in a large, white bowl. […] It assesses the ability to see a non-mobile stimulus which remains for a brief moment (200 ms) in the visual field. When the patient sees a presented stimulus, he presses the button on a handheld remote control. Different locations within a given region of the visual field are tested until the threshold, or the stimulus intensity seen 50% of the time, is seen at each test location.\n\n\nThe HVF test provides several metrics, including the mean deviation (MD), pattern standard deviation (PSD), and visual field index (VFI). Yaqub (2012) is a good reference on how to interpret these values. In short: MD is a measure of the overall deviation of the visual field from normal, PSD measures localized irregularities in the visual field, and VFI is a summary measure of the overall visual field status. In even shorter: the lower the MD, the worse the visual field. The higher the PSD, the worse the visual field. The lower the VFI, the worse the visual field.\n\n\n\n\nYaqub, Moustafa. 2012. “Visual Fields Interpretation in Glaucoma: A Focus on Static Automated Perimetry.” Community Eye Health 25 (79-80): 1–8.",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>Introduction</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/review/review.html",
+    "href": "chapters/review/review.html",
+    "title": "2  Review of the Literature",
+    "section": "",
+    "text": "2.0.1 Miscellaneous\n\nAbe et al. (2015) offer an interesting description of the role of the lamina cribrosa in the pathophysiology of glaucoma. The lamina cribrosa is a sieve-like structure that allows the passage of retinal ganglion cell axons from the eye to the brain. It is composed of connective tissue and is supported by the sclera. The lamina cribrosa is also a site of mechanical stress, as it is subjected to intraocular pressure and cerebrospinal fluid pressure. It has been suggested that the lamina cribrosa may be a site of axonal injury in glaucoma, and that changes in it may be an early indicator of glaucomatous damage. Specifically, a thinner LC is associated with glaucomatous damages. They suggest a very interesting hypothesis: glaucoma is caused by the trans-laminar pressure gradient (i.e. the difference between IOP and cerebrospinal fluid pressure). The hypothesis is supported by the work of Ren et al. (2010): a low cerebrospinal fluid pressure (CSF-P) is associated with open-angle glaucoma in eyes with normal intraocular pressure (IOP).\n\n\n\n\n\n\n\nConclusion from Ren et al. (2010)\n\n\n\nIn open-angle glaucoma with normal IOP, cerebrospinal fluid pressure (CSF-P) is abnormally low, leading to an abnormally high trans-lamina cribrosa pressure difference. Pathogenetically, a low CSF-P in normal-IOP glaucoma may be similar to a high IOP in high-IOP glaucoma. Consequently, the glaucomatous visual field defect is positively correlated with the trans-lamina cribrosa pressure difference and inversely correlated with the CSF-P. In nonglaucomatous subjects, CSF-P, blood pressure, and IOP are significantly associated with each other\n\n\n\n\n\n\n\n\nMore about CSF-P\n\n\n\n\n\nJonas et al. (2015) offer an interesting review on the CSF-P and its role with the physiology of the eye. - Thicker subfoveal choroidal thickness was associated with higher estimated CSFP. - Larger retinal vein diameters and higher vein-to-artery diameter ratios were significantly associated with higher estimated CSFP (P = 0.001). In contrast, retinal arterial diameters were not significantly associated with estimated CSFP nor were other microvascular abnormalities such as arteriovenous crossing signs. In a reverse manner, higher estimated CSFP was correlated with wider retinal veins and higher vein-to-artery diameter ratio, but not with retinal artery diameters or other retinal microvascular abnormalities.\n\n\n\n\nWerff (1981) suggests to use another metric to estimate the rigidity: \\[\n\\Delta V = \\frac{1}{K} (P_2^{1/3} - P_1^{1/3})\n\\] where \\(\\Delta V\\) is the change in volume and \\(P_2\\) and \\(P_1\\) are the intraocular pressures at the two measurements. Other definitions are also listed in section Section 2.0.6 and Section 2.0.7.\n\n\n\n2.0.2 Structural Measurements for Monitoring Change in Glaucoma: Comparing Retinal Nerve Fiber Layer Thickness With Minimum Rim Width and Area\nStructural measurements are noisy. Gardiner et al. (2015) propose to use the LSNR (Longitudinal Signal-to-Noise Ratio). Instead of comparing the slope of a structural measurement over time, they propose to compare the slope divided by the standard deviation of the residuals. This is a measure of how much signal there is in the noise. The more negative the LSNR, the more likely it is that the slope is real and not just noise. They compare three structural measurements: the retinal nerve fiber layer thickness (RNFLT), the minimum rim width (MRW) and the minimum rim area (MRA). They find that the RNFLT has a better LSNR than MRW or MRA. Although MRW and MRA may be more sensitive for early detection of glaucomatous damage, these data suggest that RNFLT may be preferable for monitoring change. Cohort: 157 eyes of 157 participants with high-risk ocular hypertension or non–end-stage glaucoma (mean deviation [MD] from −22 to +3 dB). Participants were tested approximately every 6 months for at least six visits.\n\n\n\n\n\n\n\n\n\n\n\n2.0.3 Clinical Utility of Bruch Membrane Opening-Minimum Rim Width for Detecting Early Glaucoma in Myopic Eyes\nPark et al. (2021) conduct a study to determine the diagnostic value of BMO-MRW compared with peripapillary retinal nerve fiber layer (pRNFL) thickness for detecting early glaucoma in patients with moderate to severe myopia. Global analyses for the discrimination of early glaucoma in all myopic subjects showed comparable AUCs between BMO-MRW and pRNFL thickness [AUC 0.952 (95% confidence interval, 0.918-0.975) and 0.934 (95% confidence interval, 0.896-0.961), respectively, P=0.345]. However, in sectoral analysis, BMO-MRW showed significantly better diagnostic performance than pRNFL thickness except for the superotemporal sector.\n\n\n\n\n\n\n\n\n\n\n\n2.0.4 The Association Between Ocular Rigidity and Neuroretinal Damage in Glaucoma\nSayah et al. (2020) aims to evaluate the relationship between OR and neuroretinal damage caused by glaucoma. Significant positive correlations were found between OR and minimum GCC thickness (r = 0.325, P = 0.001), average GCC thickness (r = 0.320, P = 0.002), rim area (r = 0.344, P &lt; 0.001), and RNFL thickness in the superior (r = 0.225, P = 0.023), and inferior (r = 0.281, P = 0.004) quadrants. These correlations were generally greater than those found for CCT, CH, and CRF. Furthermore, no correlation was found between OR and corneal biomechanical parameters. Cohort: 108 subjects (22 healthy, 23 suspected glaucoma, and 63 glaucoma (early to advance)). The main results are sumarized in Figure 2.1, which represents the partial correlation between OR and neuroretinal damage, adjusted for age, sex, and axial length.\n\n\n\n\n\n\n\n\nFigure 2.1\n\n\n\n\n\n\n\n2.0.5 Association between ocular biometric parameters and scleral rigidity as measured by fundus pulsation optical coherence elastography in eyes with and without glaucoma\nBojikian et al. (2026) published a study to evaluate the association between ocular biometric parameters and scleral rigidity as measured by fundus pulsation optical coherence elastography (FP-OCE) in eyes with and without glaucoma. The study included 58 eyes with glaucoma and 36 control eyes. In Figure 2.2, we see the choroidal max strain in glaucoma vs normal eyes they obtain. In short, higher maximum choroidal strain (which is either a more pulsatile choroid or a thinner choroid) is midly associated with glaucoma, which in turns indicate that a lower ocular rigidity is associated with glaucoma.\n\n\n\n\n\n\n\n\nFigure 2.2\n\n\n\n\n\n\n\n2.0.6 Non-invasive Clinical Measurement of Ocular Rigidity and Comparison to Biomechanical and Morphological Parameters in Glaucomatous and Healthy Subjects\nMa, Moroi, and Roberts (2021) offer almost the same methodology as we do in this study, to ONH videos. They show that there is a stronger correlation between ocular rigidity and sclearal stiffness (R=0.62, measured using the stiffness parameter at the highest concavity [SP-HC]) vs corneal stiffness (stiffness parameter at the first applanation [SP-A1], R=0.41). There is a positive corelation with the static pressure-volume ratio (P/V, R=0.72). They do the same linearization of \\(\\Delta V \\approx 4\\pi R^2\\Delta CT\\). They define \\(R\\) as half the axial length.\nThe coneaosclera properties were measured using with a Corvis ST, a non contact tonometer coupled with a high-speed Scheimpflug camera. The corneal stiffness was measured using the stiffness parameter at the first applanation (SP-A1). The scleral stiffness was measured using the stiffness parameter at the highest concavity (SP-HC).\n\n\n2.0.7 Ocular Rigidity in Living Human Eyes\nPallikaris et al. (2005) proceed with an actual measurement of the rigidity (unfortunately, not defined as we did, i.e, they define \\(K = \\frac{\\Delta P}{\\Delta V}\\) ). They inject saline in the eye by interval, until they reach an IOP of 60 mmHg or 200 μL of saline. The average \\(R^2\\) they obtain is 0.92 (maybe the linearization of the relation is actually a good idea; they indicate the linear relationship was the best fit they got). They also reference the work of Silver and Geyer (2000), that indicate that the best fit for the pressure-volume relationship is: \\[\n\\Delta V = V \\cdot (C+C_0\\log{P} + C_1 \\cdot P)\n\\] where \\(C\\), \\(C_0\\) and \\(C_1\\) are numerical constants.\n\n\n\n\nAbe, Ricardo Y, Carolina P B Gracitelli, Alberto Diniz-Filho, Andrew J Tatham, and Felipe A Medeiros. 2015. “Lamina Cribrosa in Glaucoma: Diagnosis and Monitoring.” Curr. Ophthalmol. Rep. 3 (2): 74–84.\n\n\nBojikian, Karine D, Zhaoyu Gong, Morgan Hansen-Oja, Sarah Lee, Andrew Chen, Eric Duerr, Raghu C Mudumbai, Ruikang K Wang, and Philip P Chen. 2026. “Association Between Ocular Biometric Parameters and Scleral Rigidity as Measured by Fundus Pulsation Optical Coherence Elastography in Eyes with and Without Glaucoma.” Front. Med. (Lausanne) 13 (1835538): 1835538.\n\n\nGardiner, Stuart K., Pui Yi Boey, Hongli Yang, Brad Fortune, Claude F. Burgoyne, and Shaban Demirel. 2015. “Structural Measurements for Monitoring Change in Glaucoma: Comparing Retinal Nerve Fiber Layer Thickness with Minimum Rim Width and Area.” Investigative Ophthalmology & Visual Science 56 (11): 6886–91. https://doi.org/10.1167/iovs.15-16701.\n\n\nJonas, Jost B., Ningli Wang, Diya Yang, Robert Ritch, and Songhomitra Panda-Jonas. 2015. “Facts and Myths of Cerebrospinal Fluid Pressure for the Physiology of the Eye.” Progress in Retinal and Eye Research 46: 67–83. https://doi.org/https://doi.org/10.1016/j.preteyeres.2015.01.002.\n\n\nMa, Yanhui, Sayoko E. Moroi, and Cynthia J. Roberts. 2021. “Non-Invasive Clinical Measurement of Ocular Rigidity and Comparison to Biomechanical and Morphological Parameters in Glaucomatous and Healthy Subjects.” Frontiers in Medicine 8 (July): 701997. https://doi.org/10.3389/fmed.2021.701997.\n\n\nPallikaris, Ioannis G., George D. Kymionis, Harilaos S. Ginis, George A. Kounis, and Miltiadis K. Tsilimbaris. 2005. “Ocular Rigidity in Living Human Eyes.” Investigative Ophthalmology & Visual Science 46 (2): 409–14. https://doi.org/10.1167/iovs.04-0162.\n\n\nPark, Do Hee, Kyung Yoon Kook, Yeon Soo Kang, Helong Piao, Mi Sun Sung, and Sang Woo Park. 2021. “Clinical Utility of Bruch Membrane Opening-Minimum Rim Width for Detecting Early Glaucoma in Myopic Eyes.” J. Glaucoma 30 (11): 971–80.\n\n\nRen, Ruojin, Jost B Jonas, Guoghong Tian, Yi Zhen, Ke Ma, Shuning Li, Hongtao Wang, Bin Li, Xiaojun Zhang, and Ningli Wang. 2010. “Cerebrospinal Fluid Pressure in Glaucoma: A Prospective Study.” Ophthalmology 117 (2): 259–66.\n\n\nSayah, Diane N, Javier Mazzaferri, Denise Descovich, Santiago Costantino, and Mark R Lesk. 2020. “The Association Between Ocular Rigidity and Neuroretinal Damage in Glaucoma.” Invest. Ophthalmol. Vis. Sci. 61 (13): 11.\n\n\nSilver, D. M., and O. Geyer. 2000. “Pressure-Volume Relation for the Living Human Eye.” Current Eye Research 20 (2): 115–20.\n\n\nWerff, Terry J. Van Der. 1981. “A New Single-Parameter Ocular Rigidity Function.” American Journal of Ophthalmology 92 (3): 391–95. https://doi.org/10.1016/0002-9394(81)90530-4.",
+    "crumbs": [
+      "Background",
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Review of the Literature</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/review/statistical_analysis.html",
+    "href": "chapters/review/statistical_analysis.html",
+    "title": "3  Statistical Analysis",
+    "section": "",
+    "text": "This chapter will focus on describing the statistical methods used in the study.",
+    "crumbs": [
+      "Background",
+      "<span class='chapter-number'>3</span>  <span class='chapter-title'>Statistical Analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/method/methods.html",
+    "href": "chapters/method/methods.html",
+    "title": "4  Methods",
+    "section": "",
+    "text": "4.1 Cohort description\nWe have a total of 135 patients in the study, with a total of 534 visits.",
+    "crumbs": [
+      "Methods",
+      "<span class='chapter-number'>4</span>  <span class='chapter-title'>Methods</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/replicability.html",
+    "href": "chapters/analysis/replicability.html",
+    "title": "5  Replicability study",
+    "section": "",
+    "text": "5.1 Across cycles\nWe have generated three “one-cycle” videos, corresponding to three cardiac pulsation.",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>5</span>  <span class='chapter-title'>Replicability study</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/replicability.html#across-cycles",
+    "href": "chapters/analysis/replicability.html#across-cycles",
+    "title": "5  Replicability study",
+    "section": "",
+    "text": "Figure 5.1",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>5</span>  <span class='chapter-title'>Replicability study</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/cross_sectional_study.html",
+    "href": "chapters/analysis/cross_sectional_study.html",
+    "title": "6  Cross-sectional study",
+    "section": "",
+    "text": "Missing patients\n\n\n\nThere are 53 missing patients in the cross-sectional study currently.\n\n\nUsing a Mann-Whitney U test, Holm-corrected, we found out the only significant different between the groups was between the Normal and GPAO groups for \\(\\Delta\\)CT. The other comparisons were not significant (p&gt;0.05). The results are summarized in Figure 6.1.\n\n\n\n\n\n\n\n\n\nFigure 6.1\n\n\n\n\n\n\nThis contredicts previous results from Sayah et al. (2020), which found a significant difference in ocular rigidity between the normal and glaucoma groups (glaucoma having less rigid eyes).\n\n\n\n\nSayah, Diane N, Javier Mazzaferri, Denise Descovich, Santiago Costantino, and Mark R Lesk. 2020. “The Association Between Ocular Rigidity and Neuroretinal Damage in Glaucoma.” Invest. Ophthalmol. Vis. Sci. 61 (13): 11.",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>Cross-sectional study</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/correlation_analysis.html",
+    "href": "chapters/analysis/correlation_analysis.html",
+    "title": "7  Correlation analysis",
+    "section": "",
+    "text": "7.1 Correlation analysis - Structural and biomechanical characteristics\nIn this section, we focus on establishing the correlation between each visit measurements (taken at the same time) and biomechanicals characteristics extracted from the data. Each point therefore represents a visit, and the correlation is computed across all visits. The correlation coefficient is computed using the Pearson method. Let’s first visualize what correlates with the intraocular pressure (IOP) measured.\nWe do not see a strong correlation between the intraocular pressure and the ocular rigidity, change in choroidal thickness or change in ocular volume. On the other hand, we have a pretty good correlation between the ocular pulse amplitude (OPA) and the change in choroidal thickness or change in ocular volume (Figure 7.2 ).\nLet’s plot how the change in choroidal thickness correlates with the minimal choroidal thickness (Figure 7.3). The thicker the choroid, the more it can change in thickness.\nWe observe another mild correlation between the axial length and the change in choroidal thickness and the minimal choroidal thickness (Figure 7.4). This is fairly consistent with the literature: myopic eyes (longer axial length) tend to have thinner choroids (Meng et al. (2023))\nAnother potentially interesting correlation is between age and the choroidal thickness (previously documented (2025)-, approximately 12.7-15.6 μm per decade). In our cohort, we observe a stronger trend (around 25 μm per decade) between age and the change in choroidal thickness (Figure 7.5).",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>7</span>  <span class='chapter-title'>Correlation analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/correlation_analysis.html#correlation-analysis---structural-and-biomechanical-characteristics",
+    "href": "chapters/analysis/correlation_analysis.html#correlation-analysis---structural-and-biomechanical-characteristics",
+    "title": "7  Correlation analysis",
+    "section": "",
+    "text": "Figure 7.1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 7.2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 7.3\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 7.4\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 7.5",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>7</span>  <span class='chapter-title'>Correlation analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/correlation_analysis.html#correlation-analysis---onh-characteristics",
+    "href": "chapters/analysis/correlation_analysis.html#correlation-analysis---onh-characteristics",
+    "title": "7  Correlation analysis",
+    "section": "7.2 Correlation analysis - ONH characteristics",
+    "text": "7.2 Correlation analysis - ONH characteristics\nIn this section, we focus on establishing a correlation between the macular properties (choroidal thickness, ocular rigidity, change in choroidal thickness, etcc.) and the optic nerve head (ONH) characteristics.\nFirst, let’s observe how the minimal rim width (MRW) correlates with the ocular rigidity, depending on the quadrants on the ONH (Figure 7.6). We observe a mild correlation between the ocular rigidity and the MRW, especially in the nasal quadrants. Mostly, this correlation is lost when testing against the axial length, CT, ΔCT or ΔV.\n\n\n\n\n\n\n\n\n\nFigure 7.6\n\n\n\n\n\n\nA similar trend (correlation between K and the ONH characteristics, but not with the other biomechanical characteristics) is observed when looking at the circular RNFL thickness (Figure 7.7).\n\n\n\n\n\n\n\n\n\nFigure 7.7\n\n\n\n\n\n\n\n\n\n\n\n\nWarning\n\n\n\nIn Figure 7.7, some points were filtered (outliers, quantile=0.999).",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>7</span>  <span class='chapter-title'>Correlation analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/correlation_analysis.html#correlation-analysis---visual-field-characteristics",
+    "href": "chapters/analysis/correlation_analysis.html#correlation-analysis---visual-field-characteristics",
+    "title": "7  Correlation analysis",
+    "section": "7.3 Correlation analysis - Visual field characteristics",
+    "text": "7.3 Correlation analysis - Visual field characteristics\nIn our cohort, the rigidity does not correlate with any of the visual field metrics (MD, PSD, VFI) (Figure 7.8). However, we observe a tiny correlation between the change in choroidal thickness and the visual field metrics (Figure 7.9).\n\n\n\n\n\n\n\n\n\nFigure 7.8\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 7.9\n\n\n\n\n\n\nWe can compare with the correlation between the IOP and the visual field metrics (Figure 7.10). Overall, the IOP correlates better with the visual field metrics than the ocular rigidity or the choroidal thickness.\n\n\n\n\n\n\n\n\n\nFigure 7.10\n\n\n\n\n\n\n\n\n\n\nMeng, Qing-Yu, Ze-Qun Miao, Shu-Ting Liang, Xi Wu, Le-Jin Wang, Ming-Wei Zhao, and Li-Li Guo. 2023. “Choroidal Thickness, Myopia, and Myopia Control Interventions in Children: A Meta-Analysis and Systemic Review.” Int. J. Ophthalmol. 16 (3): 453–64.\n\n\nSadeghi, Elham, Nicola Valsecchi, Elham Rahmanipour, Mahsa Ejlalidiz, Nasiq Hasan, Kiran Kumar Vupparaboina, Mohammed Nasar Ibrahim, et al. 2025. “Choroidal Biomarkers in Age-Related Macular Degeneration.” Survey of Ophthalmology 70 (2): 167–83. https://doi.org/https://doi.org/10.1016/j.survophthal.2024.10.004.",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>7</span>  <span class='chapter-title'>Correlation analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/predictive_analysis.html",
+    "href": "chapters/analysis/predictive_analysis.html",
+    "title": "8  Predictive analysis",
+    "section": "",
+    "text": "8.1 Slopes and follow-up\nIn Chapter 7, each point is a visit and both variables are measured at the same time. Here we take a variable at the first visit and correlate it with the slope of another variable over the follow-up, in unit per year. Each point is therefore an eye and not a visit. We have ?var:pred.n_eyes eyes, with ?var:pred.visits_min to ?var:pred.visits_max visits each and a median follow-up of ?var:pred.median_followup years.\nProgression in glaucoma has no good predictor, and the IOP, which is what we treat, is a weak one. So we keep the IOP in every comparison below and read the other variables against it. The question is not whether a variable predicts progression well, it is whether it does better than what we already rely on.\nA slope computed on two visits a few months apart is not progression. Figure 8.1 shows the ocular rigidity at the first visit against the MD slope, with all the eyes on the left, and only the eyes with at least ?var:pred.min_visits visits over at least ?var:pred.min_span year on the right. The trend on the left is carried by the eyes with the shortest follow-up.\nThe worst MD slope, at ?var:pred.worst_md_slope dB/year, comes from an eye with ?var:pred.worst_md_visits visits over ?var:pred.worst_md_span year (Figure 8.2).",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>8</span>  <span class='chapter-title'>Predictive analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/predictive_analysis.html#slopes-and-follow-up",
+    "href": "chapters/analysis/predictive_analysis.html#slopes-and-follow-up",
+    "title": "8  Predictive analysis",
+    "section": "",
+    "text": "Figure 8.1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 8.2\n\n\n\n\n\n\n\n\n\n\n\n\nWarning\n\n\n\nThe figures below keep only the eyes with at least ?var:pred.min_visits visits over at least ?var:pred.min_span year (?var:pred.n_kept_min to ?var:pred.n_kept_max eyes depending on the endpoint).",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>8</span>  <span class='chapter-title'>Predictive analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/predictive_analysis.html#comparing-the-predictors",
+    "href": "chapters/analysis/predictive_analysis.html#comparing-the-predictors",
+    "title": "8  Predictive analysis",
+    "section": "8.2 Comparing the predictors",
+    "text": "8.2 Comparing the predictors\nFigure 8.8 puts every baseline variable against the four endpoints, with the IOP in red.\n\n\n\n\n\n\n\n\n\nFigure 8.3\n\n\n\n\n\n\nThe IOP is flat on the three structural endpoints and only moves on the MD slope, where it goes the wrong way: a higher pressure at the first visit goes with a slower MD loss. That is what we would expect if the eyes with the highest pressure are also the ones whose treatment was adjusted.\nAgainst that, the ocular rigidity matches the IOP on the MD slope and in the direction we expect, a stiffer eye losing MD faster (Figure 8.4). It also tracks the PSD and the BMO-MRW slopes, where the IOP does nothing.\n\n\n\n\n\n\n\n\n\nFigure 8.4\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigure 8.5",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>8</span>  <span class='chapter-title'>Predictive analysis</span>"
+    ]
+  },
+  {
+    "objectID": "chapters/analysis/predictive_analysis.html#choroidal-thickness",
+    "href": "chapters/analysis/predictive_analysis.html#choroidal-thickness",
+    "title": "8  Predictive analysis",
+    "section": "8.3 Choroidal thickness",
+    "text": "8.3 Choroidal thickness\nThe choroidal thickness at the first visit gives the strongest trend of the table, on the BMO-MRW slope (Figure 8.6). It says nothing about the MD or the RNFL slope.\n\n\n\n\n\n\n\n\n\nFigure 8.6\n\n\n\n\n\n\nA thicker choroid at the first visit goes with a rim that thins more slowly (Figure 8.7). The change in choroidal thickness points the same way, slightly weaker. Both are well ahead of the IOP on this endpoint.\n\n\n\n\n\n\n\n\n\nFigure 8.7\n\n\n\n\n\n\nNone of these trends is strong on its own, but they are overall more consistent than the IOP.\n\n\n\n\n\n\n\n\n\nFigure 8.8",
+    "crumbs": [
+      "Analysis",
+      "<span class='chapter-number'>8</span>  <span class='chapter-title'>Predictive analysis</span>"
+    ]
+  },
+  {
+    "objectID": "references.html",
+    "href": "references.html",
+    "title": "References",
+    "section": "",
+    "text": "Abe, Ricardo Y, Carolina P B Gracitelli, Alberto Diniz-Filho, Andrew J\nTatham, and Felipe A Medeiros. 2015. “Lamina Cribrosa in Glaucoma:\nDiagnosis and Monitoring.” Curr. Ophthalmol. Rep. 3 (2):\n74–84.\n\n\nBojikian, Karine D, Zhaoyu Gong, Morgan Hansen-Oja, Sarah Lee, Andrew\nChen, Eric Duerr, Raghu C Mudumbai, Ruikang K Wang, and Philip P Chen.\n2026. “Association Between Ocular Biometric Parameters and Scleral\nRigidity as Measured by Fundus Pulsation Optical Coherence Elastography\nin Eyes with and Without Glaucoma.” Front. Med.\n(Lausanne) 13 (1835538): 1835538.\n\n\nGardiner, Stuart K., Pui Yi Boey, Hongli Yang, Brad Fortune, Claude F.\nBurgoyne, and Shaban Demirel. 2015. “Structural Measurements for\nMonitoring Change in Glaucoma: Comparing Retinal Nerve Fiber Layer\nThickness with Minimum Rim Width and Area.” Investigative\nOphthalmology & Visual Science 56 (11): 6886–91. https://doi.org/10.1167/iovs.15-16701.\n\n\nJonas, Jost B., Ningli Wang, Diya Yang, Robert Ritch, and Songhomitra\nPanda-Jonas. 2015. “Facts and Myths of Cerebrospinal Fluid\nPressure for the Physiology of the Eye.” Progress in Retinal\nand Eye Research 46: 67–83. https://doi.org/https://doi.org/10.1016/j.preteyeres.2015.01.002.\n\n\nMa, Yanhui, Sayoko E. Moroi, and Cynthia J. Roberts. 2021.\n“Non-Invasive Clinical Measurement of Ocular\nRigidity and Comparison to\nBiomechanical and Morphological Parameters in\nGlaucomatous and Healthy Subjects.”\nFrontiers in Medicine 8 (July): 701997. https://doi.org/10.3389/fmed.2021.701997.\n\n\nMeng, Qing-Yu, Ze-Qun Miao, Shu-Ting Liang, Xi Wu, Le-Jin Wang, Ming-Wei\nZhao, and Li-Li Guo. 2023. “Choroidal Thickness, Myopia, and\nMyopia Control Interventions in Children: A Meta-Analysis and Systemic\nReview.” Int. J. Ophthalmol. 16 (3): 453–64.\n\n\nPallikaris, Ioannis G., George D. Kymionis, Harilaos S. Ginis, George A.\nKounis, and Miltiadis K. Tsilimbaris. 2005. “Ocular\nRigidity in Living Human Eyes.”\nInvestigative Ophthalmology & Visual Science 46 (2):\n409–14. https://doi.org/10.1167/iovs.04-0162.\n\n\nPark, Do Hee, Kyung Yoon Kook, Yeon Soo Kang, Helong Piao, Mi Sun Sung,\nand Sang Woo Park. 2021. “Clinical Utility of Bruch Membrane\nOpening-Minimum Rim Width for Detecting Early Glaucoma in Myopic\nEyes.” J. Glaucoma 30 (11): 971–80.\n\n\nRen, Ruojin, Jost B Jonas, Guoghong Tian, Yi Zhen, Ke Ma, Shuning Li,\nHongtao Wang, Bin Li, Xiaojun Zhang, and Ningli Wang. 2010.\n“Cerebrospinal Fluid Pressure in Glaucoma: A Prospective\nStudy.” Ophthalmology 117 (2): 259–66.\n\n\nSadeghi, Elham, Nicola Valsecchi, Elham Rahmanipour, Mahsa Ejlalidiz,\nNasiq Hasan, Kiran Kumar Vupparaboina, Mohammed Nasar Ibrahim, et al.\n2025. “Choroidal Biomarkers in Age-Related Macular\nDegeneration.” Survey of Ophthalmology 70 (2): 167–83.\nhttps://doi.org/https://doi.org/10.1016/j.survophthal.2024.10.004.\n\n\nSayah, Diane N, Javier Mazzaferri, Denise Descovich, Santiago\nCostantino, and Mark R Lesk. 2020. “The Association Between Ocular\nRigidity and Neuroretinal Damage in Glaucoma.” Invest.\nOphthalmol. Vis. Sci. 61 (13): 11.\n\n\nSilver, D. M., and O. Geyer. 2000. “Pressure-Volume\nRelation for the Living Human Eye.” Current Eye\nResearch 20 (2): 115–20.\n\n\nWerff, Terry J. Van Der. 1981. “A New Single-Parameter\nOcular Rigidity Function.” American Journal of\nOphthalmology 92 (3): 391–95. https://doi.org/10.1016/0002-9394(81)90530-4.\n\n\nYaqub, Moustafa. 2012. “Visual Fields Interpretation in Glaucoma:\nA Focus on Static Automated Perimetry.” Community Eye\nHealth 25 (79-80): 1–8.",
+    "crumbs": [
+      "References"
+    ]
+  }
+]
