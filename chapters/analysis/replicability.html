@@ -76,6 +76,35 @@ ul.task-list li input[type="checkbox"] {
   });
 </script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -244,7 +273,7 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="across-cycles" class="level2" data-number="5.1">
 <h2 data-number="5.1" class="anchored" data-anchor-id="across-cycles"><span class="header-section-number">5.1</span> Across cycles</h2>
-<p>We have generated three “one-cycle” videos, corresponding to three cardiac pulsation.</p>
+<p>We have generated three “one-cycle” videos, corresponding to three cardiac pulsation. We compare in <a href="#fig-cycles-comparison" class="quarto-xref">Figure&nbsp;<span>5.1</span></a> the <span class="math inline">\(\Delta CT\)</span> obtained through three different methods: 1. We compute the optical flow along the CSI from the first frame to each other. We project the displacement along the CSI normal vector, and average these projections along the CSI. This gives us a <span class="math inline">\(\Delta CT\)</span> for each frame, which we can plot as a function of time. 2. We take the segmentation mask, and for each A-scan, we fit a sinuodal function to its thickness. A-Scan that follows that pattern are kept, and the others are discarded. We then average the thickness of the remaining sinusoidal amplitudes. 3. We compute the thickness of the choroidal mask and simply takes its average per B-scan. <span class="math inline">\(\Delta CT\)</span> is then computed as the difference between the maximum and minimum thicknesses along the cardiac cycle.</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/cycles.ipynb" data-notebook-cellid="cell-fig-cycles-comparison">
 <div id="cell-fig-cycles-comparison" class="cell" data-execution_count="35">
 <div class="cell-output cell-output-display">
