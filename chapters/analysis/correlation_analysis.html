@@ -268,7 +268,7 @@ div.csl-indent {
 <h2 data-number="7.1" class="anchored" data-anchor-id="correlation-analysis---structural-and-biomechanical-characteristics"><span class="header-section-number">7.1</span> Correlation analysis - Structural and biomechanical characteristics</h2>
 <p>In this section, we focus on establishing the correlation between each visit measurements (taken at the same time) and biomechanicals characteristics extracted from the data. Each point therefore represents a visit, and the correlation is computed across all visits. The correlation coefficient is computed using the Pearson method. Let’s first visualize what correlates with the intraocular pressure (IOP) measured.</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-IOP-vs-dCT-vs-dV">
-<div id="cell-fig-K-vs-IOP-vs-dCT-vs-dV" class="cell" data-execution_count="2">
+<div id="cell-fig-K-vs-IOP-vs-dCT-vs-dV" class="cell" data-execution_count="18">
 <div class="cell-output cell-output-display">
 <div id="fig-k-vs-iop-vs-dct-vs-dv" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -285,7 +285,7 @@ Figure&nbsp;7.1
 </div>
 <p>We do not see a strong correlation between the intraocular pressure and the ocular rigidity, change in choroidal thickness or change in ocular volume. On the other hand, we have a pretty good correlation between the <strong>ocular pulse amplitude</strong> (OPA) and the change in choroidal thickness or change in ocular volume (<a href="#fig-deltact-dv-vs-opa" class="quarto-xref">Figure&nbsp;<span>7.2</span></a> ).</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-deltaCT-dV-vs-OPA">
-<div id="cell-fig-deltaCT-dV-vs-OPA" class="cell" data-execution_count="3">
+<div id="cell-fig-deltaCT-dV-vs-OPA" class="cell" data-execution_count="19">
 <div class="cell-output cell-output-display">
 <div id="fig-deltact-dv-vs-opa" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -302,7 +302,7 @@ Figure&nbsp;7.2
 </div>
 <p>Let’s plot how the change in choroidal thickness correlates with the minimal choroidal thickness (<a href="#fig-ct-vs-delta-ct" class="quarto-xref">Figure&nbsp;<span>7.3</span></a>). The thicker the choroid, the more it can change in thickness.</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-ct-vs-delta-ct">
-<div id="cell-fig-ct-vs-delta-ct" class="cell" data-execution_count="4">
+<div id="cell-fig-ct-vs-delta-ct" class="cell" data-execution_count="20">
 <div class="cell-output cell-output-display">
 <div id="fig-ct-vs-delta-ct" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -319,7 +319,7 @@ Figure&nbsp;7.3
 </div>
 <p>We observe another mild correlation between the axial length and the change in choroidal thickness and the minimal choroidal thickness (<a href="#fig-axial-length-vs-delta-ct-and-ct" class="quarto-xref">Figure&nbsp;<span>7.4</span></a>). This is fairly consistent with the literature: myopic eyes (longer axial length) tend to have thinner choroids (<span class="citation" data-cites="Meng2023-jk">Meng et al. (<a href="../../references.html#ref-Meng2023-jk" role="doc-biblioref">2023</a>)</span>)</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-axial-length-vs-delta-ct-and-ct">
-<div id="cell-fig-axial-length-vs-delta-ct-and-ct" class="cell" data-execution_count="5">
+<div id="cell-fig-axial-length-vs-delta-ct-and-ct" class="cell" data-execution_count="21">
 <div class="cell-output cell-output-display">
 <div id="fig-axial-length-vs-delta-ct-and-ct" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -336,7 +336,7 @@ Figure&nbsp;7.4
 </div>
 <p>Another potentially interesting correlation is between age and the choroidal thickness (previously documented <span class="citation" data-cites="SADEGHI2025167">(<a href="../../references.html#ref-SADEGHI2025167" role="doc-biblioref">2025</a>)</span>-, approximately 12.7-15.6 μm per decade). In our cohort, we observe a stronger trend (around 25 μm per decade) between age and the change in choroidal thickness (<a href="#fig-k-deltact-deltav-vs-age" class="quarto-xref">Figure&nbsp;<span>7.5</span></a>).</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-deltaCT-deltaV-vs-age">
-<div id="cell-fig-K-deltaCT-deltaV-vs-age" class="cell" data-execution_count="6">
+<div id="cell-fig-K-deltaCT-deltaV-vs-age" class="cell" data-execution_count="22">
 <div class="cell-output cell-output-display">
 <div id="fig-k-deltact-deltav-vs-age" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -357,7 +357,7 @@ Figure&nbsp;7.5
 <p>In this section, we focus on establishing a correlation between the macular properties (choroidal thickness, ocular rigidity, change in choroidal thickness, etcc.) and the optic nerve head (ONH) characteristics.</p>
 <p>First, let’s observe how the minimal rim width (MRW) correlates with the ocular rigidity, depending on the quadrants on the ONH (<a href="#fig-k-vs-mrw" class="quarto-xref">Figure&nbsp;<span>7.6</span></a>). We observe a mild correlation between the ocular rigidity and the MRW, especially in the nasal quadrants. Mostly, this correlation is lost when testing against the axial length, CT, ΔCT or ΔV.</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-MRW">
-<div id="cell-fig-K-vs-MRW" class="cell" data-execution_count="7">
+<div id="cell-fig-K-vs-MRW" class="cell" data-execution_count="23">
 <div class="cell-output cell-output-display">
 <div id="fig-k-vs-mrw" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -374,7 +374,7 @@ Figure&nbsp;7.6
 </div>
 <p>A similar trend (correlation between K and the ONH characteristics, but not with the other biomechanical characteristics) is observed when looking at the circular RNFL thickness (<a href="#fig-k-vs-rnfl" class="quarto-xref">Figure&nbsp;<span>7.7</span></a>).</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-RNFL">
-<div id="cell-fig-K-vs-RNFL" class="cell" data-execution_count="8">
+<div id="cell-fig-K-vs-RNFL" class="cell" data-execution_count="24">
 <div class="cell-output cell-output-display">
 <div id="fig-k-vs-rnfl" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -407,7 +407,7 @@ Warning
 <h2 data-number="7.3" class="anchored" data-anchor-id="correlation-analysis---visual-field-characteristics"><span class="header-section-number">7.3</span> Correlation analysis - Visual field characteristics</h2>
 <p>In our cohort, the rigidity does not correlate with any of the visual field metrics (MD, PSD, VFI) (<a href="#fig-k-vs-md-psd-vfi" class="quarto-xref">Figure&nbsp;<span>7.8</span></a>). However, we observe a tiny correlation between the change in choroidal thickness and the visual field metrics (<a href="#fig-ct-vs-md-psd-vfi" class="quarto-xref">Figure&nbsp;<span>7.9</span></a>).</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-MD-PSD-VFI">
-<div id="cell-fig-K-vs-MD-PSD-VFI" class="cell" data-execution_count="9">
+<div id="cell-fig-K-vs-MD-PSD-VFI" class="cell" data-execution_count="25">
 <div class="cell-output cell-output-display">
 <div id="fig-k-vs-md-psd-vfi" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -423,7 +423,7 @@ Figure&nbsp;7.8
 </div>
 </div>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-CT-vs-MD-PSD-VFI">
-<div id="cell-fig-CT-vs-MD-PSD-VFI" class="cell" data-execution_count="14">
+<div id="cell-fig-CT-vs-MD-PSD-VFI" class="cell" data-execution_count="26">
 <div class="cell-output cell-output-display">
 <div id="fig-ct-vs-md-psd-vfi" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -440,7 +440,7 @@ Figure&nbsp;7.9
 </div>
 <p>We can compare with the correlation between the IOP and the visual field metrics (<a href="#fig-iop-vs-md-psd-vfi" class="quarto-xref">Figure&nbsp;<span>7.10</span></a>). Overall, the IOP correlates better with the visual field metrics than the ocular rigidity or the choroidal thickness.</p>
 <div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-IOP-vs-MD-PSD-VFI">
-<div id="cell-fig-IOP-vs-MD-PSD-VFI" class="cell" data-execution_count="11">
+<div id="cell-fig-IOP-vs-MD-PSD-VFI" class="cell" data-execution_count="27">
 <div class="cell-output cell-output-display">
 <div id="fig-iop-vs-md-psd-vfi" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
