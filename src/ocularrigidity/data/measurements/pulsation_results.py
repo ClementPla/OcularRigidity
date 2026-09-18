@@ -5,15 +5,19 @@ import pickle
 import numpy as np
 from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
 from ocularrigidity.pipeline_config import FRIEDENWALD, N_CYCLES
-from ocularrigidity.data.io import load_mask_frames
+from ocularrigidity.data.io import load_mask
 from ocularrigidity.data.measurements.dataframe import load_measurements
-from ocularrigidity.friedenwald import K_from_deltaCT_mm, deltaCT_to_deltaV_uL
+from ocularrigidity.friedenwald import K_from_deltaCT_mm, PV_ratio_deltaCT_mm, deltaCT_to_deltaV_uL
 from ocularrigidity.motion.pipeline_results import (
     CardiacPipelineResults,
     peek_cardiac_freq,
 )
 from ocularrigidity.segmentation.closing_structures import trim_choroid
-from ocularrigidity.thickness.delta import cycle_rates, measure_delta_ct_from_disp
+from ocularrigidity.thickness.delta import (
+    cycle_rates,
+    mask_ct_series_mm,
+    measure_delta_ct_from_disp,
+)
 
 #: Columns trimmed off each side of the mask before ΔCT is measured: the edges
 #: of the B-scan are unreliable. Matches the notebooks and the report.
@@ -80,14 +84,15 @@ def load_pulsation_results(
         hr = cardiac_freq * 60.0
         period_s = 60.0 / hr if pd.notna(hr) and hr > 0 else np.nan
 
-        cts, min_cts, mask_cts = [], [], []
+        cts, min_cts, mask_cts, mask_thick_cts = [], [], [], []
         ups, downs, asyms = [], [], []
-        ref_masks = trim_choroid(
-            load_mask_frames(mask_file, [i * frame_per_cycle for i in range(N_CYCLES)]),
-            TRIM,
-        )
+        # Every frame is needed for the mask-thickness series, not just the
+        # per-cycle reference frames, so decode the whole stack once.
+        masks = trim_choroid(load_mask(mask_file), TRIM)
+        mask_ct_series = mask_ct_series_mm(masks)  # (T,) mm
         for i in range(N_CYCLES):
-            ref_mask = ref_masks[i : i + 1]  # was masks[i*fpc : i*fpc+1]
+            cycle = slice(i * frame_per_cycle, (i + 1) * frame_per_cycle)
+            ref_mask = masks[cycle.start : cycle.start + 1]
             try:
                 res = measure_delta_ct_from_disp(
                     disp_per_cycle[i], ref_per_cycle[i], ref_mask, reference_frame_idx=0
@@ -99,15 +104,24 @@ def load_pulsation_results(
             downs.append(rates.thinning_um_s)
             asyms.append(rates.asymmetry)
             ct_mask = deltaY_by_cycle.get(i, np.nan) * AXIAL_PIXEL_SIZE_MM
+            cycle_series = mask_ct_series[cycle]
+            ct_mask_thick = (
+                float(np.nanmax(cycle_series) - np.nanmin(cycle_series))
+                if np.any(np.isfinite(cycle_series))
+                else np.nan
+            )
             cts.append(res.deltaCT_mm)
             min_cts.append(res.min_ct_mm)
             mask_cts.append(ct_mask)
+            mask_thick_cts.append(ct_mask_thick)
             cycle_rows.append(
                 {
                     "video": video,
                     "cycle": i,
                     "deltaCT": res.deltaCT_mm,  # mm, displacement-based
                     "deltaCT_Mask": ct_mask,  # mm, mask-based
+                    # mm, peak-to-peak of the per-frame mean mask thickness
+                    "deltaCT_MaskThickness": ct_mask_thick,
                     "minCT": res.min_ct_mm,
                     "RelativeGrowth": res.deltaCT_mm / res.min_ct_mm
                     if res.min_ct_mm != 0
@@ -126,32 +140,68 @@ def load_pulsation_results(
         median_ct_mask = (
             np.nanmedian(mask_cts) if np.any(np.isfinite(mask_cts)) else np.nan
         )
+        median_ct_mask_thick = (
+            np.nanmedian(mask_thick_cts)
+            if np.any(np.isfinite(mask_thick_cts))
+            else np.nan
+        )
 
         case_rows.append(
             {
                 "case_id": row.Id,
                 "deltaCT": median_ct,
                 "deltaCT_Mask": median_ct_mask,
+                "deltaCT_MaskThickness": median_ct_mask_thick,
                 "minCT": choroid_thickness,
-                "K": K_from_deltaCT_mm(
+                "K_with_choroid": K_from_deltaCT_mm(
                     median_ct,
                     row.AxialLength,
                     row.IOP,
                     row.OPA,
                     choroidal_thickness_mm=choroid_thickness,
                 ),
+                "K": K_from_deltaCT_mm(
+                    median_ct,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,),
                 "dV": deltaCT_to_deltaV_uL(
                     np.asarray(median_ct, dtype=float) * 1000.0,
                     row.AxialLength,
                     choroid_thickness,
                     cfg=FRIEDENWALD,
                 ),
-                "K_Mask": K_from_deltaCT_mm(
+                "K_Mask_with_choroid": K_from_deltaCT_mm(
                     median_ct_mask,
                     row.AxialLength,
                     row.IOP,
                     row.OPA,
                     choroidal_thickness_mm=choroid_thickness,
+                ),
+                "P/V": PV_ratio_deltaCT_mm(
+                    median_ct,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,
+                    cfg=FRIEDENWALD,
+                ),
+                "K_Mask": K_from_deltaCT_mm(
+                    median_ct_mask,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,),
+                "K_MaskThickness_with_choroid": K_from_deltaCT_mm(
+                    median_ct_mask_thick,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,
+                    choroidal_thickness_mm=choroid_thickness,
+                ),
+                "K_MaskThickness": K_from_deltaCT_mm(
+                    median_ct_mask_thick,
+                    row.AxialLength,
+                    row.IOP,
+                    row.OPA,
                 ),
                 "thickening_um_s": np.nanmedian(ups)
                 if np.any(np.isfinite(ups))

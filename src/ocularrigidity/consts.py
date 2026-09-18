@@ -66,6 +66,10 @@ ROOT_MASKS = _env_path("OCULARRIGIDITY_MASKS", RUN_ROOT / "masks")
 
 ROOT_COMPRESSED_VIDEO = DATA_ROOT / "compressed"
 
+
+ROOT_CROSS_SECTIONAL_EXCEL = Path(
+    "/home/clement/Documents/data/OcularRigidity/recrutement_alejandra.xlsx"
+)
 # Root passed to RegisteredVideo(cache_dir=...); the cache lives in
 # `registered_masks/` and `registered_frames/` below it. Per-run, because
 # registration consumes the masks: masks from a different model must not

@@ -4,6 +4,10 @@
 ## Across cycles
 
 We have generated three "one-cycle" videos, corresponding to three cardiac pulsation. 
+We compare in @fig-cycles-comparison the $\Delta CT$ obtained through three different methods:
+  1. We compute the optical flow along the CSI from the first frame to each other. We project the displacement along the CSI normal vector, and average these projections along the CSI. This gives us a $\Delta CT$ for each frame, which we can plot as a function of time. 
+  2. We take the segmentation mask, and for each A-scan, we fit a sinuodal function to its thickness. A-Scan that follows that pattern are kept, and the others are discarded. We then average the thickness of the remaining sinusoidal amplitudes.
+  3. We compute the thickness of the choroidal mask and simply takes its average per B-scan. $\Delta CT$ is then computed as the difference between the maximum and minimum thicknesses along the cardiac cycle.
 
 
 {{< embed ../../notebooks/cycles.ipynb#fig-cycles-comparison >}}

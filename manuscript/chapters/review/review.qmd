@@ -125,7 +125,37 @@ with plt.xkcd():
 
 @maNoninvasiveClinicalMeasurement2021 offer almost the same methodology as we do in this study, to ONH videos. They show that there is a stronger correlation between ocular rigidity and sclearal stiffness (R=0.62, measured using the stiffness parameter at the highest concavity [SP-HC]) vs corneal stiffness (stiffness parameter at the first applanation [SP-A1], R=0.41).  There is a positive corelation with the static pressure-volume ratio (P/V, R=0.72). They do the same linearization of $\Delta V \approx 4\pi R^2\Delta CT$. They define $R$ as half the axial length. 
 
-The coneaosclera properties were measured using with a Corvis ST, a non contact tonometer coupled with a high-speed Scheimpflug camera. The corneal stiffness was measured using the stiffness parameter at the first applanation (SP-A1). The scleral stiffness was measured using the stiffness parameter at the highest concavity (SP-HC). 
+The coneaosclera properties were measured using with a Corvis ST, a non contact tonometer coupled with a high-speed Scheimpflug camera. The corneal stiffness was measured using the stiffness parameter at the first applanation (SP-A1). The scleral stiffness was measured using the stiffness parameter at the highest concavity (SP-HC). The results (figure @fig-scleral-rigidity-glaucoma-vs-healthy) they obntain are not significant due to a very small cohort (n=6 for glaucoma, n=23 for control)
+
+```{python}
+# | echo: false
+# | warning: false
+# | label: fig-scleral-rigidity-glaucoma-vs-healthy
+K_ctrl = 0.015
+K_glaucoma = 0.020
+dV_ctrl = 9.79
+dV_glaucoma = 8.16
+with plt.xkcd():
+    fig, ax = plt.subplots(1, 2, figsize=(6, 4))
+
+    sns.barplot(
+        x=["Glaucoma", "Normal"],
+        y=[K_glaucoma, K_ctrl],
+        ax=ax[0],
+    )
+    ax[0].set_ylabel("Ocular Rigidity (K)")
+    ax[0].set_title("Glaucoma vs Normal Eyes")
+    sns.barplot(
+        x=["Glaucoma", "Normal"],
+        y=[dV_glaucoma, dV_ctrl],
+        ax=ax[1],
+    )
+    ax[1].set_ylabel("Ocular volume change (μL)")
+    ax[1].set_title("Glaucoma vs Normal Eyes")
+    plt.tight_layout()
+    plt.show()
+```
+
 
 ### Ocular Rigidity in Living Human Eyes {#sec-OcularRigidityInLivingHumanEyes}
  

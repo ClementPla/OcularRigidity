@@ -40,11 +40,13 @@ longitudinal designs unchanged.
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import sqlite3
 from pathlib import Path
 from typing import Iterable, Sequence
 
+import dateparser
 import numpy as np
 import pandas as pd
 
@@ -54,6 +56,7 @@ from ocularrigidity.consts import (
     MEASUREMENTS_PATH,
     QC_ERRORS_PATH,
     ROOT_CARDIAC_PIPELINE,
+    ROOT_CROSS_SECTIONAL_EXCEL,
     STUDY_PATH,
 )
 from ocularrigidity.data.measurements.dataframe import (
@@ -250,6 +253,7 @@ def build_cohort(
         include_HR=True,
         include_axial_length=True,
         iop_instrument=iop_instrument,
+        include_blood_pressure=True
     ).set_index("Id")
     visits = visits.join(cases.drop(columns=["HR", "caseId"]), how="inner")
     visits = visits.rename(columns={"video": "case_id"})
@@ -842,4 +846,96 @@ def coverage(df: pd.DataFrame, columns: Iterable[str] | None = None) -> pd.DataF
         )
     return (
         pd.DataFrame(rows).sort_values("visits", ascending=False).reset_index(drop=True)
+    )
+
+
+def get_cross_sectional_dx(
+    path_excel: Path = ROOT_CROSS_SECTIONAL_EXCEL,
+) -> pd.DataFrame:
+    df = pd.read_excel(path_excel, sheet_name="Cross-sectional")
+    def parse_date(value):
+        if pd.isna(value):
+            return pd.NaT
+        try:
+            date = datetime.strptime(str(value).split(" ")[0], "%Y-%m-%d")
+            return date
+        except ValueError:
+            pass
+        if isinstance(value, str):
+            value = value.lower()
+            value = value.replace("juilliet", "juillet")
+            value = value.replace("jav", "janvier")
+            value = value.replace("aug", "août")
+            if "décembre" in value:
+                pass
+            elif "dec" in value:
+                value = value.replace("dec", "décembre")
+            elif "de" in value:
+                value = value.replace("de", "décembre")
+        return dateparser.parse(str(value), languages=["fr"])
+
+    # Drop all NaN columns
+    df = df.dropna(axis=1, how="all")
+    df["Date"] = df["Date R/V"].apply(parse_date)
+    df = df  # .dropna(subset=["Date"])
+    df[df["Date"].isna()]
+    df = df[["Dossier", "Date", "Œil ", "Dx"]]
+    df = df.rename(columns={"Dossier": "PatientId", "Œil ": "Eye", "Dx": "Diagnosis"})
+        
+    DX_CANON = {
+        "gpao": "GPAO",
+        "gpao precoce": "GPAO",
+        "gnt/gpao": "GPAO",
+        "hto": "HTO",
+        "normal": "Normal",
+        "suspect": "Suspect",
+        "suspect gl": "Suspect",
+    }
+
+    def tidy_cross_sectional(dx):
+        """Excel diagnoses, keyed on (File, Eye) with a usable date. OU -> OD + OS."""
+        out = dx.copy()
+        out["File"] = out["PatientId"].astype(str).str.strip()
+        out["Eye"] = out["Eye"].astype(str).str.strip().str.upper()
+        out["Diagnosis_xs"] = (
+            out["Diagnosis"].astype(str).str.strip().str.lower().map(DX_CANON)
+        )
+        out["xs_date"] = pd.to_datetime(out["Date"], errors="coerce")
+        out = out.dropna(subset=["xs_date"])
+        both = out[out["Eye"] == "OU"]
+        out = pd.concat(
+            [out[out["Eye"].isin(["OD", "OS"])]]
+            + [both.assign(Eye=e) for e in ("OD", "OS")],
+            ignore_index=True,
+        )
+        out["File"] = out["PatientId"].astype(str).str.strip().str.upper()
+
+        return out[["File", "Eye", "xs_date", "Diagnosis_xs"]].sort_values("xs_date")
+    return tidy_cross_sectional(df)
+
+
+def add_cross_sectional_dx(df, dx, tolerance_days=92):
+    left = df.copy()
+    left["File"] = left["case_id"].str.split("/").str[0].str.upper()
+    left["_id"] = left.index
+    left["_date"] = pd.to_datetime(left["Date"], errors="coerce")
+    left = left.dropna(subset=["_date"]).sort_values("_date")
+
+    right = dx.rename(columns={"xs_date": "_date"})
+    right["xs_date"] = right["_date"]
+
+    merged = pd.merge_asof(
+        left,
+        right,
+        on="_date",
+        by=["File", "Eye"],
+        direction="nearest",
+        tolerance=pd.Timedelta(days=tolerance_days),
+    )
+    merged["xs_gap_days"] = (merged["xs_date"] - merged["_date"]).dt.days
+    return (
+        merged.set_index("_id")
+        .rename_axis(df.index.name)
+        .drop(columns="_date")
+        .reindex(df.index)
     )
