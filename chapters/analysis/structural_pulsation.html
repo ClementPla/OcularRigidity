@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>8&nbsp; Correlation analysis – Ocular Rigidity - Prospective Study</title>
+<title>6&nbsp; The anatomical pulsation – Ocular Rigidity - Prospective Study</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -20,27 +20,7 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for citations */
-div.csl-bib-body { }
-div.csl-entry {
-  clear: both;
-  margin-bottom: 0em;
-}
-.hanging-indent div.csl-entry {
-  margin-left:2em;
-  text-indent:-2em;
-}
-div.csl-left-margin {
-  min-width:2em;
-  float:left;
-}
-div.csl-right-inline {
-  margin-left:2em;
-  padding-left:1em;
-}
-div.csl-indent {
-  margin-left: 2em;
-}</style>
+</style>
 
 
 <script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
@@ -50,8 +30,8 @@ div.csl-indent {
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../../">
-<link href="../../chapters/analysis/predictive_analysis.html" rel="next">
-<link href="../../chapters/analysis/cross_sectional_study.html" rel="prev">
+<link href="../../chapters/analysis/cross_sectional_study.html" rel="next">
+<link href="../../chapters/analysis/replicability.html" rel="prev">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../../site_libs/quarto-html/popper.min.js"></script>
@@ -99,6 +79,35 @@ div.csl-indent {
   });
 </script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -111,7 +120,7 @@ div.csl-indent {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/analysis/replicability.html">Analysis</a></li><li class="breadcrumb-item"><a href="../../chapters/analysis/correlation_analysis.html"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Correlation analysis</span></a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/analysis/replicability.html">Analysis</a></li><li class="breadcrumb-item"><a href="../../chapters/analysis/structural_pulsation.html"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">The anatomical pulsation</span></a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -205,7 +214,7 @@ div.csl-indent {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../chapters/analysis/structural_pulsation.html" class="sidebar-item-text sidebar-link">
+  <a href="../../chapters/analysis/structural_pulsation.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">The anatomical pulsation</span></span></a>
   </div>
 </li>
@@ -217,7 +226,7 @@ div.csl-indent {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../chapters/analysis/correlation_analysis.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../chapters/analysis/correlation_analysis.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Correlation analysis</span></span></a>
   </div>
 </li>
@@ -245,18 +254,19 @@ div.csl-indent {
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#correlation-analysis---structural-and-biomechanical-characteristics" id="toc-correlation-analysis---structural-and-biomechanical-characteristics" class="nav-link active" data-scroll-target="#correlation-analysis---structural-and-biomechanical-characteristics"><span class="header-section-number">8.1</span> Correlation analysis - Structural and biomechanical characteristics</a></li>
-  <li><a href="#correlation-analysis---onh-characteristics" id="toc-correlation-analysis---onh-characteristics" class="nav-link" data-scroll-target="#correlation-analysis---onh-characteristics"><span class="header-section-number">8.2</span> Correlation analysis - ONH characteristics</a></li>
-  <li><a href="#correlation-analysis---visual-field-characteristics" id="toc-correlation-analysis---visual-field-characteristics" class="nav-link" data-scroll-target="#correlation-analysis---visual-field-characteristics"><span class="header-section-number">8.3</span> Correlation analysis - Visual field characteristics</a></li>
+  <li><a href="#preliminary-results" id="toc-preliminary-results" class="nav-link active" data-scroll-target="#preliminary-results"><span class="header-section-number">6.1</span> Preliminary results</a>
+  <ul class="collapse">
+  <li><a href="#d-vessels-segmentation" id="toc-d-vessels-segmentation" class="nav-link" data-scroll-target="#d-vessels-segmentation"><span class="header-section-number">6.1.1</span> 3D Vessels Segmentation</a></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content column-body" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/analysis/replicability.html">Analysis</a></li><li class="breadcrumb-item"><a href="../../chapters/analysis/correlation_analysis.html"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Correlation analysis</span></a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/analysis/replicability.html">Analysis</a></li><li class="breadcrumb-item"><a href="../../chapters/analysis/structural_pulsation.html"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">The anatomical pulsation</span></a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title"><span id="sec-correlation" class="quarto-section-identifier"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Correlation analysis</span></span></h1>
+<h1 class="title"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">The anatomical pulsation</span></h1>
 </div>
 
 
@@ -273,207 +283,156 @@ div.csl-indent {
 </header>
 
 
-<section id="correlation-analysis---structural-and-biomechanical-characteristics" class="level2" data-number="8.1">
-<h2 data-number="8.1" class="anchored" data-anchor-id="correlation-analysis---structural-and-biomechanical-characteristics"><span class="header-section-number">8.1</span> Correlation analysis - Structural and biomechanical characteristics</h2>
-<p>In this section, we focus on establishing the correlation between each visit measurements (taken at the same time) and biomechanicals characteristics extracted from the data. Each point therefore represents a visit, and the correlation is computed across all visits. The correlation coefficient is computed using the Pearson method. Let’s first visualize what correlates with the intraocular pressure (IOP) measured.</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-IOP-vs-dCT-vs-dV">
-<div id="cell-fig-K-vs-IOP-vs-dCT-vs-dV" class="cell" data-execution_count="18">
-<div class="cell-output cell-output-display">
-<div id="fig-k-vs-iop-vs-dct-vs-dv" class="quarto-float quarto-figure quarto-figure-center anchored">
+<p>The core underlying argument of the ocular rigidity is that the inflation of the eye is driven by blood pulsation along a cardiac cycle, which manifests as a cyclic thickness variation of the choroid. However, there is a gap in the transition from the 2D estimation of thickness and its extension to a 3D volume change: we do not know if the pulsability is uniform across the entire sub-foveal choroid, or at least homogeneous enough to be considered as such. One hypothesis is that in contrary, it is driven by anatomical landmarks, such as the caliber of the choroidal vessels, and the angle of the slice with respect to the choroidal vasculature. In this chapter, we will explore the anatomical pulsation of the choroid, and its potential impact on the ocular rigidity.</p>
+<section id="preliminary-results" class="level2" data-number="6.1">
+<h2 data-number="6.1" class="anchored" data-anchor-id="preliminary-results"><span class="header-section-number">6.1</span> Preliminary results</h2>
+<p>As a preliminary result, I’ve inflicted myself with repeated measurements of my right eye during two days.</p>
+<ol type="1">
+<li>Day 1: 4 measurements on the same location (temporal-nasal axis, through the fovea), 2 hours apart.</li>
+<li>Day 2: 3 Measurements:
+<ul>
+<li>One slightly superior to the fovea, temporal-nasal axis (<a href="#fig-temporal-nasal-offset" class="quarto-xref">Figure&nbsp;<span>6.1 (a)</span></a>).</li>
+<li>One cross-section through the fovea, superior-inferior axis (<a href="#fig-superior-inferior-offset" class="quarto-xref">Figure&nbsp;<span>6.1 (b)</span></a>).</li>
+<li>One Volume scan of the fovea.</li>
+</ul></li>
+</ol>
+<div id="fig-positional-preliminary" class="quarto-layout-panel">
 <figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-k-vs-iop-vs-dct-vs-dv-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-iop-vs-dct-vs-dv-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-1" title="Figure&nbsp;8.1: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-iop-vs-dct-vs-dv-output-1.png" id="fig-k-vs-iop-vs-dct-vs-dv" class="img-fluid figure-img"></a>
+<div aria-describedby="fig-positional-preliminary-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-positional-preliminary" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-temporal-nasal-offset" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-temporal-nasal-offset-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="positional_pulsation/sup_fovea.bmp" class="lightbox" data-gallery="fig-positional-preliminary" title="Figure&nbsp;6.1&nbsp;(a): Temporal-Nasal Offset"><img src="positional_pulsation/sup_fovea.bmp" class="img-fluid figure-img" data-ref-parent="fig-positional-preliminary" width="400"></a>
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-k-vs-iop-vs-dct-vs-dv-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.1
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-temporal-nasal-offset-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a) Temporal-Nasal Offset
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-positional-preliminary" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-superior-inferior-offset" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-superior-inferior-offset-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="positional_pulsation/sup_inf.bmp" class="lightbox" data-gallery="fig-positional-preliminary" title="Figure&nbsp;6.1&nbsp;(b): Superior-Inferior Axis"><img src="positional_pulsation/sup_inf.bmp" class="img-fluid figure-img" data-ref-parent="fig-positional-preliminary" width="400"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-superior-inferior-offset-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b) Superior-Inferior Axis
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
 </div>
-<p>We do not see a strong correlation between the intraocular pressure and the ocular rigidity, change in choroidal thickness or change in ocular volume. On the other hand, we have a pretty good correlation between the <strong>ocular pulse amplitude</strong> (OPA) and the change in choroidal thickness or change in ocular volume (<a href="#fig-deltact-dv-vs-opa" class="quarto-xref">Figure&nbsp;<span>8.2</span></a> ).</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-deltaCT-dV-vs-OPA">
-<div id="cell-fig-deltaCT-dV-vs-OPA" class="cell" data-execution_count="19">
-<div class="cell-output cell-output-display">
-<div id="fig-deltact-dv-vs-opa" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-deltact-dv-vs-opa-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-deltact-dv-vs-opa-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-2" title="Figure&nbsp;8.2: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-deltact-dv-vs-opa-output-1.png" id="fig-deltact-dv-vs-opa" class="img-fluid figure-img"></a>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-positional-preliminary-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.1: The two acquisitions of the same eye, taken with an interval of 10 minutes.
+</figcaption>
+</figure>
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-deltact-dv-vs-opa-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.2
+<div id="fig-positional-preliminary-gif" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-positional-preliminary-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-positional-preliminary-gif" style="flex-basis: 33.3%;justify-content: flex-start;">
+<div id="fig-temporal-nasal-fovea-gif" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-temporal-nasal-fovea-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="positional_pulsation/illustrations/temporal_nasal.gif" class="lightbox" data-gallery="fig-positional-preliminary-gif" title="Figure&nbsp;6.2&nbsp;(a): Temporal-Nasal Foveal"><img src="positional_pulsation/illustrations/temporal_nasal.gif" class="img-fluid figure-img" data-ref-parent="fig-positional-preliminary-gif"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-temporal-nasal-fovea-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a) Temporal-Nasal Foveal
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-positional-preliminary-gif" style="flex-basis: 33.3%;justify-content: flex-start;">
+<div id="fig-temporal-nasal-offset-gif" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-temporal-nasal-offset-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="positional_pulsation/illustrations/offset_fovea.gif" class="lightbox" data-gallery="fig-positional-preliminary-gif" title="Figure&nbsp;6.2&nbsp;(b): Temporal-Nasal Offset"><img src="positional_pulsation/illustrations/offset_fovea.gif" class="img-fluid figure-img" data-ref-parent="fig-positional-preliminary-gif"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-temporal-nasal-offset-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b) Temporal-Nasal Offset
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-positional-preliminary-gif" style="flex-basis: 33.3%;justify-content: flex-start;">
+<div id="fig-superior-inferior-gif" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-superior-inferior-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="positional_pulsation/illustrations/inf_sup_axial.gif" class="lightbox" data-gallery="fig-positional-preliminary-gif" title="Figure&nbsp;6.2&nbsp;(c): Superior-Inferior Axis"><img src="positional_pulsation/illustrations/inf_sup_axial.gif" class="img-fluid figure-img" data-ref-parent="fig-positional-preliminary-gif"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-superior-inferior-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(c) Superior-Inferior Axis
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
 </div>
-<p>Let’s plot how the change in choroidal thickness correlates with the minimal choroidal thickness (<a href="#fig-ct-vs-delta-ct" class="quarto-xref">Figure&nbsp;<span>8.3</span></a>). The thicker the choroid, the more it can change in thickness.</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-ct-vs-delta-ct">
-<div id="cell-fig-ct-vs-delta-ct" class="cell" data-execution_count="20">
-<div class="cell-output cell-output-display">
-<div id="fig-ct-vs-delta-ct" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-ct-vs-delta-ct-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-ct-vs-delta-ct-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-3" title="Figure&nbsp;8.3: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-ct-vs-delta-ct-output-1.png" id="fig-ct-vs-delta-ct" class="img-fluid figure-img"></a>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-positional-preliminary-gif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.2: Different B-scans of the same eye drive different measures of the pulsation, which is a strong indication that the pulsation is not uniform across the choroid, and that it is driven by anatomical landmarks.
+</figcaption>
+</figure>
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-ct-vs-delta-ct-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.3
+<p>We can verify these results quantitatively: not only the thickness of the choroid is different between the three acquisitions, but there is vast differences in the pulsatile thickness, and the relative change of the choroid. The results are summarized in <a href="#fig-positional-pulsation-preliminary" class="quarto-xref">Figure&nbsp;<span>6.3</span></a>.</p>
+<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/chapters/analysis/positional_pulsation/preliminary_results.ipynb" data-notebook-cellid="cell-fig-positional-pulsation-preliminary">
+<div id="cell-fig-positional-pulsation-preliminary" class="cell" data-execution_count="27">
+<div class="cell-output cell-output-display">
+<div id="fig-positional-pulsation-preliminary" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-positional-pulsation-preliminary-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="structural_pulsation_files/figure-html/positional_pulsation-preliminary_results-fig-positional-pulsation-preliminary-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-6" title="Figure&nbsp;6.3: Choroidal thickness, pulsatile Δ thickness and relative change for each acquisition plane. Labels give the acquisition time."><img src="structural_pulsation_files/figure-html/positional_pulsation-preliminary_results-fig-positional-pulsation-preliminary-output-1.png" class="img-fluid figure-img"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-positional-pulsation-preliminary-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.3: Choroidal thickness, pulsatile Δ thickness and relative change for each acquisition plane. Labels give the acquisition time.
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
 </div>
-<p>We observe another mild correlation between the axial length and the change in choroidal thickness and the minimal choroidal thickness (<a href="#fig-axial-length-vs-delta-ct-and-ct" class="quarto-xref">Figure&nbsp;<span>8.4</span></a>). This is fairly consistent with the literature: myopic eyes (longer axial length) tend to have thinner choroids (<span class="citation" data-cites="Meng2023-jk">Meng et al. (<a href="../../references.html#ref-Meng2023-jk" role="doc-biblioref">2023</a>)</span>)</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-axial-length-vs-delta-ct-and-ct">
-<div id="cell-fig-axial-length-vs-delta-ct-and-ct" class="cell" data-execution_count="21">
-<div class="cell-output cell-output-display">
-<div id="fig-axial-length-vs-delta-ct-and-ct" class="quarto-float quarto-figure quarto-figure-center anchored">
+<section id="d-vessels-segmentation" class="level3" data-number="6.1.1">
+<h3 data-number="6.1.1" class="anchored" data-anchor-id="d-vessels-segmentation"><span class="header-section-number">6.1.1</span> 3D Vessels Segmentation</h3>
+<section id="methods" class="level4" data-number="6.1.1.1">
+<h4 data-number="6.1.1.1" class="anchored" data-anchor-id="methods"><span class="header-section-number">6.1.1.1</span> Methods</h4>
+<p>The goal of this analysis is to locate the large choroidal vessels in 3D around the fovea, so that the B-scans used for the pulsation measurements can be related to the vessels they cross. We use the volume scan acquired on day 2 (6 × 6 mm angiography protocol, 503 B-scans of 500 A-scans, 1536 samples per A-scan). The device exports two co-registered channels: the structural OCT amplitude and the OCTA flow signal (decorrelation). The voxel size is 12.0 µm between A-scans, 11.9 µm between B-scans, and 1.95 µm axially.</p>
+<p><strong>Choroid segmentation.</strong> Each B-scan is segmented with the choroid segmentation model used throughout this work. The upper boundary of the mask is Bruch’s membrane (BM) and the lower one is the choroid–sclera interface (CSI). Both are extracted per A-scan.</p>
+<p><strong>Motion correction between B-scans.</strong> Unlike the repeated B-scans used for the pulsation measurements, every B-scan in a raster volume is acquired at a different position. The eye moves during the ~6 s acquisition, so neighbouring B-scans are displaced axially by amounts that do not correspond to anatomy. The BM jumps by up to ~85 px (~165 µm) over a few B-scans, which is incompatible with a 12 µm spacing between them. We estimate this motion from the BM and remove it:</p>
+<ol type="1">
+<li>For each B-scan <span class="math inline">\(t\)</span>, a line <span class="math inline">\(\text{BM}_t(x) = a_t + b_t\,(x - x_c)\)</span> is fitted by least squares, where <span class="math inline">\(x_c\)</span> is the central A-scan.</li>
+<li>Along the slow (inferior–superior) axis, the anatomical component of <span class="math inline">\(a_t\)</span> and <span class="math inline">\(b_t\)</span> is modelled as a second-order polynomial, fitted robustly by iteratively reweighted least squares with Tukey’s biweight. This accounts for the curvature of the eye. The residuals <span class="math inline">\(\Delta a_t\)</span> and <span class="math inline">\(\Delta b_t\)</span> are taken as motion.</li>
+<li>Every A-scan is shifted axially by <span class="math inline">\(\Delta a_t + \Delta b_t\,(x - x_c)\)</span>, using linear interpolation for the amplitude and flow volumes and nearest-neighbour interpolation for the choroid masks. Amplitude and flow receive the same shift, since they come from the same acquisition.</li>
+</ol>
+<p>Before fitting, we flag corrupted B-scans. The mean amplitude in a slab below the BM is dominated by the shadows of the retinal vessels, which are continuous across a valid raster. A B-scan whose shadow profile correlates with neither neighbour, with the correlation more than 6 median absolute deviations below the median, is excluded from the fit and from the analysis. In this volume, this concerns only the last three B-scans. Lateral displacements between neighbouring B-scans, measured by cross-correlating the shadow profiles, were 0 ± 1 px, except for a single ~30 px jump, and were not corrected. The median axial jump of the BM between neighbouring B-scans went from 2.0 px before correction to 0.45 px after. Slow drift over the acquisition cannot be separated from the curvature of the eye with a single raster scan, so it remains in the anatomical component.</p>
+<p><strong>Vessel segmentation.</strong> Single B-scans are too noisy to segment the choroidal vessels reliably, for instance with a per-B-scan Niblack threshold. We therefore segment them in 3D, on the motion-corrected volume, combining both channels. In both, the lumen of the large vessels is dark.</p>
+<ol type="1">
+<li><em>Flattening and resampling.</em> Both volumes are resampled so that the BM is a flat plane, keeping 330 samples (~640 µm) below it. The BM is first smoothed with a 3 × 9 median filter followed by a Gaussian filter (σ = 1 B-scan, 3 A-scans). The axial dimension is then averaged in bins of 6 samples, which gives nearly isotropic voxels (~12 µm) and reduces speckle. Voxels deeper than the smoothed choroidal thickness (CSI − BM, Gaussian σ = 2) are excluded.</li>
+<li><em>Normalisation and fusion.</em> Each channel is divided by its median over the A-scans of each B-scan at each depth. This removes both depth attenuation and B-scan-to-B-scan intensity changes. Each channel is then divided by a broad lateral background (Gaussian, σ = 30 voxels) and log-transformed, <span class="math inline">\(\log(I + 0.05)\)</span>, which turns the multiplicative speckle into additive noise. The two channels are standardised inside the choroid and averaged with equal weights.</li>
+<li><em>Removal of retinal shadows.</em> The retinal vessels cast thin shadows that are identical at every depth. We compute the lateral high-frequency detail of the fused volume (the volume minus its Gaussian-smoothed version, σ = 4 voxels), take its median over depth inside the choroid, and subtract it from every layer.</li>
+<li><em>Tube enhancement.</em> For each scale σ ∈ {3, 4.5, 6, 8} voxels (~35–100 µm; these scales respond best to vessels ~100–270 µm in diameter), we compute the eigenvalues of the scale-normalised Hessian (<span class="math inline">\(\sigma^2 H\)</span>), sorted by magnitude <span class="math inline">\(|\lambda_1| \le |\lambda_2| \le |\lambda_3|\)</span>. A dark tube has <span class="math inline">\(\lambda_2, \lambda_3 &gt; 0\)</span> and <span class="math inline">\(\lambda_1 \approx 0\)</span>. The response is <span class="math display">\[R_\sigma = \sqrt{\lambda_2 \lambda_3}\,\exp\!\left(-\frac{\lambda_1^2}{2\,(0.5\,\lambda_2)^2}\right) \quad \text{if } \lambda_2, \lambda_3 &gt; 0, \text{ else } 0,\]</span> and the vesselness <span class="math inline">\(R\)</span> is its maximum over scales. The response is set to zero within two voxels of the BM and CSI, where the boundaries would otherwise appear as dark tubes. Because the thick subfoveal choroid gives a weaker response, <span class="math inline">\(R\)</span> is normalised by its local level: <span class="math inline">\(R / (G_{40} * R + 0.5\,\overline{G_{40} * R})\)</span>, where <span class="math inline">\(G_{40}\)</span> is a lateral Gaussian with σ = 40 voxels.</li>
+<li><em>Thresholding.</em> A voxel is labelled as vessel if (i) it belongs to a hysteresis segmentation of the normalised response, with the high and low thresholds set to its 95th and 85th percentiles inside the choroid, and (ii) it passes a 3D Niblack test on the fused signal smoothed with a Gaussian (σ = 2): <span class="math inline">\(F &lt; m + k\,s\)</span>, with <span class="math inline">\(m\)</span> and <span class="math inline">\(s\)</span> the local mean and standard deviation over a 61 × 21 × 61 voxel window and <span class="math inline">\(k = -0.2\)</span>. Connected components smaller than 20 000 voxels (~0.03 mm³) are discarded. Together with the scales of the Hessian, this restricts the segmentation to the main choroidal vessels.</li>
+</ol>
+<p>The segmentation was checked visually on B-scans and en-face slabs, but not against manual annotations. It likely under-segments the thick subfoveal choroid, where the signal is weakest.</p>
+<p><strong>Fovea and visualisation.</strong> The fovea is located at the minimum of the retinal thickness map (ILM to BM). The map is smoothed with a Gaussian (σ = 8 px), and a quadratic penalty on the distance to the centre of the scan is added before taking the minimum. The vessel surface is extracted by marching cubes from the vessel mask (smoothed with a Gaussian, σ = 1 voxel), and each vertex is mapped back to its depth below the BM. <a href="#fig-choroid-vessels-3d" class="quarto-xref">Figure&nbsp;<span>6.4</span></a> shows the vessels together with the BM and CSI surfaces, and two amplitude sections through the fovea along the temporal–nasal and inferior–superior axes.</p>
+<div id="fig-choroid-vessels-3d" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-axial-length-vs-delta-ct-and-ct-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-axial-length-vs-delta-ct-and-ct-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-4" title="Figure&nbsp;8.4: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-axial-length-vs-delta-ct-and-ct-output-1.png" id="fig-axial-length-vs-delta-ct-and-ct" class="img-fluid figure-img"></a>
+<div aria-describedby="fig-choroid-vessels-3d-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<iframe src="positional_pulsation/choroid_vessels_3d.html" width="100%" height="700" style="border: none;" loading="lazy" title="3D view of the choroidal vessels">
+</iframe>
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-axial-length-vs-delta-ct-and-ct-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.4
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-choroid-vessels-3d-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.4: Main choroidal vessels between the BM and the CSI after motion correction, with temporal–nasal and inferior–superior slices through the fovea. Vessel colour gives depth below the BM. The figure is interactive: drag to rotate, scroll to zoom, and click the legend to hide a surface.
 </figcaption>
 </figure>
-</div>
-</div>
-</div>
-</div>
-<p>Another potentially interesting correlation is between age and the choroidal thickness (previously documented <span class="citation" data-cites="SADEGHI2025167">(<a href="../../references.html#ref-SADEGHI2025167" role="doc-biblioref">2025</a>)</span>-, approximately 12.7-15.6 μm per decade). In our cohort, we observe a stronger trend (around 25 μm per decade) between age and the change in choroidal thickness (<a href="#fig-k-deltact-deltav-vs-age" class="quarto-xref">Figure&nbsp;<span>8.5</span></a>).</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-deltaCT-deltaV-vs-age">
-<div id="cell-fig-K-deltaCT-deltaV-vs-age" class="cell" data-execution_count="22">
-<div class="cell-output cell-output-display">
-<div id="fig-k-deltact-deltav-vs-age" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-k-deltact-deltav-vs-age-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-deltact-deltav-vs-age-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-5" title="Figure&nbsp;8.5: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-deltact-deltav-vs-age-output-1.png" id="fig-k-deltact-deltav-vs-age" class="img-fluid figure-img"></a>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-k-deltact-deltav-vs-age-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.5
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</div>
-</section>
-<section id="correlation-analysis---onh-characteristics" class="level2" data-number="8.2">
-<h2 data-number="8.2" class="anchored" data-anchor-id="correlation-analysis---onh-characteristics"><span class="header-section-number">8.2</span> Correlation analysis - ONH characteristics</h2>
-<p>In this section, we focus on establishing a correlation between the macular properties (choroidal thickness, ocular rigidity, change in choroidal thickness, etcc.) and the optic nerve head (ONH) characteristics.</p>
-<p>First, let’s observe how the minimal rim width (MRW) correlates with the ocular rigidity, depending on the quadrants on the ONH (<a href="#fig-k-vs-mrw" class="quarto-xref">Figure&nbsp;<span>8.6</span></a>). We observe a mild correlation between the ocular rigidity and the MRW, especially in the nasal quadrants. Mostly, this correlation is lost when testing against the axial length, CT, ΔCT or ΔV.</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-MRW">
-<div id="cell-fig-K-vs-MRW" class="cell" data-execution_count="23">
-<div class="cell-output cell-output-display">
-<div id="fig-k-vs-mrw" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-k-vs-mrw-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-mrw-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-6" title="Figure&nbsp;8.6: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-mrw-output-1.png" id="fig-k-vs-mrw" class="img-fluid figure-img"></a>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-k-vs-mrw-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.6
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</div>
-<p>A similar trend (correlation between K and the ONH characteristics, but not with the other biomechanical characteristics) is observed when looking at the circular RNFL thickness (<a href="#fig-k-vs-rnfl" class="quarto-xref">Figure&nbsp;<span>8.7</span></a>).</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-RNFL">
-<div id="cell-fig-K-vs-RNFL" class="cell" data-execution_count="24">
-<div class="cell-output cell-output-display">
-<div id="fig-k-vs-rnfl" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-k-vs-rnfl-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-rnfl-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-7" title="Figure&nbsp;8.7: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-rnfl-output-1.png" id="fig-k-vs-rnfl" class="img-fluid figure-img"></a>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-k-vs-rnfl-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.7
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</div>
-<div class="callout callout-style-default callout-warning callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Warning
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>In <a href="#fig-k-vs-rnfl" class="quarto-xref">Figure&nbsp;<span>8.7</span></a>, some points were filtered (outliers, quantile=0.999).</p>
-</div>
-</div>
-</section>
-<section id="correlation-analysis---visual-field-characteristics" class="level2" data-number="8.3">
-<h2 data-number="8.3" class="anchored" data-anchor-id="correlation-analysis---visual-field-characteristics"><span class="header-section-number">8.3</span> Correlation analysis - Visual field characteristics</h2>
-<p>In our cohort, the rigidity does not correlate with any of the visual field metrics (MD, PSD, VFI) (<a href="#fig-k-vs-md-psd-vfi" class="quarto-xref">Figure&nbsp;<span>8.8</span></a>). However, we observe a tiny correlation between the change in choroidal thickness and the visual field metrics (<a href="#fig-ct-vs-md-psd-vfi" class="quarto-xref">Figure&nbsp;<span>8.9</span></a>).</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-K-vs-MD-PSD-VFI">
-<div id="cell-fig-K-vs-MD-PSD-VFI" class="cell" data-execution_count="25">
-<div class="cell-output cell-output-display">
-<div id="fig-k-vs-md-psd-vfi" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-k-vs-md-psd-vfi-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-md-psd-vfi-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-8" title="Figure&nbsp;8.8: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-k-vs-md-psd-vfi-output-1.png" id="fig-k-vs-md-psd-vfi" class="img-fluid figure-img"></a>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-k-vs-md-psd-vfi-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.8
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</div>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-CT-vs-MD-PSD-VFI">
-<div id="cell-fig-CT-vs-MD-PSD-VFI" class="cell" data-execution_count="26">
-<div class="cell-output cell-output-display">
-<div id="fig-ct-vs-md-psd-vfi" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-ct-vs-md-psd-vfi-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-ct-vs-md-psd-vfi-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-9" title="Figure&nbsp;8.9: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-ct-vs-md-psd-vfi-output-1.png" id="fig-ct-vs-md-psd-vfi" class="img-fluid figure-img"></a>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-ct-vs-md-psd-vfi-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.9
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</div>
-<p>We can compare with the correlation between the IOP and the visual field metrics (<a href="#fig-iop-vs-md-psd-vfi" class="quarto-xref">Figure&nbsp;<span>8.10</span></a>). Overall, the IOP correlates better with the visual field metrics than the ocular rigidity or the choroidal thickness.</p>
-<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/plots.ipynb" data-notebook-cellid="cell-fig-IOP-vs-MD-PSD-VFI">
-<div id="cell-fig-IOP-vs-MD-PSD-VFI" class="cell" data-execution_count="27">
-<div class="cell-output cell-output-display">
-<div id="fig-iop-vs-md-psd-vfi" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-iop-vs-md-psd-vfi-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<a href="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-iop-vs-md-psd-vfi-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-10" title="Figure&nbsp;8.10: "><img src="correlation_analysis_files/figure-html/..-..-notebooks-plots-fig-iop-vs-md-psd-vfi-output-1.png" id="fig-iop-vs-md-psd-vfi" class="img-fluid figure-img"></a>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-iop-vs-md-psd-vfi-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.10
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
 </div>
 
 
-<div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list" style="display: none">
-<div id="ref-Meng2023-jk" class="csl-entry" role="listitem">
-Meng, Qing-Yu, Ze-Qun Miao, Shu-Ting Liang, Xi Wu, Le-Jin Wang, Ming-Wei Zhao, and Li-Li Guo. 2023. <span>“Choroidal Thickness, Myopia, and Myopia Control Interventions in Children: A Meta-Analysis and Systemic Review.”</span> <em>Int. J. Ophthalmol.</em> 16 (3): 453–64.
-</div>
-<div id="ref-SADEGHI2025167" class="csl-entry" role="listitem">
-Sadeghi, Elham, Nicola Valsecchi, Elham Rahmanipour, Mahsa Ejlalidiz, Nasiq Hasan, Kiran Kumar Vupparaboina, Mohammed Nasar Ibrahim, et al. 2025. <span>“Choroidal Biomarkers in Age-Related Macular Degeneration.”</span> <em>Survey of Ophthalmology</em> 70 (2): 167–83. https://doi.org/<a href="https://doi.org/10.1016/j.survophthal.2024.10.004">https://doi.org/10.1016/j.survophthal.2024.10.004</a>.
-</div>
-</div>
+</section>
+</section>
 </section>
 
 </main> <!-- /main -->
@@ -878,13 +837,13 @@ Sadeghi, Elham, Nicola Valsecchi, Elham Rahmanipour, Mahsa Ejlalidiz, Nasiq Hasa
   </script>
 <nav class="page-navigation column-body">
   <div class="nav-page nav-page-previous">
-      <a href="../../chapters/analysis/cross_sectional_study.html" class="pagination-link" aria-label="Cross-sectional study">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Cross-sectional study</span></span>
+      <a href="../../chapters/analysis/replicability.html" class="pagination-link" aria-label="Replicability study">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Replicability study</span></span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../../chapters/analysis/predictive_analysis.html" class="pagination-link" aria-label="Predictive analysis">
-        <span class="nav-page-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">Predictive analysis</span></span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../../chapters/analysis/cross_sectional_study.html" class="pagination-link" aria-label="Cross-sectional study">
+        <span class="nav-page-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Cross-sectional study</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
