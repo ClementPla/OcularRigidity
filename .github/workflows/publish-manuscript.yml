@@ -1,0 +1,42 @@
+on:
+  push:
+    branches: main
+    paths:
+      - "manuscript/**"
+      - ".github/workflows/publish-manuscript.yml"
+  workflow_dispatch:
+
+name: Publish manuscript
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Code cells are never executed here (the data is not available in CI):
+      # outputs come from manuscript/_freeze and the stored outputs of the
+      # embedded notebooks. Jupyter is only needed to read the notebooks.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Jupyter
+        run: pip install jupyter
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.7.31
+
+      - name: Render and publish to gh-pages
+        uses: quarto-dev/quarto-actions/publish@v2
+        with:
+          target: gh-pages
+          path: manuscript
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

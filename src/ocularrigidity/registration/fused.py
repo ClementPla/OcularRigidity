@@ -1,34 +1,3 @@
-"""Segment and register a volume in a single pass over the GPU.
-
-Run as separate stages, segmentation and registration each encode every frame,
-and the encoder dominates the per-frame cost. One encode feeding both heads is
-therefore close to a halving, and is why this module exists.
-``model.encoder(x)[2:]`` is bit-identical to ``encoder.forward_features(x)``
-and ``segmentation_head(decoder(encoder(x)))`` reproduces ``model(x)``, so the
-split costs no accuracy — both are asserted by the tests.
-
-Choosing the *reference frame* is the part that does not fall out for free: it
-must be fixed before the pass begins, by a rule needing mask areas the pass has
-not produced yet, and holding every frame's pyramid instead would be tens of GB
-per volume. A short probe pass over ``config.probe_frames`` frames supplies
-them; the chosen frame's percentile against the *full* area distribution is
-reported afterwards, so an under-sized probe is visible rather than silent.
-
-Median area alone is not enough — a frame at the median area can sit at an
-extreme of the eye's axial drift, and registering onto it pushes far-drift
-frames off the canvas as all-zero warps. Area only picks a *pivot*; the
-reference is the probe frame at the median of the axial trajectory measured
-from it (``reference_selection="motion_medoid"``), which minimises the largest
-warp in the volume.
-
-    probe   N frames  ->  encode -> mask -> area        -> reference frame
-    main    all frames ->  encode -> mask                       (segmentation)
-                                  \\-> regressor(ref, .) -> dx, dy  (registration)
-    warp    all frames ->  grid_sample(mask+frame by dx, dy)
-
-Only the warp revisits the frames, and it is a grid_sample, not an encode.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -36,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 
 from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.registration.deep_learning.models.losses import warp
@@ -64,7 +34,9 @@ class FusedResult:
     timings: dict
     raw_masks: np.ndarray | None = None  # (T, H, W) bool, unregistered
     registered_masks: np.ndarray | None = None  # (T, H, W) bool
-    ref_percentile: float | None = None  # of the reference's area in the full distribution
+    ref_percentile: float | None = (
+        None  # of the reference's area in the full distribution
+    )
 
 
 def _normalise(frames_u8: torch.Tensor) -> torch.Tensor:
@@ -103,13 +75,20 @@ def _encode_segment(
 
 
 @torch.inference_mode()
-def _encode(seg_model, batch_u8: torch.Tensor, amp_dtype: torch.dtype) -> list[torch.Tensor]:
+def _encode(
+    seg_model, batch_u8: torch.Tensor, amp_dtype: torch.dtype
+) -> list[torch.Tensor]:
     with torch.autocast("cuda", dtype=amp_dtype):
         return list(seg_model.model.encoder(_normalise(batch_u8))[2:])
 
 
 def _trajectory_medoid(
-    reg_model, pyramid: list[torch.Tensor], pivot: int, batch: int, amp_dtype: torch.dtype
+    reg_model,
+    pyramid: list[torch.Tensor],
+    pivot: int,
+    batch: int,
+    amp_dtype: torch.dtype,
+    img_shape: tuple[int, int],
 ) -> int:
     n = pyramid[0].shape[0]
     if n <= 2:
@@ -121,12 +100,14 @@ def _trajectory_medoid(
         moving = [f[s:e] for f in pyramid]
         fixed = [f.expand(e - s, -1, -1, -1) for f in pivot_feats]
         with torch.autocast("cuda", dtype=amp_dtype):
-            _, b_dy = reg_model(fixed, moving)
+            _, b_dy = reg_model(fixed, moving, img_shape=img_shape)
         traj[s:e] = b_dy.float().mean(dim=1).cpu()
     return int((traj - traj.median()).abs().argmin().item())
 
 
-def _resolve_ref_idx(ref_idx: int | None, config: RegistrationConfig, T: int) -> int | None:
+def _resolve_ref_idx(
+    ref_idx: int | None, config: RegistrationConfig, T: int
+) -> int | None:
     if ref_idx is None and isinstance(config.reference_selection, int):
         ref_idx = config.reference_selection
     return None if ref_idx is None else range(T)[ref_idx]
@@ -211,7 +192,7 @@ def segment_and_register(
             # from the pivot to every probe frame and take the frame at the *median
             # of that trajectory* — the centre of the motion, not of the areas.
             ref_local = _trajectory_medoid(
-                reg_model, probe_pyramid, pivot_local, batch, amp_dtype
+                reg_model, probe_pyramid, pivot_local, batch, amp_dtype, (H, W)
             )
 
         ref_idx = int(probe_idx[ref_local])
@@ -228,7 +209,12 @@ def segment_and_register(
     # promotes to int64 and asks for a 35 GB intermediate, which survives on an
     # idle card and OOMs the moment a second shard shares it.
     areas = torch.empty(T, dtype=torch.float64)
-    for s in range(0, T, batch):
+    for s in tqdm(
+        range(0, T, batch),
+        desc="segmenting + registering",
+        disable=not verbose,
+        leave=False,
+    ):
         e = min(s + batch, T)
         mask, feats = _encode_segment(
             seg_model, d_frames[s:e], amp_dtype, keep_largest_cc=config.keep_largest_cc
@@ -237,7 +223,9 @@ def segment_and_register(
         areas[s:e] = mask.sum(dim=(1, 2)).double().cpu()
         fixed = [f.expand(e - s, -1, -1, -1) for f in ref_feats]
         with torch.autocast("cuda", dtype=amp_dtype):
-            b_dx, b_dy = reg_model(fixed, feats)  # already in pixels
+            b_dx, b_dy = reg_model(  # in pixels
+                fixed, feats, img_shape=(H, W), bulk_only=config.dy_bulk_only
+            )
         dx[s:e], dy[s:e] = b_dx.float().cpu(), b_dy.float().cpu()
     timings["encode+segment+register"] = _tick() - t0
 
@@ -348,7 +336,7 @@ def register(
             )
         ]
         ref_local = _trajectory_medoid(
-            reg_model, probe_pyramid, n_probe // 2, batch, amp_dtype
+            reg_model, probe_pyramid, n_probe // 2, batch, amp_dtype, (H, W)
         )
         ref_idx = int(probe_idx[ref_local])
         ref_feats = [f[ref_local : ref_local + 1].clone() for f in probe_pyramid]
@@ -359,12 +347,14 @@ def register(
     dx = torch.empty(T, dtype=torch.float32)
     dy = torch.empty(T, W, dtype=torch.float32)
     registered_frames = np.empty((T, H, W), dtype=np.uint8)
-    for s in range(0, T, batch):
+    for s in tqdm(range(0, T, batch), desc="registering frames", disable=not verbose):
         e = min(s + batch, T)
         feats = _encode(seg_model, d_frames[s:e], amp_dtype)
         fixed = [f.expand(e - s, -1, -1, -1) for f in ref_feats]
         with torch.autocast("cuda", dtype=amp_dtype):
-            b_dx, b_dy = reg_model(fixed, feats)
+            b_dx, b_dy = reg_model(
+                fixed, feats, img_shape=(H, W), bulk_only=config.dy_bulk_only
+            )
         b_dx, b_dy = b_dx.float(), b_dy.float()
         out, _ = warp(d_frames[s:e, None].float(), b_dx, b_dy, (H, W))
         registered_frames[s:e] = out[:, 0].clamp(0, 255).to(torch.uint8).cpu().numpy()

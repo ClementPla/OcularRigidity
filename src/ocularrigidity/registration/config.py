@@ -92,3 +92,8 @@ class RegistrationConfig:
     # downstream trace source expects — so it survives method="learned".
     filter_bad_columns: bool = True
     keep_largest_cc: bool = True
+
+    # Correct only the rigid axial shift of each frame (one dy per frame) and
+    # leave the per-A-scan residual out, so the BM's own deformation is kept.
+    # Uses the regressor's bulk head as is; no retraining.
+    dy_bulk_only: bool = False

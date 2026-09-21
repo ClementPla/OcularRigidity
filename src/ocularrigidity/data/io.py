@@ -103,6 +103,28 @@ def _read_all(path: str, chunk_size: int = 64 * 1024 * 1024) -> bytes:
     return b"".join(chunks)
 
 
+DEPTH = 1536  # A-scan length, in samples
+
+
+def load_octa(root: Path, depth: int = DEPTH):
+    """Memory-map amplitude/phase volumes as (n_bscans, n_ascans, depth) uint8."""
+    ts = np.loadtxt(root / "timestamp.txt", dtype=np.int64)
+    n_bscans = ts.size
+    nbytes = (root / "amplitude.bin").stat().st_size
+    n_ascans, rem = divmod(nbytes, n_bscans * depth)
+    if rem:
+        raise ValueError(
+            f"{nbytes} bytes not divisible by {n_bscans} B-scans x {depth} depth"
+        )
+
+    shape = (n_bscans, n_ascans, depth)
+    amp = np.memmap(root / "amplitude.bin", dtype=np.uint8, mode="r").reshape(shape)
+    phase = np.memmap(root / "phase.bin", dtype=np.uint8, mode="r").reshape(shape)
+    return amp, phase, ts
+
+
+
+
 def load_cube(
     folder: str,
     H: int = 1024,

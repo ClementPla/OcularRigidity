@@ -255,3 +255,53 @@ Astronauts/simulation_output/
 # Notebooks exportes (nbconvert : page + dossier d'assets)
 notebook/*.html
 notebook/*_files/
+
+# ==========================================================================
+# Regles venues de main (fusion du 2026-09-21)
+# ==========================================================================
+# Quarto report cache + rendered output
+reports/.cache/
+reports/*_files/
+reports/.quarto/
+
+# Video / animation
+*.mpeg
+*.mpg
+*.gif
+
+# Model weights and archives
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.zip
+*.tar
+*.tar.gz
+
+# Arrays, pickles, local databases
+*.pkl
+*.pickle
+*.sqlite
+*.sqlite3
+
+# Generated figures (every one is produced by a plt.savefig in this repo)
+*.png
+*.jpg
+*.jpeg
+
+# Bulk sample data kept locally, never versioned
+test/previous_masks/
+
+# LLM context dump of the repo, regenerated on demand
+repomix-output.xml
+
+# --- Quarto manuscript (published to GitHub Pages) ---------------------------
+# Re-include what the site needs despite the global rules above.
+!manuscript/notebooks/
+!manuscript/**/*.png
+!manuscript/**/*.jpg
+!manuscript/**/*.gif
+manuscript/_book/
+manuscript/_manuscript/
+manuscript/.quarto/
+manuscript/**/*.blend1

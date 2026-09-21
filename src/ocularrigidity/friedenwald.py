@@ -79,20 +79,10 @@ def deltaCT_to_deltaV_uL(
     R = inner_radius_mm(axial_length, choroidal_thickness_mm, cfg=cfg)
     return (4.0 / 3.0) * np.pi * ((R + dt_mm) ** 3 - R**3) * cfg.surface_coverage
 
-
-def K_from_deltaCT_mm(
-    deltaCT_mm,
-    axial_length,
-    iop,
-    opa,
-    choroidal_thickness_mm=None,
-    cfg: FriedenwaldConfig = FRIEDENWALD,
-):
-    """Friedenwald K (1/µL) from a peak-to-peak thickness change (mm).
+def PV_ratio_deltaCT_mm(deltaCT_mm, axial_length, iop, opa, choroidal_thickness_mm=None, cfg: FriedenwaldConfig = FRIEDENWALD):
+    """Compute the pressure-volume ratio (P/V) from a peak-to-peak thickness change (mm).
 
     Elementwise, so all arguments may be scalars or pandas Series / arrays.
-    Unusable inputs (non-positive volume or pressures) give NaN instead of
-    raising, which keeps cohort loops from dying on a single bad eye.
 
     ``choroidal_thickness_mm`` seats the shell on top of the choroid; see
     :func:`inner_radius_mm`.
@@ -107,9 +97,36 @@ def K_from_deltaCT_mm(
     P_d = np.asarray(P_d, dtype=float)
     P_s = np.asarray(P_s, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
-        K = np.where(
-            (dV > 0) & (P_d > 0) & (P_s > 0), np.log10(P_s / P_d) / dV, np.nan
-        )
+        PV_ratio = np.where((dV > 0) & (P_d > 0) & (P_s > 0), (P_s - P_d) / dV, np.nan)
+    return PV_ratio[()] if PV_ratio.ndim == 0 else PV_ratio
+
+def K_from_deltaCT_mm(
+    deltaCT_mm,
+    axial_length,
+    iop,
+    opa,
+    choroidal_thickness_mm=None,
+    cfg: FriedenwaldConfig = FRIEDENWALD,
+):
+    """Friedenwald K (1/µL) from a peak-to-peak thickness change (mm).
+
+    Elementwise, so all arguments may be scalars or pandas Series / arrays.
+
+
+    ``choroidal_thickness_mm`` seats the shell on top of the choroid; see
+    :func:`inner_radius_mm`.
+    """
+    dV = deltaCT_to_deltaV_uL(
+        np.asarray(deltaCT_mm, dtype=float) * 1000.0,
+        axial_length,
+        choroidal_thickness_mm,
+        cfg=cfg,
+    )
+    P_d, P_s = _pressures(iop, opa, cfg)
+    P_d = np.asarray(P_d, dtype=float)
+    P_s = np.asarray(P_s, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        K = np.where((dV > 0) & (P_d > 0) & (P_s > 0), np.log10(P_s / P_d) / dV, np.nan)
     return K[()] if K.ndim == 0 else K
 
 
@@ -173,7 +190,9 @@ def friedenwald_K(
     if from_area:
         g["dV_uL"] = deltaA_to_deltaV_uL(g["deltaA"], g["AxialLength"], ct_mm, cfg=cfg)
     else:
-        g["dV_uL"] = deltaCT_to_deltaV_uL(g["deltaCT"], g["AxialLength"], ct_mm, cfg=cfg)
+        g["dV_uL"] = deltaCT_to_deltaV_uL(
+            g["deltaCT"], g["AxialLength"], ct_mm, cfg=cfg
+        )
 
     bad = (g["dV_uL"] <= 0) | P_d.isna() | (P_d <= 0) | (P_s <= 0) | g["OPA"].isna()
     g["K"] = np.where(bad, np.nan, np.log10(P_s / P_d) / g["dV_uL"])

@@ -142,12 +142,14 @@ def baseline_vs_slope_wide(
         if np.all(t == t[0]):
             continue
         slope = np.polyfit(t, g[y].to_numpy(), 1)[0]
+        residual = g[y].to_numpy() - (slope * t + g[y].iloc[0])
+        lsnr = slope / np.std(residual) if np.std(residual) > 0 else np.nan
         keys = keys if isinstance(keys, tuple) else (keys,)
-        rows.append((*keys, g[x].iloc[0], slope, len(g), float(t.max())))
+        rows.append((*keys, g[x].iloc[0], slope, residual, lsnr, len(g), float(t.max())))
 
     return pd.DataFrame(
         rows,
-        columns=group_cols + [f"{x}_baseline", f"{y}_slope", "n_visits", "span_years"],
+        columns=group_cols + [f"{x}_baseline", f"{y}_slope", f"{y}_residual", f"{y}_lsnr", "n_visits", "span_years"],
     )
 
 

@@ -199,6 +199,45 @@ def _csi_unit_normal_mm(
     return nx / norm, ny / norm
 
 
+def mask_ct_series_mm(
+    masks: np.ndarray,
+    axial_mm_per_px: float = AXIAL_PIXEL_SIZE_MM,
+    transversal_mm_per_px: float = TRANVERSAL_PIXEL_SIZE_MM,
+    normal_slope_window: int = DELTA_A.csi_normal_slope_window,
+) -> np.ndarray:
+    """Per-frame mean choroidal thickness (mm), measured on the masks alone.
+
+    Each A-scan's thickness is its vertical RPE->CSI gap scaled by ``cos(tilt)``
+    of the frame's own CSI, the tilt taken in physical space: with pixels ~3x
+    wider than tall, the pixel-space slope understates it. This is the same
+    perpendicular thickness as :attr:`DeltaCTResult.baseline_ct_mm`. The A-scans
+    are then averaged per frame, NaN-aware (trimmed or empty columns drop out).
+
+    The mask-based ΔCT of a cycle is the peak-to-peak of this series over its
+    frames: a direct, flow-free check of :func:`measure_delta_ct_from_disp`.
+    """
+    rpe, csi = extract_boundaries_fast(np.asarray(masks, dtype=bool))
+    rpe, csi = clean_boundaries(rpe, csi)
+    cos_tilt = np.stack(
+        [
+            np.abs(
+                _csi_unit_normal_mm(
+                    c,
+                    axial_mm_per_px,
+                    transversal_mm_per_px,
+                    slope_window=normal_slope_window,
+                )[1]
+            )
+            for c in csi
+        ]
+    )  # (T, W)
+    ct = (csi - rpe) * axial_mm_per_px * cos_tilt  # (T, W) mm
+    valid = np.isfinite(ct)
+    counts = valid.sum(axis=1)
+    sums = np.where(valid, ct, 0.0).sum(axis=1)
+    return np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
+
+
 def measure_delta_ct(
     frames: np.ndarray,
     masks: np.ndarray,

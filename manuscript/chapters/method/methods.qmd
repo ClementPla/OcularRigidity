@@ -1,0 +1,15 @@
+# Methods 
+## Cohort description {#sec-cohort}
+```{python}
+# | echo: false
+from pathlib import Path
+
+ROOT_CARDIAC = Path("/media/clement/HD/Santiago/OcularRigidity/FullPipeline/")
+from ocularrigidity.data.measurements.cohort import build_cohort, Study
+
+df = build_cohort(root=ROOT_CARDIAC, study=Study.PROSPECTIVE, overwrite=False)
+n_patients = df.PatientId.nunique()
+n_visits = len(df)
+```
+
+We have a total of `{python} n_patients` patients in the study, with a total of `{python} n_visits` visits. 

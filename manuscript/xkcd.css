@@ -1,0 +1,19 @@
+@font-face {
+    font-family: 'Humor Sans';
+    src: url('Humor-Sans.ttf') format('truetype');
+}
+
+/* Apply font to document body and headings */
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+li,
+span,
+code {
+    font-family: 'Humor Sans', 'Comic Neue', 'Comic Sans MS', cursive, sans-serif !important;
+}
