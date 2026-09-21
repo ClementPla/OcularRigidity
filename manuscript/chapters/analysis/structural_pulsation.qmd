@@ -72,4 +72,11 @@ The segmentation was checked visually on B-scans and en-face slabs, but not agai
 **Fovea and visualisation.** The fovea is located at the minimum of the retinal thickness map (ILM to BM). The map is smoothed with a Gaussian (σ = 8 px), and a quadratic penalty on the distance to the centre of the scan is added before taking the minimum. The vessel surface is extracted by marching cubes from the vessel mask (smoothed with a Gaussian, σ = 1 voxel), and each vertex is mapped back to its depth below the BM. @fig-choroid-vessels-3d shows the vessels together with the BM and CSI surfaces, and two amplitude sections through the fovea along the temporal–nasal and inferior–superior axes.
 
 
-{{< embed ../../../notebooks/same_day/volume.ipynb#fig-choroid-vessels-3d >}}
+::: {#fig-choroid-vessels-3d}
+
+<iframe src="positional_pulsation/choroid_vessels_3d.html" width="100%" height="700" style="border: none;" loading="lazy" title="3D view of the choroidal vessels"></iframe>
+
+Main choroidal vessels between the BM and the CSI after motion correction, with temporal–nasal and inferior–superior slices through the fovea. Vessel colour gives depth below the BM. The figure is interactive: drag to rotate, scroll to zoom, and click the legend to hide a surface.
+
+
+:::
