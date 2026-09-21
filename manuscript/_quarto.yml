@@ -2,7 +2,7 @@ project:
   type: book
   output-dir: _book
   execute-dir: project
-
+lightbox: true
 book:
   title: "Ocular Rigidity - Prospective Study"
   author:
@@ -26,6 +26,7 @@ book:
     - part: "Analysis"
       chapters:
         - chapters/analysis/replicability.qmd
+        - chapters/analysis/structural_pulsation.qmd
         - chapters/analysis/cross_sectional_study.qmd
         - chapters/analysis/correlation_analysis.qmd
         - chapters/analysis/predictive_analysis.qmd

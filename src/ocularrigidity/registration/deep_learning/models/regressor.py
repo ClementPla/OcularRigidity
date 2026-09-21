@@ -417,6 +417,7 @@ class RegistrationRegressor(nn.Module, PyTorchModelHubMixin):
         moving_feats: List[torch.Tensor],
         img_shape: Optional[Tuple[int, int]] = None,
         detach_dy: bool = False,
+        bulk_only: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """``(dx (B,), dy (B, W))``, both in pixels of the frame the features
         came from.
@@ -433,12 +434,20 @@ class RegistrationRegressor(nn.Module, PyTorchModelHubMixin):
         next one reads ``ddx`` off them, so ``dx`` depends on ``dy`` and a
         *dx-only* objective can lower its error by moving ``dy`` -- with no dy
         term present to object.
+
+        ``bulk_only`` drops the per-column residual and keeps the rigid axial
+        shift, so ``dy`` is constant across columns. In the cascade the finer
+        stages then read features warped by the bulk alone, so their ``ddx``
+        and bulk are estimated against the frame as it will actually be warped.
+        No retraining: the residual is a separate, mean-free head output.
         """
         H, W = img_shape if img_shape is not None else self.img_shape
         if not self.cascade:
             trunk = self.fusion(fixed_feats, moving_feats)
             s_dx, s_bulk, s_res = self.scales
             dy_bulk, dy_res = self.dy_head(trunk)
+            if bulk_only:
+                dy_res = torch.zeros_like(dy_res)
             return (
                 self.dx_head(trunk) * s_dx,
                 dy_bulk.unsqueeze(1) * s_bulk + dy_res * s_res,
@@ -458,6 +467,9 @@ class RegistrationRegressor(nn.Module, PyTorchModelHubMixin):
                 m, _ = warp(m, dx, dy.detach() if detach_dy else dy, (H, W))
             ddx, d_bulk, d_res = self.stages[i](f, m)
             dx = dx + ddx * self.dx_step
+            if bulk_only:
+                dy = dy + d_bulk.unsqueeze(1) * stride
+                continue
             d_res = F.interpolate(
                 d_res.unsqueeze(1), size=W, mode="linear", align_corners=False
             ).squeeze(1)

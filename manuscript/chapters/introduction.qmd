@@ -2,7 +2,7 @@
 ## Deformation under blood pressure
 ### The Three Hypothesis
 
-## Three hypotheses
+## Three hypothesis of eye inflation under blood pressure
 
 ![Eye inflation under the three hypotheses.](/illustrations/render/eye_inflation.gif){#fig-eye-inflation width=70% fig-align="center"}
 

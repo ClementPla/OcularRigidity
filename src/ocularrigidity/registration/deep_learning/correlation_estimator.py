@@ -222,13 +222,16 @@ class CorrelationBaseline(nn.Module):
         moving_feats: Sequence[torch.Tensor],
         img_shape: Optional[Tuple[int, int]] = None,
         detach_dy: bool = False,
+        bulk_only: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """``(dx (B,), dy (B, W))`` in pixels of ``img_shape``.
 
         ``detach_dy`` is accepted and ignored: there is no gradient here for it
         to cut, but the trainer passes it on the triplet and shift batches.
+        ``bulk_only`` replaces ``dy`` by its column mean, the regressor's flag
+        of the same name.
         """
-        return estimate_transform(
+        dx, dy = estimate_transform(
             fixed_feats,
             moving_feats,
             img_shape if img_shape is not None else self.img_shape,
@@ -238,3 +241,6 @@ class CorrelationBaseline(nn.Module):
             center=self.center,
             scales=self.scales,
         )
+        if bulk_only:
+            dy = dy.mean(dim=1, keepdim=True).expand_as(dy)
+        return dx, dy
