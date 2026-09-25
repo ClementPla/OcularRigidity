@@ -128,56 +128,56 @@
   {
     "objectID": "chapters/analysis/sensitivity_to_HR.html",
     "href": "chapters/analysis/sensitivity_to_HR.html",
-    "title": "6  How much the measured pulsability depends on an accurate detection of the heart rate?",
+    "title": "6  How much does the measured pulsability depend on an accurate detection of the heart rate?",
     "section": "",
-    "text": "6.1 Which method is the most replicable?\nDetecting the heart rate is a crucial step. Currently, it is chosen for two steps: selecting the best trace and demodulating the trace. We unfortunately only proxies to precisely estimate if we found the right heart rate or not. We can however test how much the measured pulsability depends on the heart rate detection by comparing the pulsability measured with the imposed heart rate and the demodulated heart rate.\nOur experimental setup is as follow:\nWe can write this as: \\[\n  \\delta CT(\\text{imposed BPM}) = \\delta CT(\\text{detected BPM} \\cdot \\epsilon)\n  \\]\nWe vary \\(\\epsilon\\) from increment ranging from 0.9 to 1.1, and we measure the pulsability for each cycle. We can then compare the pulsability measured with the imposed heart rate and the demodulated heart rate.\nThe first question we ask is similar to the reproducibility analysis: which method is the most replicable? We can compute the Pearson correlation between cycle 0 and cycle 1, and cycle 1 and cycle 2, for each video, for the imposed bpm and the id_demod bpm. This is shown in the Figure 6.1.\nFortunately, the results are promising: the correlation is the highest for the demodulated signal, and the lowest for the imposed bpm. This means that the demodulated signal is more replicable than the imposed bpm. The linear phase signal is in between, which is expected: it is a compromise between the two. Note: the imposed BPM case represents all the different heart rates that we imposed, over the same signal. Points are therefore not independant, and this does not represent which \\(\\epsilon\\) is the worst.",
+    "text": "6.1 Which method is the most replicable?\nDetecting the heart rate is a crucial step. Currently, it is used in two steps: selecting the best trace and demodulating that trace. Unfortunately, we only have proxies to estimate whether we found the right heart rate. We can, however, test how much the measured pulsability depends on the heart rate detection by comparing the pulsability measured with an imposed heart rate to the pulsability measured with the demodulated phase.\nOur experimental setup is as follows:\nWe can write this as: \\[\n  \\delta CT(\\text{imposed BPM}) = \\delta CT(\\text{detected BPM} \\cdot \\epsilon)\n  \\]\nWe vary \\(\\epsilon\\) in increments from 0.9 to 1.1, and we measure the pulsability for each cycle. We can then compare the pulsability measured with the imposed heart rate to the pulsability measured with the demodulated phase.\nThe first question we ask is similar to the one in the reproducibility analysis: which method is the most replicable? For each video, we compute the Pearson correlation between cycles 0 and 1, and between cycles 1 and 2, for the imposed BPM and for the demodulated phase. This is shown in Figure 6.1.\nFortunately, the results are encouraging: the correlation is highest for the demodulated phase and lowest for the imposed BPM. This means that the demodulated phase is more replicable than the imposed BPM. The linear phase lies in between, which is expected: it is a compromise between the two. Note: the imposed-BPM case pools all the different heart rates that we imposed on the same signal. The points are therefore not independent, and this does not indicate which \\(\\epsilon\\) performs worst.",
     "crumbs": [
       "Analysis",
-      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much the measured pulsability depends on an accurate detection of the heart rate?</span>"
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much does the measured pulsability depend on an accurate detection of the heart rate?</span>"
     ]
   },
   {
     "objectID": "chapters/analysis/sensitivity_to_HR.html#which-method-is-the-most-replicable",
     "href": "chapters/analysis/sensitivity_to_HR.html#which-method-is-the-most-replicable",
-    "title": "6  How much the measured pulsability depends on an accurate detection of the heart rate?",
+    "title": "6  How much does the measured pulsability depend on an accurate detection of the heart rate?",
     "section": "",
     "text": "Figure 6.1: Replicability comparison. First row: estimating the deltaCT from the demodulated signal, second row: estimating the deltaCT from the linear phase signal at the same BPM, third row: estimating the deltaCT from the imposed bpm. Each column corresponds to a different cycle comparison.",
     "crumbs": [
       "Analysis",
-      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much the measured pulsability depends on an accurate detection of the heart rate?</span>"
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much does the measured pulsability depend on an accurate detection of the heart rate?</span>"
     ]
   },
   {
     "objectID": "chapters/analysis/sensitivity_to_HR.html#which-method-leads-to-the-most-pulsatile-results",
     "href": "chapters/analysis/sensitivity_to_HR.html#which-method-leads-to-the-most-pulsatile-results",
-    "title": "6  How much the measured pulsability depends on an accurate detection of the heart rate?",
+    "title": "6  How much does the measured pulsability depend on an accurate detection of the heart rate?",
     "section": "6.2 Which method leads to the most pulsatile results?",
-    "text": "6.2 Which method leads to the most pulsatile results?\nWe know meaure which BPM leads to the largest \\(\\delta CT\\). We can therefore compare the \\(\\delta CT\\) measured with the demodulated signal and the imposed BPM. This is shown in Figure 6.2. The left panel shows the sensitivity curve for each video, with the median and interquartile range across videos. The right panel shows a paired comparison of the linear phase and demodulated \\(\\delta CT\\) at the detected BPM. \\(\\delta CT\\) is always normalized by the largest \\(\\delta CT\\) measured for each video, to account for the fact that some videos are more pulsatile than others. The results are conclusive: the demodulated signal leads to the largest \\(\\delta CT\\), and the imposed BPM leads to the smallest \\(\\delta CT\\). The further the imposed BPM is from the detected BPM, the smaller the \\(\\delta CT\\) is. This means that the demodulated signal is more pulsatile than the imposed bpm. The linear phase signal is in between, which is expected: it is a compromise between the two.\n\n\n\n\n\n\n\n\n\nFigure 6.2: Peak analysis of the sensitivity curves. Left: sensitivity curve for each video, with the median and interquartile range across videos. Right: paired comparison of the linear phase and demodulated deltaCT at the detected BPM.",
+    "text": "6.2 Which method leads to the most pulsatile results?\nWe now measure which BPM leads to the largest \\(\\delta CT\\). We can therefore compare the \\(\\delta CT\\) measured with the demodulated phase to the \\(\\delta CT\\) measured with an imposed BPM. This is shown in Figure 6.2. The left panel shows the sensitivity curve of each video, with the median and interquartile range across videos. The right panel shows a paired comparison of the \\(\\delta CT\\) obtained with the linear phase and with the demodulated phase at the detected BPM. \\(\\delta CT\\) is always normalized by the largest \\(\\delta CT\\) measured for each video, to account for the fact that some videos are more pulsatile than others. The results are conclusive: the demodulated phase leads to the largest \\(\\delta CT\\), and the imposed BPM leads to the smallest. The further the imposed BPM is from the detected BPM, the smaller the \\(\\delta CT\\). This means that the demodulated phase yields a more pulsatile signal than an imposed BPM. The linear phase lies in between, which is expected: it is a compromise between the two.\n\n\n\n\n\n\n\n\n\nFigure 6.2: Peak analysis of the sensitivity curves. Left: sensitivity curve for each video, with the median and interquartile range across videos. Right: paired comparison of the linear phase and demodulated deltaCT at the detected BPM.",
     "crumbs": [
       "Analysis",
-      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much the measured pulsability depends on an accurate detection of the heart rate?</span>"
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much does the measured pulsability depend on an accurate detection of the heart rate?</span>"
     ]
   },
   {
-    "objectID": "chapters/analysis/sensitivity_to_HR.html#how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm",
-    "href": "chapters/analysis/sensitivity_to_HR.html#how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm",
-    "title": "6  How much the measured pulsability depends on an accurate detection of the heart rate?",
-    "section": "6.3 How many videos reach their peak \\(\\delta CT\\) outside of the detected BPM?",
-    "text": "6.3 How many videos reach their peak \\(\\delta CT\\) outside of the detected BPM?\nWe now turn to quantifying how many videos reach their peak \\(\\delta CT\\) outside of the detected BPM. This is shown in Figure 6.3. The left panel shows the distribution of the offset between the detected BPM and the BPM that leads to the largest \\(\\delta CT\\). The right panel shows the cumulative distribution of the offset between the detected BPM and the BPM that leads to the largest \\(\\delta CT\\). Once again, we reach a clear conclusion: 83% of the videos reach their peak at 3.3% or less from the detected BPM. This means that the detected BPM is a good proxy for the BPM that leads to the largest \\(\\delta CT\\).\n\n\n\n\n\n\n\n\n\nFigure 6.3",
+    "objectID": "chapters/analysis/sensitivity_to_HR.html#how-many-videos-reach-their-peak-delta-ct-away-from-the-detected-bpm",
+    "href": "chapters/analysis/sensitivity_to_HR.html#how-many-videos-reach-their-peak-delta-ct-away-from-the-detected-bpm",
+    "title": "6  How much does the measured pulsability depend on an accurate detection of the heart rate?",
+    "section": "6.3 How many videos reach their peak \\(\\delta CT\\) away from the detected BPM?",
+    "text": "6.3 How many videos reach their peak \\(\\delta CT\\) away from the detected BPM?\nWe now quantify how many videos reach their peak \\(\\delta CT\\) away from the detected BPM. This is shown in Figure 6.3. The left panel shows the distribution of the offset between the detected BPM and the BPM that leads to the largest \\(\\delta CT\\). The right panel shows the cumulative distribution of the same offset. Once again, the conclusion is clear: 83% of the videos reach their peak within 3.3% of the detected BPM. This means that the detected BPM is a good proxy for the BPM that leads to the largest \\(\\delta CT\\).\n\n\n\n\n\n\n\n\n\nFigure 6.3",
     "crumbs": [
       "Analysis",
-      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much the measured pulsability depends on an accurate detection of the heart rate?</span>"
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much does the measured pulsability depend on an accurate detection of the heart rate?</span>"
     ]
   },
   {
-    "objectID": "chapters/analysis/sensitivity_to_HR.html#does-it-matter-if-the-detected-bpm-is-correct-or-not",
-    "href": "chapters/analysis/sensitivity_to_HR.html#does-it-matter-if-the-detected-bpm-is-correct-or-not",
-    "title": "6  How much the measured pulsability depends on an accurate detection of the heart rate?",
-    "section": "6.4 Does it matter if the detected BPM is correct or not?",
-    "text": "6.4 Does it matter if the detected BPM is correct or not?\nNot finding the BPM will lead to a different \\(\\delta CT\\). The question is: does it matter in the end? In others, not detecting the BPM could simply be caused by a low SNR, and the \\(\\delta CT\\) measured could be small anyway. We can therefore compare the \\(\\delta CT\\) measured with the demodulated signal and the imposed BPM, for videos that have a low SNR and videos that have a high SNR. This is shown in Figure 6.4.\n\n\n\n\n\n\n\n\n\nFigure 6.4",
+    "objectID": "chapters/analysis/sensitivity_to_HR.html#does-it-matter-whether-the-detected-bpm-is-correct",
+    "href": "chapters/analysis/sensitivity_to_HR.html#does-it-matter-whether-the-detected-bpm-is-correct",
+    "title": "6  How much does the measured pulsability depend on an accurate detection of the heart rate?",
+    "section": "6.4 Does it matter whether the detected BPM is correct?",
+    "text": "6.4 Does it matter whether the detected BPM is correct?\nFailing to detect the correct BPM leads to a different \\(\\delta CT\\). The question is: does it matter in the end? In other words, a failed BPM detection could simply be caused by a low SNR, in which case the measured \\(\\delta CT\\) would be small anyway. We therefore compare the \\(\\delta CT\\) measured with the demodulated phase to the \\(\\delta CT\\) measured with an imposed BPM, for videos with a low SNR and videos with a high SNR. This is shown in Figure 6.4.\n\n\n\n\n\n\n\n\n\nFigure 6.4",
     "crumbs": [
       "Analysis",
-      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much the measured pulsability depends on an accurate detection of the heart rate?</span>"
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>How much does the measured pulsability depend on an accurate detection of the heart rate?</span>"
     ]
   },
   {
