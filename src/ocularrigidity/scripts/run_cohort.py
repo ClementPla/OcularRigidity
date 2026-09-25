@@ -180,6 +180,7 @@ def plan_video(
     force_from: Optional[str],
     done_deltaY: set,
     done_qc: set,
+    reuse_segreg: bool = False,
 ) -> tuple[str, ...]:
     """The stages this video still needs. Empty means there is nothing to do.
 
@@ -187,9 +188,12 @@ def plan_video(
     consulted here — nothing is decoded, so planning a 700-video cohort is
     seconds rather than hours.
     """
+    first = STAGES.index("fold") if reuse_segreg else 0
     if Path(video) in PROCESS_ANYWAY:
-        # QC-flagged cases are always redone, whatever is on disk.
-        return STAGES
+        # QC-flagged cases are always redone, whatever is on disk — but never
+        # upstream of the fold when segmentation/registration are borrowed from
+        # another run, whose masks and cache must not be rewritten.
+        return STAGES[first:]
 
     present = {
         "segment": paths.raw_mask(video).exists(),
@@ -201,8 +205,11 @@ def plan_video(
         "qc": video in done_qc,
     }
     forced = STAGES.index(force_from) if force_from else len(STAGES)
+    forced = max(forced, first)
 
     for i, stage in enumerate(STAGES):
+        if i < first:
+            continue
         if i >= forced or not present[stage]:
             return STAGES[i:]
     return ()
@@ -213,6 +220,7 @@ def build_tasks(
     force_from: Optional[str],
     limit: Optional[int],
     logger: logging.Logger,
+    reuse_segreg: bool = False,
 ) -> list[VideoTask]:
     df = load_measurements(include_HR=True)
 
@@ -227,7 +235,15 @@ def build_tasks(
     starts = Counter()
     for _, row in df.iterrows():
         video = Path(row["MeasureValue"]).as_posix().replace("\\", "/")
-        stages = plan_video(video, paths, force_from, done_deltaY, done_qc)
+        if reuse_segreg and not cache_is_valid(
+            ROOT_REGISTERED_CACHE, Path(video), REGISTRATION
+        ):
+            # Nothing to fold from, and this run may not register it itself.
+            missing += 1
+            continue
+        stages = plan_video(
+            video, paths, force_from, done_deltaY, done_qc, reuse_segreg
+        )
         if not stages:
             skipped += 1
             continue
@@ -247,7 +263,7 @@ def build_tasks(
         )
 
     logger.info(
-        f"Total: {len(df)} | Up to date: {skipped} | No source video: {missing} "
+        f"Total: {len(df)} | Up to date: {skipped} | Missing input: {missing} "
         f"| To process: {len(tasks)}"
     )
     logger.info(
@@ -432,7 +448,12 @@ def process_video(
                 verbose=False,
             ),
         )
-        cycles = result.cycles
+        # The fold returns float32, but one_cycle.mkv stores uint8 and the
+        # staged pipeline's later stages read those bytes back. Hand the
+        # in-memory stages the same bytes: segmentation only normalises uint8
+        # input (float 0–255 went through un-normalised) and deltaA's optical
+        # flow requires 8-bit frames.
+        cycles = np.ascontiguousarray(result.cycles, dtype=np.uint8)
         cardiac_freq, n_cycle = result.cardiac_freq, result.n_cycle
         out.jobs.append(
             (
@@ -583,6 +604,16 @@ def parse_args():
         "--limit", type=int, default=None, help="Process at most N videos (smoke run)."
     )
     p.add_argument(
+        "--reuse-segreg",
+        action="store_true",
+        help=(
+            "Never segment or register: start every video at the fold, from the "
+            "masks and registration cache OCULARRIGIDITY_MASKS / "
+            "OCULARRIGIDITY_REGISTERED_CACHE point at (typically another run's). "
+            "Videos without a valid cache there are skipped."
+        ),
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="Print what would run, per stage, and exit without touching a GPU.",
@@ -610,8 +641,18 @@ def main():
         f"| registration={REGISTRATION.method} "
         f"| force-from={force_from or 'none'} | batch_size={args.batch_size}"
     )
+    logger.info(
+        f"masks <- {ROOT_MASKS} | registration cache <- {ROOT_REGISTERED_CACHE} "
+        f"| reuse-segreg={args.reuse_segreg} "
+        f"| pulse model={PULSATION.chain.sinc_checkpoint or 'classical chain'} "
+        f"| phase anchoring={'on' if PULSATION.chain.anchor else 'off'}"
+    )
 
-    tasks = build_tasks(paths, force_from, args.limit, logger)
+    if args.reuse_segreg and force_from in ("segment", "register"):
+        raise SystemExit(
+            "--reuse-segreg cannot be combined with forcing segment/register"
+        )
+    tasks = build_tasks(paths, force_from, args.limit, logger, args.reuse_segreg)
     if args.dry_run:
         logger.info("--dry-run: stopping before any work.")
         return

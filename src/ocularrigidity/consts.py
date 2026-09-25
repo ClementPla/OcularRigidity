@@ -103,6 +103,19 @@ REGISTRATOR_CHECKPOINT = _env_path(
 
 OUTPUT_FOLDER = ROOT_COMPRESSED_VIDEO
 
+# Self-supervised pulse model (motion/pulsation/sinc). Unset, the fold stage
+# runs the classical chain (HR-anchored Lomb-Scargle on thickness); set, it
+# takes the rate and phase from this SiNC checkpoint instead, with no expected
+# BPM. Phase anchoring moves phase 0 onto minimal choroid thickness, so every
+# folded cycle starts deflated and inflates first; it defaults to on with SiNC
+# (whose waveform has an arbitrary sign and lag) and off otherwise, and
+# OCULARRIGIDITY_ANCHOR_PHASE=0/1 overrides either way.
+_sinc = os.environ.get("OCULARRIGIDITY_SINC_CHECKPOINT")
+SINC_CHECKPOINT = Path(_sinc) if _sinc else None
+ANCHOR_PHASE = os.environ.get(
+    "OCULARRIGIDITY_ANCHOR_PHASE", "1" if SINC_CHECKPOINT else "0"
+) not in ("0", "", "false", "False")
+
 # Physical properties of the acquisition device, not study decisions — they live
 # in this leaf module so library code can reach them without importing the
 # study-level ``pipeline_config``.

@@ -13,6 +13,11 @@ from ocularrigidity.motion.pulsation.phase.aggregation import (
     SelectBestComponent,
     SingleTrace,
 )
+from ocularrigidity.motion.pulsation.phase.anchoring import (
+    ThicknessAnchorConfig,
+    ThicknessAnchoredPhaseEstimator,
+    thickness_minimum_phase,
+)
 from ocularrigidity.motion.pulsation.phase.base import (
     AbstractPhaseEstimator,
     PhaseTrack,
@@ -37,6 +42,9 @@ __all__ = [
     "AbstractPhaseEstimator",
     "IQDemodPhaseEstimator",
     "IQPhaseConfig",
+    "ThicknessAnchoredPhaseEstimator",
+    "ThicknessAnchorConfig",
+    "thickness_minimum_phase",
     "PeakLockedPhaseEstimator",
     "PeakLockConfig",
     "HilbertPhaseEstimator",

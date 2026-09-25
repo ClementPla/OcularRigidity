@@ -17,10 +17,13 @@ output-file metadata.
 """
 
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Literal, Optional
 
 from ocularrigidity.consts import (
+    ANCHOR_PHASE,
     AXIAL_PIXEL_SIZE_MM,
+    SINC_CHECKPOINT,
     SEGMENTATION_BATCH_SIZE,
     TRANVERSAL_PIXEL_SIZE_MM,
 )
@@ -33,6 +36,7 @@ from ocularrigidity.motion.pulsation import (
     MaskTraceConfig,
     NCycleConfig,
 )
+from ocularrigidity.motion.pulsation.phase.anchoring import ThicknessAnchorConfig
 from ocularrigidity.motion.pulsation.traces.coherence import CoherenceConfig
 from ocularrigidity.registration.config import RegistrationConfig
 
@@ -106,16 +110,28 @@ class ChainConfig:
         )
     )
 
+    # Set, the rate and phase come from this SiNC checkpoint's waveform rather
+    # than from the thickness traces (see consts.SINC_CHECKPOINT).
+    sinc_checkpoint: Optional[Path] = None
+    # Set, phase 0 is moved onto minimal choroid thickness after demodulation.
+    anchor: Optional[ThicknessAnchorConfig] = None
+
     def for_video(
         self, *, expected_bpm: Optional[float] = None, verbose: bool = True
     ) -> dict:
         """The stage configs, with the measured HR stamped into the band.
 
         One band object, shared by the trace bandpass and the periodogram, so
-        the two stages cannot disagree about what counts as cardiac.
+        the two stages cannot disagree about what counts as cardiac. With SiNC
+        the band stays open: the point is to find the rate without an expected
+        BPM, and anchoring the band on HR would hand it back.
         """
+        if self.sinc_checkpoint is not None:
+            expected_bpm = None
         band = CardiacBand(expected_bpm=expected_bpm)
         return dict(
+            sinc=self.sinc_checkpoint,
+            anchor=self.anchor,
             trace=replace(self.trace, verbose=verbose),
             bandpass=replace(self.bandpass, band=band, verbose=verbose),
             coherence=replace(self.coherence, verbose=verbose),
@@ -166,6 +182,8 @@ class PulsationConfig:
             self.chain.for_video(expected_bpm=expected_bpm, verbose=verbose),
             replace(self.fold, verbose=verbose),
         )
+
+
 @dataclass(frozen=True)
 class DeltaYConfig:
     """Choroid segmentation + cardiac-amplitude (deltaY) fit on one_cycle.mkv."""
@@ -257,7 +275,14 @@ class MisregistrationConfig:
 # segmentation, and a cohort measured from a mix of the two would not be
 # comparable within itself.
 REGISTRATION = RegistrationConfig(method="learned", use_encoded_video=False)
-PULSATION = PulsationConfig()
+PULSATION = PulsationConfig(
+    chain=ChainConfig(
+        sinc_checkpoint=SINC_CHECKPOINT,
+        # One anchor per folded cycle, on the fold's own segment boundaries,
+        # so each cycle starts at its own thickness minimum.
+        anchor=ThicknessAnchorConfig(n_segments=N_CYCLES) if ANCHOR_PHASE else None,
+    )
+)
 DELTA_Y = DeltaYConfig()
 SEGMENTATION = SegmentationConfig()
 DELTA_A = DeltaAConfig()

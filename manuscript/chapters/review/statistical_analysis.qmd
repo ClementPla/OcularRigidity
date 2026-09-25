@@ -6,4 +6,4 @@ This chapter will focus on describing the statistical methods used in the study.
 ### Introduction
 The motivation behind statistical test is to determine whether there is a significant difference between two or more groups with regards to a specific variable. 
 
-The idea is to formulate a null hypothesis $H_0$ and an alternative hypothesis $H_1$. The null hypothesis states that there is no significant difference between the groups, while the alternative hypothesis states that there is a significant difference.
+The idea is to formulate a null hypothesis $H_0$ and an alternative hypothesis $H_1$. The null hypothesis states that there is no significant difference between the groups, while the alternative hypothesis states that there is a significant difference. We then define a suitable test statistic $Z$ 

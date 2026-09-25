@@ -21,6 +21,7 @@ from ocularrigidity.motion.pulsation.n_cycle_reconstructor import (
 from ocularrigidity.motion.pulsation.phase import (
     IQDemodPhaseEstimator,
     SelectBestComponent,
+    ThicknessAnchoredPhaseEstimator,
 )
 from ocularrigidity.motion.pulsation.rate import LombScargleRateEstimator
 from ocularrigidity.motion.pulsation.traces import (
@@ -40,22 +41,44 @@ if TYPE_CHECKING:
 def build_extractor(registrator, aligner, stage_configs: dict) -> PulseExtractor:
     """The composed chain, from the per-stage configs.
 
-        thickness -> bandpass -> coherent selection -> PCA
-                  -> Lomb-Scargle rate -> IQ phase on the best component
+        thickness -> bandpass -> Lomb-Scargle rate -> IQ phase on the best trace
+
+    or, when ``stage_configs["sinc"]`` names a checkpoint,
+
+        thickness -> bandpass -> SiNC waveform -> Lomb-Scargle rate -> IQ phase
+
+    (the bandpass is kept in the SiNC chain only so the results record the same
+    ``filtered_signal``). When ``stage_configs["anchor"]`` is set, the phase is
+    then rotated so phase 0 is minimal choroid thickness: every folded cycle
+    starts deflated and inflates first.
 
     ``stage_configs`` is what ``PulsationConfig.chain_for_video`` returns, so
-    the study config stays the single place the recipe is written down.
+    the study config stays the single place the recipe is written down. Older
+    stage configs without the ``sinc``/``anchor`` keys build the classical chain.
     """
-    source = MaskThicknessTraceSource(registrator, aligner, stage_configs["trace"])
-    source = BandPassFilterTraceSource(source, stage_configs["bandpass"])
+    mask = MaskThicknessTraceSource(registrator, aligner, stage_configs["trace"])
+    source = BandPassFilterTraceSource(mask, stage_configs["bandpass"])
     # source = CoherentTraceSource(source, stage_configs["coherence"])
     # source = DecomposedTraceSource(source, stage_configs["decomposition"])
+    if stage_configs.get("sinc") is not None:
+        from ocularrigidity.motion.pulsation.sinc.trace_source import (
+            LearnedTraceSource,
+            load_sinc_module,
+        )
+
+        source = LearnedTraceSource(source, load_sinc_module(stage_configs["sinc"]))
+
+    phase = IQDemodPhaseEstimator(
+        stage_configs["phase"], aggregator=SelectBestComponent()
+    )
+    if stage_configs.get("anchor") is not None:
+        phase = ThicknessAnchoredPhaseEstimator(
+            phase, reference=mask, config=stage_configs["anchor"]
+        )
     return PulseExtractor(
         trace_source=source,
         rate_estimator=LombScargleRateEstimator(stage_configs["rate"]),
-        phase_estimator=IQDemodPhaseEstimator(
-            stage_configs["phase"], aggregator=SelectBestComponent()
-        ),
+        phase_estimator=phase,
         registered_video=registrator,
         aligner=aligner,
     )

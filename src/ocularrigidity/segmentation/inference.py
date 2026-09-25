@@ -1,4 +1,3 @@
-from typing import Optional, Tuple
 
 import torch
 import numpy as np
@@ -11,10 +10,8 @@ from ocularrigidity.segmentation.postprocess.blob import (
 from ocularrigidity.segmentation.postprocess.graphcut_gpu import (
     graphcut_masks_from_probs_batch_torch,
 )
-import numpy as np
-import torch
 import torch.nn.functional as F
-from tqdm import tqdm
+
 
 
 @torch.inference_mode()
@@ -25,7 +22,7 @@ def infer(
     resize_to: tuple[int, int] | None = None,
     batch_size: int = 8,
     return_logit: bool = False,
-    use_graphcut: bool = True,
+    use_graphcut: bool = False,
     graphcut_kwargs: dict | None = None,
     device: str = "cuda",
     use_amp: bool = True,
