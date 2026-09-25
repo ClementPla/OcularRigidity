@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>3&nbsp; Statistical Analysis – Ocular Rigidity - Prospective Study</title>
+<title>6&nbsp; How much the measured pulsability depends on an accurate detection of the heart rate? – Ocular Rigidity - Prospective Study</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -23,15 +23,15 @@ ul.task-list li input[type="checkbox"] {
 </style>
 
 
-<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script><script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
 <script src="../../site_libs/quarto-nav/headroom.min.js"></script>
 <script src="../../site_libs/clipboard/clipboard.min.js"></script>
 <script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
 <script src="../../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../../">
-<link href="../../chapters/method/methods.html" rel="next">
-<link href="../../chapters/review/review.html" rel="prev">
+<link href="../../chapters/analysis/structural_pulsation.html" rel="next">
+<link href="../../chapters/analysis/replicability.html" rel="prev">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../../site_libs/quarto-html/popper.min.js"></script>
@@ -42,6 +42,9 @@ ul.task-list li input[type="checkbox"] {
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5507e47e745db4fc18c6f8322cb42ad9.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script src="../../site_libs/quarto-contrib/glightbox/glightbox.min.js"></script>
+<link href="../../site_libs/quarto-contrib/glightbox/glightbox.min.css" rel="stylesheet">
+<link href="../../site_libs/quarto-contrib/glightbox/lightbox.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -75,6 +78,10 @@ ul.task-list li input[type="checkbox"] {
     document.body.classList.add('hypothesis-enabled');
   });
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==" crossorigin="anonymous"></script>
+
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+<script src="https://unpkg.com/@jupyter-widgets/html-manager@*/dist/embed-amd.js" crossorigin="anonymous"></script>
 
   <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
@@ -117,7 +124,7 @@ window.Quarto = {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/review/review.html">Background</a></li><li class="breadcrumb-item"><a href="../../chapters/review/statistical_analysis.html"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Statistical Analysis</span></a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/analysis/replicability.html">Analysis</a></li><li class="breadcrumb-item"><a href="../../chapters/analysis/sensitivity_to_HR.html"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">How much the measured pulsability depends on an accurate detection of the heart rate?</span></a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -171,7 +178,7 @@ window.Quarto = {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../chapters/review/statistical_analysis.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../chapters/review/statistical_analysis.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Statistical Analysis</span></span></a>
   </div>
 </li>
@@ -211,7 +218,7 @@ window.Quarto = {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../chapters/analysis/sensitivity_to_HR.html" class="sidebar-item-text sidebar-link">
+  <a href="../../chapters/analysis/sensitivity_to_HR.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">How much the measured pulsability depends on an accurate detection of the heart rate?</span></span></a>
   </div>
 </li>
@@ -257,19 +264,19 @@ window.Quarto = {
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#statistical-tests" id="toc-statistical-tests" class="nav-link active" data-scroll-target="#statistical-tests"><span class="header-section-number">3.1</span> Statistical tests</a>
-  <ul class="collapse">
-  <li><a href="#introduction" id="toc-introduction" class="nav-link" data-scroll-target="#introduction"><span class="header-section-number">3.1.1</span> Introduction</a></li>
-  </ul></li>
+  <li><a href="#which-method-is-the-most-replicable" id="toc-which-method-is-the-most-replicable" class="nav-link active" data-scroll-target="#which-method-is-the-most-replicable"><span class="header-section-number">6.1</span> Which method is the most replicable?</a></li>
+  <li><a href="#which-method-leads-to-the-most-pulsatile-results" id="toc-which-method-leads-to-the-most-pulsatile-results" class="nav-link" data-scroll-target="#which-method-leads-to-the-most-pulsatile-results"><span class="header-section-number">6.2</span> Which method leads to the most pulsatile results?</a></li>
+  <li><a href="#how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm" id="toc-how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm" class="nav-link" data-scroll-target="#how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm"><span class="header-section-number">6.3</span> How many videos reach their peak <span class="math inline">\(\delta CT\)</span> outside of the detected BPM?</a></li>
+  <li><a href="#does-it-matter-if-the-detected-bpm-is-correct-or-not" id="toc-does-it-matter-if-the-detected-bpm-is-correct-or-not" class="nav-link" data-scroll-target="#does-it-matter-if-the-detected-bpm-is-correct-or-not"><span class="header-section-number">6.4</span> Does it matter if the detected BPM is correct or not?</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content column-body" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/review/review.html">Background</a></li><li class="breadcrumb-item"><a href="../../chapters/review/statistical_analysis.html"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Statistical Analysis</span></a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../chapters/analysis/replicability.html">Analysis</a></li><li class="breadcrumb-item"><a href="../../chapters/analysis/sensitivity_to_HR.html"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">How much the measured pulsability depends on an accurate detection of the heart rate?</span></a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Statistical Analysis</span></h1>
+<h1 class="title"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">How much the measured pulsability depends on an accurate detection of the heart rate?</span></h1>
 </div>
 
 
@@ -286,16 +293,116 @@ window.Quarto = {
 </header>
 
 
-<p>This chapter will focus on describing the statistical methods used in the study.</p>
-<section id="statistical-tests" class="level2" data-number="3.1">
-<h2 data-number="3.1" class="anchored" data-anchor-id="statistical-tests"><span class="header-section-number">3.1</span> Statistical tests</h2>
-<section id="introduction" class="level3" data-number="3.1.1">
-<h3 data-number="3.1.1" class="anchored" data-anchor-id="introduction"><span class="header-section-number">3.1.1</span> Introduction</h3>
-<p>The motivation behind statistical test is to determine whether there is a significant difference between two or more groups with regards to a specific variable.</p>
-<p>The idea is to formulate a null hypothesis <span class="math inline">\(H_0\)</span> and an alternative hypothesis <span class="math inline">\(H_1\)</span>. The null hypothesis states that there is no significant difference between the groups, while the alternative hypothesis states that there is a significant difference. We then define a suitable test statistic <span class="math inline">\(Z\)</span></p>
-
-
+<p>Detecting the heart rate is a crucial step. Currently, it is chosen for two steps: selecting the best trace and demodulating the trace. We unfortunately only proxies to precisely estimate if we found the right heart rate or not. We can however test how much the measured pulsability depends on the heart rate detection by comparing the pulsability measured with the imposed heart rate and the demodulated heart rate.</p>
+<p>Our experimental setup is as follow:</p>
+<ul>
+<li>We always compute three cycles of pulsation, and we measure the pulsability for each cycle. This serves as reproducibility check.</li>
+<li>First, we estimate the BPM with our method (Lomb-Scargle periodogram on all traces, then selection of the best candidate). From this, we can produce two phases per frame:
+<ul>
+<li>The demodulated phase, which is the phase of the best trace at the detected heart rate.</li>
+<li>The linear phase, which impose that the phase increases linearly with time, at the detected heart rate (i.e no changes in heart rate).</li>
+</ul></li>
+<li>We can compare it with the pulsation measured with an imposed heart rate. This is typically a sensitivity analysis: how much the measured pulsation depends on the heart rate detection.</li>
+</ul>
+<p>We can write this as: <span class="math display">\[
+  \delta CT(\text{imposed BPM}) = \delta CT(\text{detected BPM} \cdot \epsilon)
+  \]</span></p>
+<p>We vary <span class="math inline">\(\epsilon\)</span> from increment ranging from 0.9 to 1.1, and we measure the pulsability for each cycle. We can then compare the pulsability measured with the imposed heart rate and the demodulated heart rate.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Due to a crash, only a subset of the whole cohort were used in this analysis, corresponding to 229 videos (roughly 1/3 of the whole cohort). This is however enough to draw conclusions.</p>
+</div>
+</div>
+<section id="which-method-is-the-most-replicable" class="level2" data-number="6.1">
+<h2 data-number="6.1" class="anchored" data-anchor-id="which-method-is-the-most-replicable"><span class="header-section-number">6.1</span> Which method is the most replicable?</h2>
+<p>The first question we ask is similar to the reproducibility analysis: which method is the most replicable? We can compute the Pearson correlation between cycle 0 and cycle 1, and cycle 1 and cycle 2, for each video, for the imposed bpm and the id_demod bpm. This is shown in the <a href="#fig-sensitivity-analysis-hr-replicability" class="quarto-xref">Figure&nbsp;<span>6.1</span></a>.</p>
+<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/sensitivity_analysis.quarto.ipynb" data-notebook-cellid="cell-fig-sensitivity-analysis-hr-replicability">
+<div id="cell-fig-sensitivity-analysis-hr-replicability" class="cell" data-execution_count="36">
+<div class="cell-output cell-output-display">
+<div id="fig-sensitivity-analysis-hr-replicability" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-sensitivity-analysis-hr-replicability-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-replicability-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-1" title="Figure&nbsp;6.1: Replicability comparison. First row: estimating the deltaCT from the demodulated signal, second row: estimating the deltaCT from the linear phase signal at the same BPM, third row: estimating the deltaCT from the imposed bpm. Each column corresponds to a different cycle comparison."><img src="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-replicability-output-1.png" class="img-fluid figure-img"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-sensitivity-analysis-hr-replicability-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.1: Replicability comparison. First row: estimating the deltaCT from the demodulated signal, second row: estimating the deltaCT from the linear phase signal at the same BPM, third row: estimating the deltaCT from the imposed bpm. Each column corresponds to a different cycle comparison.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<p>Fortunately, the results are promising: the correlation is the highest for the demodulated signal, and the lowest for the imposed bpm. This means that the demodulated signal is more replicable than the imposed bpm. The linear phase signal is in between, which is expected: it is a compromise between the two. Note: the imposed BPM case represents all the different heart rates that we imposed, over the same signal. Points are therefore not independant, and this does not represent which <span class="math inline">\(\epsilon\)</span> is the worst.</p>
 </section>
+<section id="which-method-leads-to-the-most-pulsatile-results" class="level2" data-number="6.2">
+<h2 data-number="6.2" class="anchored" data-anchor-id="which-method-leads-to-the-most-pulsatile-results"><span class="header-section-number">6.2</span> Which method leads to the most pulsatile results?</h2>
+<p>We know meaure which BPM leads to the largest <span class="math inline">\(\delta CT\)</span>. We can therefore compare the <span class="math inline">\(\delta CT\)</span> measured with the demodulated signal and the imposed BPM. This is shown in <a href="#fig-sensitivity-analysis-hr-peaks" class="quarto-xref">Figure&nbsp;<span>6.2</span></a>. The left panel shows the sensitivity curve for each video, with the median and interquartile range across videos. The right panel shows a paired comparison of the linear phase and demodulated <span class="math inline">\(\delta CT\)</span> at the detected BPM. <span class="math inline">\(\delta CT\)</span> is always normalized by the largest <span class="math inline">\(\delta CT\)</span> measured for each video, to account for the fact that some videos are more pulsatile than others. The results are conclusive: the demodulated signal leads to the largest <span class="math inline">\(\delta CT\)</span>, and the imposed BPM leads to the smallest <span class="math inline">\(\delta CT\)</span>. The further the imposed BPM is from the detected BPM, the smaller the <span class="math inline">\(\delta CT\)</span> is. This means that the demodulated signal is more pulsatile than the imposed bpm. The linear phase signal is in between, which is expected: it is a compromise between the two.</p>
+<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/sensitivity_analysis.quarto.ipynb" data-notebook-cellid="cell-fig-sensitivity-analysis-hr-peaks">
+<div id="cell-fig-sensitivity-analysis-hr-peaks" class="cell">
+<div class="cell-output cell-output-display">
+<div id="fig-sensitivity-analysis-hr-peaks" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-sensitivity-analysis-hr-peaks-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-peaks-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-2" title="Figure&nbsp;6.2: Peak analysis of the sensitivity curves. Left: sensitivity curve for each video, with the median and interquartile range across videos. Right: paired comparison of the linear phase and demodulated deltaCT at the detected BPM."><img src="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-peaks-output-1.png" class="img-fluid figure-img"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-sensitivity-analysis-hr-peaks-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.2: Peak analysis of the sensitivity curves. Left: sensitivity curve for each video, with the median and interquartile range across videos. Right: paired comparison of the linear phase and demodulated deltaCT at the detected BPM.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm" class="level2" data-number="6.3">
+<h2 data-number="6.3" class="anchored" data-anchor-id="how-many-videos-reach-their-peak-delta-ct-outside-of-the-detected-bpm"><span class="header-section-number">6.3</span> How many videos reach their peak <span class="math inline">\(\delta CT\)</span> outside of the detected BPM?</h2>
+<p>We now turn to quantifying how many videos reach their peak <span class="math inline">\(\delta CT\)</span> outside of the detected BPM. This is shown in <a href="#fig-sensitivity-analysis-hr-histogram-peaks" class="quarto-xref">Figure&nbsp;<span>6.3</span></a>. The left panel shows the distribution of the offset between the detected BPM and the BPM that leads to the largest <span class="math inline">\(\delta CT\)</span>. The right panel shows the cumulative distribution of the offset between the detected BPM and the BPM that leads to the largest <span class="math inline">\(\delta CT\)</span>. Once again, we reach a clear conclusion: 83% of the videos reach their peak at 3.3% or less from the detected BPM. This means that the detected BPM is a good proxy for the BPM that leads to the largest <span class="math inline">\(\delta CT\)</span>.</p>
+<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/sensitivity_analysis.quarto.ipynb" data-notebook-cellid="cell-fig-sensitivity-analysis-hr-histogram-peaks">
+<div id="cell-fig-sensitivity-analysis-hr-histogram-peaks" class="cell" data-execution_count="37">
+<div class="cell-output cell-output-display">
+<div id="fig-sensitivity-analysis-hr-histogram-peaks" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-sensitivity-analysis-hr-histogram-peaks-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-histogram-peaks-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-3" title="Figure&nbsp;6.3: "><img src="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-histogram-peaks-output-1.png" id="fig-sensitivity-analysis-hr-histogram-peaks" class="img-fluid figure-img"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-sensitivity-analysis-hr-histogram-peaks-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.3
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="does-it-matter-if-the-detected-bpm-is-correct-or-not" class="level2" data-number="6.4">
+<h2 data-number="6.4" class="anchored" data-anchor-id="does-it-matter-if-the-detected-bpm-is-correct-or-not"><span class="header-section-number">6.4</span> Does it matter if the detected BPM is correct or not?</h2>
+<p>Not finding the BPM will lead to a different <span class="math inline">\(\delta CT\)</span>. The question is: does it matter in the end? In others, not detecting the BPM could simply be caused by a low SNR, and the <span class="math inline">\(\delta CT\)</span> measured could be small anyway. We can therefore compare the <span class="math inline">\(\delta CT\)</span> measured with the demodulated signal and the imposed BPM, for videos that have a low SNR and videos that have a high SNR. This is shown in <a href="#fig-sensitivity-analysis-hr-importance-errors" class="quarto-xref">Figure&nbsp;<span>6.4</span></a>.</p>
+<div class="quarto-embed-nb-cell" data-notebook="/home/runner/work/OcularRigidity/OcularRigidity/manuscript/notebooks/sensitivity_analysis.quarto.ipynb" data-notebook-cellid="cell-fig-sensitivity-analysis-hr-importance-errors">
+<div id="cell-fig-sensitivity-analysis-hr-importance-errors" class="cell">
+<div class="cell-output cell-output-display">
+<div id="fig-sensitivity-analysis-hr-importance-errors" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-sensitivity-analysis-hr-importance-errors-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-importance-errors-output-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-4" title="Figure&nbsp;6.4: "><img src="sensitivity_to_HR_files/figure-html/..-..-notebooks-sensitivity_analysis.quarto-fig-sensitivity-analysis-hr-importance-errors-output-1.png" id="fig-sensitivity-analysis-hr-importance-errors" class="img-fluid figure-img"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-sensitivity-analysis-hr-importance-errors-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6.4
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+
+
 </section>
 
 </main> <!-- /main -->
@@ -700,17 +807,49 @@ window.Quarto = {
   </script>
 <nav class="page-navigation column-body">
   <div class="nav-page nav-page-previous">
-      <a href="../../chapters/review/review.html" class="pagination-link" aria-label="Review of the Literature">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">Review of the Literature</span></span>
+      <a href="../../chapters/analysis/replicability.html" class="pagination-link" aria-label="Replicability study">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Replicability study</span></span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../../chapters/method/methods.html" class="pagination-link" aria-label="Methods">
-        <span class="nav-page-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Methods</span></span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../../chapters/analysis/structural_pulsation.html" class="pagination-link" aria-label="The anatomical pulsation">
+        <span class="nav-page-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The anatomical pulsation</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
 </div> <!-- /content -->
+<script>var lightboxQuarto = GLightbox({"closeEffect":"zoom","descPosition":"bottom","loop":false,"openEffect":"zoom","selector":".lightbox"});
+(function() {
+  let previousOnload = window.onload;
+  window.onload = () => {
+    if (previousOnload) {
+      previousOnload();
+    }
+    lightboxQuarto.on('slide_before_load', (data) => {
+      const { slideIndex, slideNode, slideConfig, player, trigger } = data;
+      const href = trigger.getAttribute('href');
+      if (href !== null) {
+        const imgEl = window.document.querySelector(`a[href="${href}"] img`);
+        if (imgEl !== null) {
+          const srcAttr = imgEl.getAttribute("src");
+          if (srcAttr && srcAttr.startsWith("data:")) {
+            slideConfig.href = srcAttr;
+          }
+        }
+      } 
+    });
+  
+    lightboxQuarto.on('slide_after_load', (data) => {
+      const { slideIndex, slideNode, slideConfig, player, trigger } = data;
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(slideNode);
+      }
+    });
+  
+  };
+  
+})();
+          </script>
 
 
 
