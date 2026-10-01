@@ -8,7 +8,7 @@ the extractor via :meth:`gap_mask`, so the aligner can be shared by any
 
 from enum import Enum
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -29,12 +29,20 @@ class VideoTimelineAligner:
         registered_video: VideoRegistrator,
         timestamps: Union[Path, str, pd.Series, np.ndarray, list],
         units_in_timestamps: TimeUnits = TimeUnits.MICROSECONDS,
+        target_fs: Optional[float] = None,
     ):
         """``timestamps`` may be a path to a headerless single-column CSV of
-        timestamps, or the timestamps themselves as a sequence/Series/array."""
+        timestamps, or the timestamps themselves as a sequence/Series/array.
+
+        ``target_fs`` sets the uniform grid's rate instead of the acquisition's
+        median frame rate, e.g. to put a ~10 Hz Spectralis video on the ~87 Hz
+        grid SiNC was trained on. Signals are linearly interpolated onto it; the
+        gap mask still keys on the real frame spacing.
+        """
         self.registered_video = registered_video
         self.timestamps = timestamps
         self.units_in_timestamps = units_in_timestamps
+        self.target_fs = target_fs
 
         self._timestamps_seconds = None
         self._uniform_time = None
@@ -77,6 +85,8 @@ class VideoTimelineAligner:
 
     @property
     def dt(self) -> float:
+        if self.target_fs is not None:
+            return 1.0 / self.target_fs
         return float(np.median(np.diff(self.timestamps_seconds)))
 
     @property

@@ -225,6 +225,7 @@ class DeltaAConfig:
     lk_window: int = 35
     csi_normal_smooth_sigma: float = 0.0
     csi_normal_slope_window: int = 51
+    trim: int = 75
 
 
 @dataclass(frozen=True)

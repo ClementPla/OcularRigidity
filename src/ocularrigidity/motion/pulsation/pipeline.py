@@ -98,6 +98,7 @@ def run_composed_pipeline(
     compute_n_cycle_video: bool = True,
     registrator: Optional[VideoRegistrator] = None,
     verbose: bool = True,
+    target_fs: Optional[float] = None,
 ) -> CardiacPipelineResults:
     """End-to-end run of the composed chain, packaged as results.
 
@@ -105,6 +106,9 @@ def run_composed_pipeline(
     of constructing one from the roots. A batch caller uses it to hand in a
     registrator primed with a cache payload decoded ahead of time on another
     process (see scripts/pulsation/infer.py); the roots are then unused.
+
+    ``target_fs`` resamples the uniform grid to that rate (see
+    :class:`VideoTimelineAligner`); ``None`` keeps the acquisition rate.
     """
     from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 
@@ -118,7 +122,10 @@ def run_composed_pipeline(
             cache_dir=cache_dir,
         )
     aligner = VideoTimelineAligner(
-        registrator, timestamps_path, units_in_timestamps=units_in_timestamps
+        registrator,
+        timestamps_path,
+        units_in_timestamps=units_in_timestamps,
+        target_fs=target_fs,
     )
     extractor = build_extractor(registrator, aligner, stage_configs)
 

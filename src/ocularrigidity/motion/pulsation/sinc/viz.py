@@ -291,8 +291,8 @@ def plot_view(view: VideoView, start: float = 0.0, window: float = 10.0):
     hr = f"{hr_name} {view.hr:.0f} bpm" if has_hr else "no HR"
     anchored = "HR-anchored" if has_hr else "open band"
     fig.suptitle(
-        f"{view.video}  ({view.split})\n{hr} · SiNC {view.sinc_bpm:.1f} bpm · chain "
-        f"{view.pipeline_bpm:.1f} bpm ({view.pipeline_confidence}, {anchored})",
+        f"SiNC {view.sinc_bpm:.1f} bpm · chain "
+        f"{view.pipeline_bpm:.1f} bpm)",
         x=0.06, ha="left", fontsize=11.5, color=INK, linespacing=1.5,
     )  # fmt: skip
 
@@ -376,7 +376,7 @@ def plot_view(view: VideoView, start: float = 0.0, window: float = 10.0):
             view.hr, 1.02, " HR", color=INK, fontsize=8, ha="left", va="bottom"
         )
     ax_s.set_title(
-        "Periodogram, whole video (peak = 1)", loc="left", fontsize=10, color=MUTED
+        "Periodogram, whole video", loc="left", fontsize=10, color=MUTED
     )
     ax_s.set_xlabel("rate (bpm)")
     ax_s.set_ylabel("normalised power")

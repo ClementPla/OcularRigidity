@@ -24,6 +24,7 @@ def extract_displacement(
     method=DELTA_A.method,
     smooth_window: int = DELTA_A.smooth_window,
     lk_window: int = DELTA_A.lk_window,
+    trim: int = DELTA_A.trim
 ):
     if video is None:
         video = read_gray(video_path)
@@ -32,7 +33,7 @@ def extract_displacement(
 
     trimmed_masks = trim_choroid(
         mask,
-        75,
+        trim,
     )
 
     frame_per_cycle = video.shape[0] // N_cycles

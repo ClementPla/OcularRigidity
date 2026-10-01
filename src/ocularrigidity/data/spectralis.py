@@ -72,10 +72,16 @@ def read_root(source) -> ET.Element:
         return _strip_namespaces(source)
     try:
         with _open_xml(source) as f:
-            tree = ET.parse(f)
+            raw = f.read()
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError:
+            # Heidelberg exports are Latin-1 with no encoding declaration, so the
+            # parser assumes UTF-8 and chokes on accented names (e.g. "é").
+            root = ET.fromstring(raw.decode("latin-1"))
     except (OSError, ET.ParseError) as exc:
         raise OSError(f"Failed to read XML file {source!r}: {exc}") from exc
-    return _strip_namespaces(tree.getroot())
+    return _strip_namespaces(root)
 
 
 def _text(node: Optional[ET.Element], tag: str) -> Optional[str]:
@@ -357,37 +363,53 @@ def _parse_time(img_el: ET.Element) -> Optional[AcquisitionTime]:
     )
 
 
-def _parse_series(series_el: ET.Element) -> Series:
+def _parse_series(series_el: ET.Element) -> list[Series]:
+    """One :class:`Series` per OCT B-scan.
+
+    The usual export has one localizer + one OCT image per ``<Series>``. Some
+    exports (e.g. a repeated B-scan acquisition) put every OCT frame in a single
+    ``<Series>`` with one shared localizer instead; each of those OCT images
+    becomes its own entry here, so a study is always one entry per frame.
+    """
     images = series_el.findall("Image")
     classified = [(img, _classify_image(img)) for img in images]
 
-    oct_el = next((img for img, k in classified if k == "oct"), None)
+    oct_els = [img for img, k in classified if k == "oct"]
     fundus_el = next((img for img, k in classified if k == "fundus"), None)
 
     # Fallback to the historical positional convention (Image[0] = fundus,
     # Image[1] = OCT) when ImageType is missing or ambiguous.
-    if oct_el is None and len(images) >= 2:
-        oct_el = images[1]
+    if not oct_els and len(images) >= 2:
+        oct_els = [images[1]]
     if fundus_el is None and len(images) >= 1:
-        fundus_el = images[0] if images[0] is not oct_el else None
+        fundus_el = images[0] if images[0] not in oct_els else None
 
-    oct_img = _parse_image(oct_el, "oct") if oct_el is not None else None
     fundus_img = _parse_image(fundus_el, "fundus") if fundus_el is not None else None
+    series_id = _int(series_el, "ID")
+    laterality = _text(series_el, "Laterality") or _text(series_el, "Eye")
+    context = _leaf_dict(series_el)
 
-    # The OCT B-scan time is the one that matters for a time series; fall back to
-    # the localizer's time only if the OCT image has none.
-    acq_time = oct_img.acquisition_time if oct_img else None
-    if acq_time is None and fundus_img is not None:
-        acq_time = fundus_img.acquisition_time
+    out = []
+    for oct_el in oct_els or [None]:
+        oct_img = _parse_image(oct_el, "oct") if oct_el is not None else None
 
-    return Series(
-        series_id=_int(series_el, "ID"),
-        laterality=_text(series_el, "Laterality") or _text(series_el, "Eye"),
-        acquisition_time=acq_time,
-        oct=oct_img,
-        fundus=fundus_img,
-        context=_leaf_dict(series_el),
-    )
+        # The OCT B-scan time is the one that matters for a time series; fall
+        # back to the localizer's time only if the OCT image has none.
+        acq_time = oct_img.acquisition_time if oct_img else None
+        if acq_time is None and fundus_img is not None:
+            acq_time = fundus_img.acquisition_time
+
+        out.append(
+            Series(
+                series_id=series_id,
+                laterality=laterality,
+                acquisition_time=acq_time,
+                oct=oct_img,
+                fundus=fundus_img,
+                context=context,
+            )
+        )
+    return out
 
 
 def _parse_patient(patient_el: ET.Element) -> Patient:
@@ -426,7 +448,7 @@ def _parse_study(root: ET.Element, source: Optional[str]) -> SpectralisStudy:
     if study_el is None:
         raise ValueError("No Study node found under Patient.")
 
-    series = [_parse_series(s) for s in study_el.findall("Series")]
+    series = [e for s in study_el.findall("Series") for e in _parse_series(s)]
     return SpectralisStudy(
         patient=_parse_patient(patient_el),
         series=series,

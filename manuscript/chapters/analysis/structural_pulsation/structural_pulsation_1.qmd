@@ -1,10 +1,10 @@
-# The anatomical pulsation
+# Anatomy of the pulsation - Preliminary tests {#sec-anatomy-pulsation_1}
 
 The core underlying argument of the ocular rigidity is that the inflation of the eye is driven by blood pulsation along a cardiac cycle, which manifests as a cyclic thickness variation of the choroid. However, there is a gap in the transition from the 2D estimation of thickness and its extension to a 3D volume change: we do not know if the pulsability is uniform across the entire sub-foveal choroid, or at least homogeneous enough to be considered as such. One hypothesis is that in contrary, it is driven by anatomical landmarks, such as the caliber of the choroidal vessels, and the angle of the slice with respect to the choroidal vasculature. In this chapter, we will explore the anatomical pulsation of the choroid, and its potential impact on the ocular rigidity.
 
-## Preliminary results
+## Methods
 
-As a preliminary result, I've inflicted myself with repeated measurements of my right eye during two days.
+As a preliminary test, I've inflicted myself with repeated measurements of my right eye during two days.
 
 1. Day 1: 4 measurements on the same location (temporal-nasal axis, through the fovea), 2 hours apart.
 2. Day 2: 3 Measurements: 

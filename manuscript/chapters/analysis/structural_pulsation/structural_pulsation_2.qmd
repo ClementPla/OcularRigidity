@@ -1,0 +1,173 @@
+# Anatomy of the pulsation - Normal Cohort {#sec-anatomy-pulsation_2}
+
+The preliminary tests of @sec-anatomy-pulsation_1 showed that B-scans of the same eye, taken along different planes, give different measures of the pulsation. In this chapter, we extend that experiment to three volunteers with a systematic protocol. We want to answer two questions:
+
+1. Does the pulsatile thickness change ($\Delta CT$) depend on the plane of acquisition?
+2. Along a given plane, is the local pulsation related to the vascular content of the choroid underneath?
+
+To answer the second question, every line scan is placed in the en-face frame of an OCT-A volume of the same eye, so that each position along a line can be matched with the vessels segmented in 3D in the volume.
+
+## Protocol
+
+Three volunteers were recruited. They are referred to by a single letter (C, E and N). Only the right eye was imaged. For each eye, the acquisition protocol consists of:
+
+- 8 repeated line scans (1024 A-scans over 6 mm, 3003 repetitions) passing through the fovea, with a 22.5° step between consecutive planes;
+- one OCT-A volume covering 6 mm × 6 mm, centred on the macula (500 A-scans × 503 B-scans).
+
+The 8 lines of an eye were acquired within about 15 (N), 20 (C) and 30 (E) minutes. The heart rate estimated from the videos was stable within each session: 59–74 bpm for N, 77–83 bpm for E and 61–68 bpm for C.
+
+The protocol was not complete for volunteer C. No OCT-A volume was acquired on the day of the line scans, so we used the volume from the same-day-repeat session, acquired about one month earlier. One of C's line scans was not a 6 mm scan and was excluded. The 8 remaining lines do not sample the planes evenly: there is no line between 66° and 113°, and two lines lie close to each other (129° and 135°).
+
+Every line scan was processed with the learned pulse extraction of @sec-sinc-pulsation. This yields, for each video, three cardiac cycles folded on the same phases (the "one-cycle" videos). All the analyses below start from these videos.
+
+## Global $\Delta CT$ per acquisition plane
+
+We first compare the choroidal thickness and its pulsatile change across the 8 planes of each eye (@fig-angular-choroidal-thickness).
+
+It is worth recalling how $\Delta CT$ is computed. Anchor points are placed along the RPE and CSI boundaries of the reference frame (the first frame of each cardiac cycle) and tracked in every other frame using pyramidal Lucas–Kanade optical flow. The trajectories are then smoothed over time. To remove any residual rigid motion, the mean displacement of the RPE anchors is subtracted from all anchors. The displacement of each CSI anchor is converted to physical units and projected onto the local normal to the CSI. These signed projections are averaged over all CSI anchors, which gives the thickness change of each frame relative to the reference. The $\Delta CT$ of a cycle is the peak-to-peak amplitude of this series, and the reported value is the median over cycles.
+
+This method is sensitive to the quality of the LK flow. Because the signed displacements are averaged before the amplitude is taken, it may also underestimate the pulsation if the anchors do not move in phase.
+
+{{< embed positional_pulsation/enc_analysis.ipynb#fig-angular-choroidal-thickness >}}
+
+The choroidal thickness is consistent across planes: its coefficient of variation (CV) is 7–9 % within each eye. The mean thickness is 399 µm for N, 161 µm for E and 365 µm for C. $\Delta CT$ varies more: its CV across planes is 36 % for N (0.95–2.74 µm), 19 % for E (0.88–1.42 µm) and 18 % for C (2.02–3.37 µm). Relative to the thickness, the pulsation is 0.43 % for N, 0.74 % for E and 0.71 % for C.
+
+There is no angular pattern common to the three eyes. Within an eye, the planes with a thicker choroid tend to show a larger $\Delta CT$, but this is significant only for C (Spearman $\rho = 0.74$, $p = 0.04$, $n = 8$). For N and E, $\rho$ is 0.36 and 0.50 ($p > 0.2$). With 8 planes per eye, these tests have little power.
+
+A single $\Delta CT$ per plane is probably not the most informative measure. It averages the pulsation over the whole 6 mm line, whereas our hypothesis is that the pulsation varies locally with the anatomy. The next sections therefore keep the thickness change at each position along the line and relate it to the volume, and to its vascular content, at the same place.
+
+## Registration of the line scans onto the volume
+
+Each A-scan of each line must be placed in the en-face frame of the volume. All lines pass through the fovea, so the fovea is used as the common anchor, and the registration is then refined with the shadows of the retinal vessels, which are visible in both the lines and the volume.
+
+### Fovea in the volume
+
+The ILM and the BM are extracted in every B-scan of the volume, and the retinal thickness map (ILM to BM) is smoothed with a Gaussian filter ($\sigma$ = 4 px). The fovea is the minimum of this map, searched in the central 30 % of the field, where fixation places it (@fig-vesselness-nec, left column). The foveal retinal thickness is 239–253 µm in the three eyes.
+
+### Fovea on each line
+
+On each line, the fovea is the foveal pit of the ILM, found on the average frame of the one-cycle video (@fig-foveal-estimation-nec). Over the 24 lines, the fovea lies at a median of 87 µm from the centre of the scan (maximum 189 µm). The scans are therefore well centred, but not enough to use the centre of the scan as the fovea.
+
+{{< embed ../../../../notebooks/structural_pulsation/displacement_3d.ipynb#fig-foveal-estimation-nec >}}
+
+### Orientation and placement of the lines
+
+The orientation of each line is read from the line drawn by the device on the fundus image exported with the scan. The arrowhead at one end of that line gives the scan direction (first to last A-scan). Without it, half of the lines would be mirrored about the fovea.
+
+The B-scan axis of the volume can run from top to bottom or from bottom to top on the fundus. We decide it by scoring all lines against the en-face image of the volume in both orientations and keeping the one with the larger summed correlation (see the score below). The flipped orientation won clearly in the three eyes (summed correlation 4.2–4.9 flipped vs 3.1–3.4 as is).
+
+The placement is then refined with the retinal vessels. On each line, the mean of the average frame along depth, high-pass filtered along the line (Gaussian, $\sigma$ = 40 A-scans), gives a profile dominated by the retinal vessels and their shadows. The same structures appear in the en-face mean of the volume, which we high-pass filter as well (Gaussian, $\sigma$ = 15 px). The score of a placement is the correlation between the profile of the line and the en-face image sampled under it, ignoring 80 A-scans at each end. The refinement has two steps:
+
+1. A shift of the fovea common to all 8 lines (±25 px, i.e. about ±300 µm), maximising their mean score. All lines cross at the fovea, so an error on the fovea of the volume moves them together. The common correction was 150–200 µm (N: +48, +144 µm; E: +95, +120 µm; C: −48, +192 µm, as row and column shifts).
+2. A small correction per line: shift of up to ±6 px (about ±70 µm) and rotation of up to ±3° in 0.5° steps.
+
+The mean correlation per eye went from 0.13–0.21 with the foveae alone, to 0.23–0.34 after the common shift, and to 0.47–0.55 after the per-line correction (@fig-bscans-alignement-nec). The per-line step moved the lines by about 65 µm on average. This is close to the edge of its search window, which suggests that the window may be too narrow for some lines.
+
+{{< embed ../../../../notebooks/structural_pulsation/displacement_3d.ipynb#fig-bscans-alignement-nec >}}
+
+The choroidal thickness gives an independent check of the registration, since it was not used to place the lines. At each position along a line, we compare the thickness measured on the line with the thickness of the volume at the registered place. They agree well: Spearman $\rho$ = 0.87 (N), 0.92 (E) and 0.91 (C). For C, the agreement holds even though the volume was acquired one month before the lines.
+
+## Vessel density estimation
+
+The choroidal vessels are segmented in 3D in the volume with the approach of @sec-anatomy-pulsation_1, with the following differences:
+
+- **No motion correction between B-scans.** The volumes are flattened on the BM, smoothed as in @sec-anatomy-pulsation_1 (median filter followed by a Gaussian), but the explicit correction of the axial motion between B-scans is not applied.
+- **Retinal shadows are inpainted instead of subtracted.** The large retinal vessels are mapped with a ridge filter on the maximum projection of the retinal OCT-A flow, where they have much more contrast than their shadows have in the choroid. Every choroidal voxel under one of these vessels is replaced by a random unshadowed voxel at the same depth, drawn at a nearby lateral position. Unlike a smooth fill, this keeps the texture of the speckle, so the Hessian responds inside the shadows as it does around them.
+- **Amplitude channel only.** The Hessian is computed on the structural amplitude alone. The flow channel is only used to map the retinal shadows.
+- **Larger scales.** The Hessian scales are $\sigma \in \{4.5, 6, 9, 12\}$ voxels (about 55–145 µm), which favours the large vessels. The response is not normalised by its local level.
+- **Thresholding.** A voxel is labelled as vessel if it belongs to a hysteresis segmentation of the response (thresholds at the 90th and 80th percentiles inside the choroid) and passes a 3D Niblack test on the normalised signal ($k = -0.1$, window of 31 × 11 × 31 voxels). The mask is then closed (ball of radius 1), smoothed (Gaussian, $\sigma$ = 1 voxel), and connected components smaller than 1000 voxels are discarded.
+
+The segmented vessels occupy 15.7 % (N), 14.2 % (E) and 15.1 % (C) of the choroid. From the mask, we derive an en-face map of the **vessel fraction**: the number of vessel voxels divided by the number of choroid voxels in each A-scan column (@fig-vesselness-nec, right column). It is a local choroidal vascularity index. As in @sec-anatomy-pulsation_1, this segmentation was checked visually but not against manual annotations.
+
+{{< embed ../../../../notebooks/structural_pulsation/displacement_3d.ipynb#fig-vesselness-nec >}}
+
+## Local thickness change along the lines
+
+The global $\Delta CT$ averages the thickness change over all CSI anchors. To study the pulsation locally, we keep the same tracking and projection (CSI displacement along the CSI normal, minus the mean RPE displacement) but skip the spatial average. The anchors are then grouped in bins of 16 A-scans (about 94 µm) along the line, and the thickness change of each bin is averaged over the anchors it contains and over the three folded cycles, which are at the same phases.
+
+Two quantities are computed per bin:
+
+- **Local $\Delta CT$.** The peak-to-peak amplitude of the first harmonic of the thickness change over one cycle, $4\,|X_1| / T$, with $X_1$ the first Fourier coefficient of the series and $T$ its number of frames. Unlike the raw peak-to-peak, it is not inflated by frame-to-frame noise, so bins with different noise levels remain comparable.
+- **Coherence.** A measure of how consistently the three cycles pulse in phase. For each cycle $k$, the first Fourier coefficient $X_1^{(k)}$ is a complex number: its modulus is the amplitude of the pulsation in that cycle and its argument is its phase. The coherence is
+  $$
+  C = \frac{\left|\frac{1}{3}\sum_{k=1}^{3} X_1^{(k)}\right|}{\frac{1}{3}\sum_{k=1}^{3} \left|X_1^{(k)}\right|},
+  $$
+  the modulus of the mean coefficient divided by the mean of the moduli. When the three cycles have the same phase, the coefficients add up without cancelling and $C = 1$. When their phases are random, as for noise, they partly cancel out, and $C$ is about 0.5 on average with three cycles.
+
+The median local $\Delta CT$ is 1.86 µm for N, 1.08 µm for E and 2.47 µm for C, in line with the global values. The median coherence is 0.72, 0.97 and 0.91. The three cycles of E and C therefore pulse in phase almost everywhere, and those of N less so.
+
+The spatial pattern along the lines is much less reproducible. For each bin, we compute the local $\Delta CT$ of each cycle separately and correlate these values between cycles. The mean correlation between pairs of cycles is only $\rho$ = 0.13 (N), 0.39 (E) and 0.19 (C). At the scale of a bin, most of the variation of the local $\Delta CT$ along a line is noise. This limits how strongly the local pulsation can correlate with any anatomical feature.
+
+## Displacement field
+
+To visualise the pulsation over the macula, the local thickness change is interpolated between the lines. For each line, the thickness change of each bin is low-pass filtered in time, keeping the first three harmonics of the cardiac cycle, and bins with a coherence below 0.5 are discarded. Each line is split at the fovea into two half-lines, which gives 16 rays. A pixel of the en-face grid, at polar position $(r, \varphi)$ around the fovea, takes the angular linear blend of the two rays that surround it, each read at the distance $r$. Unlike a triangulation of the scattered samples, this respects the radial geometry of the acquisition. The field is defined up to about 3 mm from the fovea, with 30 phases per cycle.
+
+@fig-displacement-overlay-nec compares the resulting maps with the volume. The choroidal thickness interpolated from the lines reproduces the thickness map of the volume, which again supports the registration. The local $\Delta CT$ map is much more heterogeneous, which is consistent with the low reproducibility of the local pattern.
+
+{{< embed ../../../../notebooks/structural_pulsation/displacement_3d.ipynb#fig-displacement-overlay-nec >}}
+
+For the 3D animations of the pulsation, the vertical displacement inside the choroid is assumed to grow linearly from 0 at the BM to the full thickness change at the CSI. The vessel surface is deformed with this field (amplified 25 times). This assumption is only used for visualisation and does not enter the analyses below.
+
+## Local $\Delta CT$ and vascular content
+
+Each bin of each line is used as one sample, placed with the registration of its own line rather than read from the interpolated map. The en-face maps of the volume are smoothed with a Gaussian ($\sigma$ = 6 px, about 70 µm) before sampling. Bins closer than 300 µm to the fovea are dropped: all lines cross there and would contribute the same place 8 times. This leaves 1316 samples.
+
+Two measures of the choroidal vessels are used: the vessel fraction defined above, and the **vessel column**, the total height of vessel lumen in the A-scan column (in µm), which measures how much blood lies under a point, whatever the thickness of the choroid.
+
+### Correlations within each eye
+
+@tbl-local-dct-spearman gives the Spearman correlations between the local $\Delta CT$ and the vessel measures in each eye. All are positive. They are moderate for E and weak for N and C. The correlation with the choroidal thickness itself is of the same order, which is expected: a thicker choroid contains larger vessels, so vessel fraction and thickness are confounded.
+
+| Local $\Delta CT$ vs | N | E | C |
+|---|---|---|---|
+| Choroidal thickness | 0.15 | 0.50 | 0.23 |
+| Vessel fraction | 0.10 | 0.45 | 0.14 |
+| Vessel column | 0.11 | 0.47 | 0.18 |
+| Vesselness (mean response) | 0.11 | 0.36 | 0.15 |
+
+: Spearman correlation between the local $\Delta CT$ and the thickness or vessel measures, per eye. {#tbl-local-dct-spearman}
+
+### Adjusting for the choroidal thickness
+
+To separate the vessels from the thickness, we fit linear models on the three eyes together. All variables are standardised within each eye (z-scores), so the coefficients $\beta$ are in standard deviations of the outcome per standard deviation of the predictor. This also removes the differences in level between the eyes: the three eyes are pooled into a single regression, with slopes shared by the three eyes. Neighbouring bins of the same line are not independent, so the standard errors are clustered by video. The results are given in @tbl-local-dct-models.
+
+| Model | $\beta$ | 95 % CI | $p$ | $R^2$ |
+|---|---|---|---|---|
+| $\Delta CT$ ~ vessel fraction | 0.18 | [0.10, 0.26] | < 0.001 | 0.03 |
+| $\Delta CT$ ~ vessel fraction + CT | 0.11 | [0.03, 0.19] | 0.006 | 0.09 |
+| $\Delta CT$ ~ vessel column + CT | 0.12 | [0.03, 0.20] | 0.009 | 0.09 |
+| $\Delta CT / CT$ ~ vessel fraction | 0.08 | [0.00, 0.16] | 0.04 | 0.01 |
+
+: Linear models of the local $\Delta CT$ (standardised within eye, eyes pooled, standard errors clustered by video). $\beta$ is the coefficient of the vessel measure. {#tbl-local-dct-models}
+
+The association with the vessel fraction is reduced by about a third when the thickness is added, but remains significant: at equal thickness, places with more vessels pulse slightly more. The vessel column gives the same result. The relative thickness change ($\Delta CT / CT$) is also associated with the vessel fraction, but only marginally. In all cases, the effect is small: the vessel measures explain less than 10 % of the variance of the local $\Delta CT$.
+
+### Other vascular layers of the OCT-A
+
+We also tested whether the local $\Delta CT$ follows vascular layers other than the large choroidal vessels. From the OCT-A flow channel, we extracted en-face maps of:
+
+- the **superficial and deep retinal plexuses** (SVP, DVP): 0–35 % and 35–60 % of the ILM–BM distance, as a local fraction of vessel pixels. The DVP excludes the large superficial vessels, whose projection artefacts dominate that slab;
+- the **large retinal vessels**, as a local fraction. These are the columns whose shadows darken the choroid;
+- the **choriocapillaris (CC) flow**: mean flow 8–23 µm below the BM, relative to the median of its B-scan and outside the shadows. Low values correspond to flow deficits.
+
+These maps are smoothed and sampled like the choroidal ones. Each layer is first tested alone, adjusted for the thickness, and then all layers are entered in a joint model (@tbl-local-dct-layers).
+
+| Layer | $\beta$ (alone + CT) | 95 % CI | $p$ | $\beta$ (joint) | $p$ (joint) |
+|---|---|---|---|---|---|
+| Choroidal vessel fraction | 0.11 | [0.03, 0.19] | 0.006 | 0.11 | 0.006 |
+| SVP density | −0.02 | [−0.09, 0.05] | 0.61 | −0.09 | 0.05 |
+| DVP density | −0.03 | [−0.12, 0.06] | 0.50 | 0.07 | 0.28 |
+| Large retinal vessels | 0.07 | [−0.02, 0.16] | 0.13 | 0.14 | 0.045 |
+| CC flow | 0.14 | [0.05, 0.24] | 0.002 | 0.14 | 0.001 |
+
+: Association of the local $\Delta CT$ with each vascular layer, adjusted for the choroidal thickness (standardised within eye, eyes pooled, standard errors clustered by video). The joint model includes all layers and the thickness ($R^2$ = 0.12). {#tbl-local-dct-layers}
+
+The retinal plexuses are not associated with the local $\Delta CT$. The choroidal vessel fraction and the CC flow are, and independently of each other: both keep the same coefficient in the joint model. The large retinal vessels become significant only in the joint model. Because these vessels shadow the choroid, this association may be a measurement artefact, since a shadow blurs the CSI that is tracked, rather than a physiological effect.
+
+## Summary and limitations
+
+- Across planes through the fovea, the choroidal thickness is stable (CV 7–9 %) but the global $\Delta CT$ varies by 18–36 %. There is no angular pattern common to the three eyes.
+- Along the lines, the local $\Delta CT$ is weakly but consistently associated with the vascular content of the choroid underneath: with the vessel fraction, beyond what the thickness explains, and with the choriocapillaris flow. The effect sizes are small ($\beta \approx 0.1$ standard deviation, less than 10 % of the variance explained).
+- The local pattern is poorly reproducible from one cycle to the next ($\rho$ = 0.13–0.39 between cycles). The associations above are therefore probably attenuated by measurement noise, and a less noisy local measure would be needed to estimate their true size.
+
+These results are preliminary. They rely on three eyes, and the volume of C was acquired one month before its lines. The bins of a line are not independent: clustering by video accounts for part of this, but the number of clusters (24) is small. The vessel segmentation has not been validated against manual annotations, and its parameters differ from those of @sec-anatomy-pulsation_1. Finally, the local $\Delta CT$ inherits the limitations of the LK tracking, in particular in the thick subfoveal choroid, where the CSI is least visible.
