@@ -104,8 +104,13 @@ class DeltaAConfig:
     """Boundary displacement / area change."""
 
     method: Literal["optical_flow", "demons"] = "optical_flow"
-    smooth_window: int = 25
+    smooth_window: int = 7
     lk_window: int = 35
+    # Start each point's Lucas-Kanade search from where it was found in the
+    # neighbouring frame (cv2.OPTFLOW_USE_INITIAL_FLOW) instead of from zero.
+    # Off: on folded cycles it lands on the same positions (within 0.005 px on
+    # 7 acquisitions across the ΔCT range), the motion being a few pixels.
+    lk_initial_flow: bool = False
     csi_normal_smooth_sigma: float = 0.0
     csi_normal_slope_window: int = 51
     trim: int = CHOROID_TRIM_PX

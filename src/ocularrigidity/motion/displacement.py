@@ -3,7 +3,8 @@ from pathlib import Path
 import numpy as np
 from ocularrigidity.registration.sparse_demons import track_points_with_demons
 from ocularrigidity.segmentation.postprocess.interfaces import (
-    get_masks_contours,
+    clean_boundaries,
+    extract_boundaries_fast,
 )
 from scipy.signal import savgol_filter
 
@@ -16,19 +17,52 @@ import SimpleITK as sitk
 import cv2
 
 
+def reference_boundary_points(mask: np.ndarray) -> np.ndarray:
+    """The points to track, ``(N, 2)`` float32 in ``(x, y)``: one on the RPE and
+    one on the CSI in every column the mask covers.
+
+    They are read off the per-column boundary curves the thickness measurement
+    uses, so every column weighs the same in a mean over the points. A mask
+    outline does not have that property: it has as many pixels per column as
+    the interface is steep there, and none along a flat run once simplified.
+
+    Ordered as a closed polygon (RPE left to right, then CSI right to left),
+    which is what the area computed from them relies on.
+    """
+    rpe, csi = extract_boundaries_fast(np.asarray(mask, dtype=bool)[None])
+    rpe, csi = clean_boundaries(rpe, csi)
+    rpe, csi = rpe[0], csi[0]
+    cols = np.flatnonzero(np.isfinite(rpe) & np.isfinite(csi))
+    if cols.size == 0:
+        raise ValueError("Reference mask has no column with both interfaces.")
+    return np.concatenate(
+        [
+            np.stack([cols, rpe[cols]], axis=1),
+            np.stack([cols[::-1], csi[cols[::-1]]], axis=1),
+        ]
+    ).astype(np.float32)
+
+
 def extract_displacement_at_boundaries(
     frames,
     masks,
     reference_frame_idx=0,
     smooth_window=11,
-    max_displacement=20,  # Estimated max pixels a boundary moves over the video,
-    method="demons",
+    max_displacement=40,  # Estimated max pixels a boundary moves over the video,
+    method="optical_flow",
     lk_window=35,
     lk_levels: int = 3,
+    lk_initial_flow: bool = DELTA_A.lk_initial_flow,
 ):
-    """Compute pixel displacement optimized via dynamic ROI cropping."""
+    """Compute pixel displacement optimized via dynamic ROI cropping.
+
+    Every frame is tracked from the reference frame. With ``lk_initial_flow``
+    the Lucas-Kanade search of each point starts from where the point was last
+    found (in the neighbouring frame, walking away from the reference) rather
+    than from zero displacement.
+    """
     ref_mask = masks[reference_frame_idx]
-    ref_contours = get_masks_contours(ref_mask)
+    ref_contours = reference_boundary_points(ref_mask)
     ref_frame = frames[reference_frame_idx]
 
     T = len(frames)
@@ -40,10 +74,18 @@ def extract_displacement_at_boundaries(
 
     sitk_ref = sitk.GetImageFromArray(ref_frame.astype(np.float32))
 
+    # Walk away from the reference on both sides, so that the frame visited
+    # before `t` is always its neighbour on the reference's side.
+    order = [
+        *range(reference_frame_idx + 1, T),
+        *range(reference_frame_idx - 1, -1, -1),
+    ]
+    guess = p0.copy()  # where each point was last found
+
     # 3. Process video loop
-    for t in range(T):
-        if t == reference_frame_idx:
-            continue
+    for t in order:
+        if t == reference_frame_idx - 1:
+            guess = p0.copy()  # second side: back at the reference
 
         match method:
             case "demons":
@@ -68,12 +110,26 @@ def extract_displacement_at_boundaries(
                     ),
                     minEigThreshold=1e-4,
                 )
-                p1, status, _ = cv2.calcOpticalFlowPyrLK(
-                    ref_frame, frames[t], p0, None, **lk_params
-                )
+                if lk_initial_flow:
+                    # `guess` is the starting point and is overwritten with the
+                    # result, hence the copy.
+                    p1, status, _ = cv2.calcOpticalFlowPyrLK(
+                        ref_frame,
+                        frames[t],
+                        p0,
+                        guess.copy(),
+                        flags=cv2.OPTFLOW_USE_INITIAL_FLOW,
+                        **lk_params,
+                    )
+                else:
+                    p1, status, _ = cv2.calcOpticalFlowPyrLK(
+                        ref_frame, frames[t], p0, None, **lk_params
+                    )
 
         ok = status[:, 0].astype(bool)
         positions[t, ok] = p1[ok, 0, :]
+        # A point that was lost keeps its last known position as its guess.
+        guess[ok] = p1[ok]
 
     if smooth_window > 0:
         # Per-anchor linear interpolation through NaN gaps along time.
@@ -206,7 +262,8 @@ def extract_displacement(
     method=DELTA_A.method,
     smooth_window: int = DELTA_A.smooth_window,
     lk_window: int = DELTA_A.lk_window,
-    trim: int = DELTA_A.trim
+    trim: int = DELTA_A.trim,
+    lk_initial_flow: bool = DELTA_A.lk_initial_flow,
 ):
     if video is None:
         video = read_gray(video_path)
@@ -234,6 +291,7 @@ def extract_displacement(
             smooth_window=smooth_window,
             lk_window=lk_window,
             method=method,
+            lk_initial_flow=lk_initial_flow,
         )
         delta_a_differential = compute_delta_A_from_displacements(
             reference_border_coordinates, displacement
