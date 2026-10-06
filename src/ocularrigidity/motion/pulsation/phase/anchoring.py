@@ -1,30 +1,4 @@
-"""Anchor phase 0 on the choroid-thickness minimum.
-
-A phase estimator fixes phase *rate* but not phase *origin*: IQ demodulation
-puts 0 on the peak of whatever trace it demodulated, whose sign and lag relative
-to the choroid are arbitrary (a PCA component, a learned SiNC waveform). Folding
-then starts each cycle at an arbitrary point, and the one-cycle video does not
-show a consistent deflate → inflate → deflate.
-
-:class:`ThicknessAnchoredPhaseEstimator` wraps any phase estimator and rotates
-its output by one constant per video so that phase 0 is minimal thickness:
-
-1. the reference thickness map (``(T_uniform, W)``) has its slow baseline
-   removed per column (Gaussian, ``detrend_cycles`` cardiac periods wide);
-2. its column median (or mean) is regressed on a Fourier series of the estimated phase
-   (``n_harmonics`` terms), over good samples only;
-3. the fitted curve's minimum becomes phase 0.
-
-Being measured against the thickness itself, the anchor also fixes a sign flip
-of the underlying trace. ``n_harmonics=1`` anchors on the fundamental's trough;
-more harmonics follow the real pulse shape, whose minimum (the diastolic foot)
-is sharper than a sinusoid's.
-
-Diagnostics land in ``anchor``: the offset, the fitted curve, its depth in
-pixels, and ``coherence`` — ``|Σ c_w| / Σ |c_w|`` over per-column fundamentals
-``c_w``, 1 when every column pulses in phase, near 0 when columns disagree and
-the column mean (so the anchor) is unreliable.
-"""
+"""Anchor phase 0 on the choroid-thickness minimum."""
 
 from dataclasses import dataclass, replace
 from typing import Optional
@@ -46,22 +20,14 @@ from ocularrigidity.motion.pulsation.traces import (
 @dataclass
 class ThicknessAnchorConfig:
     n_harmonics: int = 3
-    # Width (σ) of the per-column baseline removed before the fit, in cardiac
-    # periods. At one period the baseline keeps essentially none of the
-    # fundamental (attenuation exp(-2π²) ≈ 3e-9).
+    # Width (σ) of the per-column baseline removed before the fit, in cardiac periods.
     detrend_cycles: float = 1.0
     grid_size: int = 720
-    # How columns are combined into the fitted trace. "median" is robust to a
-    # few columns with broken segmentation (±70 px swings seen on some videos),
-    # which otherwise dominate a mean.
+    # How columns are combined into the fitted trace.
     column_reduce: str = "median"
-    # Below this coherence a note is left; the anchor is still applied.
+    # Below this coherence a note is left
     min_coherence: float = 0.3
-    # Anchor each of this many equal-duration segments separately. Match it to
-    # the fold's ``n_cycle`` (the N-cycle reconstructor folds each segment into
-    # its own cycle, with the same boundaries), so every folded cycle starts at
-    # its own thickness minimum even if the phase offset drifts over the video
-    # (heart-rate changes, the SiNC network's fixed lag in seconds).
+    # Anchor each of this many equal-duration segments separately.
     n_segments: int = 1
 
 
@@ -73,11 +39,7 @@ def thickness_minimum_phase(
     freq: float,
     config: ThicknessAnchorConfig | None = None,
 ) -> dict:
-    """Phase (radians) of minimal thickness under ``phase_uniform``, plus diagnostics.
-
-    ``thickness`` is ``(T_uniform, W)`` on the same grid as the phase, NaN on
-    holes and gaps. Returns ``offset=nan`` if too few samples are usable.
-    """
+    """Phase (radians) of minimal thickness under ``phase_uniform``, plus diagnostics."""
     cfg = config or ThicknessAnchorConfig()
     ref = np.asarray(thickness, dtype=float)
     if ref.ndim == 1:
@@ -132,12 +94,7 @@ def thickness_minimum_phase(
 
 
 class ThicknessAnchoredPhaseEstimator(AbstractPhaseEstimator):
-    """Any phase estimator, with phase 0 moved onto minimal choroid thickness.
-
-    ``reference`` supplies the thickness map on the same uniform grid as the
-    traces — typically the :class:`MaskThicknessTraceSource` already in the
-    chain (its ``interpolated_signal``, before any bandpass).
-    """
+    """Any phase estimator, with phase 0 moved onto minimal choroid thickness."""
 
     def __init__(
         self,
@@ -182,8 +139,6 @@ class ThicknessAnchoredPhaseEstimator(AbstractPhaseEstimator):
             self.anchor = dict(overall=overall, segments=[])
             return track
 
-        # Segment boundaries exactly as NCycleReconstructor.compute draws them:
-        # equal durations over the frame timestamps, last one closed.
         ts = traces.timestamps_seconds
         n = max(1, cfg.n_segments)
         dur = (ts[-1] - ts[0]) / n

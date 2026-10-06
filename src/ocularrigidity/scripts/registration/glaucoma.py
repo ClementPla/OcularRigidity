@@ -22,7 +22,6 @@ from ocularrigidity.pipeline_config import REGISTRATION
 from ocularrigidity.registration.registration_engine import VideoRegistrator
 from ocularrigidity.scripts._logging import setup_logging
 from ocularrigidity.scripts.dataset import VolumeDataset, identity_collate
-from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
 
 OUTPUT_FOLDER = ROOT_REGISTERED_CACHE
 
@@ -75,8 +74,6 @@ def main():
     skipped = 0
     for _, row in df.iterrows():
         measure_value = str(Path(row["MeasureValue"])).replace("\\", "/")
-        is_exception = Path(measure_value) in PROCESS_ANYWAY
-
         # Instantiate dummy registrator spec to check true output cache paths
         dummy_reg = VideoRegistrator(
             video=measure_value,
@@ -84,13 +81,13 @@ def main():
             frames=None,
             masks=None,
             cache_dir=OUTPUT_FOLDER,
-            overwrite_cache=args.overwrite or is_exception,
+            overwrite_cache=args.overwrite,
             verbose=False,
         )
         cache_paths = dummy_reg._cache_paths()
         cache_exists = all(p.exists() for p in cache_paths.values())
 
-        if cache_exists and not args.overwrite and not is_exception:
+        if cache_exists and not args.overwrite:
             skipped += 1
         else:
             tasks.append(measure_value)
@@ -121,10 +118,7 @@ def main():
     n_ok, n_fail = 0, 0
     pending = None  # in-flight cache write, one volume behind the registration
 
-    # One writer thread: a deeper queue would just hold more ~9.4 GB
-    # registrations in RAM waiting to be encoded.
     with ThreadPoolExecutor(max_workers=1) as writer:
-
         def drain(job):
             """Collect the previous volume's cache write."""
             nonlocal n_ok, n_fail
@@ -145,8 +139,7 @@ def main():
         for i, (measure_value, payload, load_error) in enumerate(
             tqdm(loader, desc="Processing", total=len(tasks)), start=1
         ):
-            # Time blocked on the loader. Near zero means the decode worker is
-            # keeping up and registration is the wall.
+            # Time blocked on the loader.
             t_wait = time.perf_counter() - t_mark
 
             frames = masks = registrator = None
@@ -167,8 +160,7 @@ def main():
                         frames=frames,
                         masks=masks,
                         cache_dir=OUTPUT_FOLDER,
-                        overwrite_cache=args.overwrite
-                        or (Path(measure_value) in PROCESS_ANYWAY),
+                        overwrite_cache=args.overwrite,
                         verbose=True,
                     )
 
@@ -185,30 +177,23 @@ def main():
                     n_fail += 1
                     continue
 
-                # Collect the previous write before queueing this one, so at
-                # most one registration is in flight. A non-zero wait here means
-                # the encode has become the wall rather than the registration.
+                # Collect the previous write before queueing this one,
+                # so at most one registration is in flight.
                 t_writer = time.perf_counter()
                 drain(pending)
                 t_writer = time.perf_counter() - t_writer
 
-                # `registrator` stays referenced by the job until the write is
-                # collected — it owns the arrays being encoded.
+                # `registrator` stays referenced by the job until the write is collected
                 pending = (writer.submit(registrator.flush_cache), measure_value)
 
-                # One line per volume: without it the stage prints nothing for
-                # minutes at a time and looks hung.
+                # One line per volume: without it the stage prints
+                # nothing for minutes at a time and looks hung.
                 logger.info(
                     f"[{i}/{len(tasks)}] {measure_value} | "
                     f"load-wait {t_wait:5.1f}s | reg {t_reg:5.1f}s | "
                     f"writer-wait {t_writer:5.1f}s"
                 )
             finally:
-                # One release point for every path out of the iteration. These
-                # are the ~4.7 GB volume arrays: drop this iteration's
-                # references before the loader hands over the next volume, or
-                # two are resident at once. Rebinding rather than `del` leaves
-                # the names defined on the paths that never bound them.
                 frames = masks = payload = registrator = None
                 gc.collect()
                 torch.cuda.empty_cache()

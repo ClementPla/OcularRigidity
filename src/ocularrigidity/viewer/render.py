@@ -1,12 +1,4 @@
-"""Shared rendering toolkit for the viewer UIs (no Gradio / Streamlit deps).
-
-Turns precomputed cohort artifacts — the folded one-cycle ``.mkv``, the saved
-segmentation ``.npz`` and the stored boundary displacements — into small,
-browser-friendly mp4s. Reads are cached and frames are downscaled before
-encoding, since for browsing the encode time and file size (not fidelity) are
-what matter. Used by both :mod:`ocularrigidity.viewer.explorer` (Gradio) and the
-Streamlit viewer page.
-"""
+"""Shared rendering toolkit for the viewer UIs (no Gradio / Streamlit deps)."""
 
 from __future__ import annotations
 
@@ -52,11 +44,7 @@ def write_mp4(
     quality: int = 8,
     preset: str | None = None,
 ) -> str:
-    """Write a (T, H, W) gray or (T, H, W, 3) RGB stack to a browser-playable mp4.
-
-    ``preset`` is forwarded to libx264 (e.g. ``"ultrafast"`` for fast, larger
-    files when browsing); ``quality`` trades size for fidelity (0–10).
-    """
+    """Write a (T, H, W) gray or (T, H, W, 3) RGB stack to a browser-playable mp4."""
     frames = to_uint8(frames)
     if frames.ndim == 3:
         # gray (T, H, W) -> RGB: repeat the new trailing channel axis, NOT width.
@@ -86,9 +74,6 @@ def overlay_video(
 
 
 # --- cached reads + cheap resizing -------------------------------------------
-# Reads are cached so the one-cycle, mask overlay and quiver renders for one
-# case share a single decode. Downscaling before encoding is the main speed/size
-# lever — full-res (1536×1024) mp4s are slow to write and heavy to ship.
 
 
 @st.cache_data(max_entries=4)
@@ -117,11 +102,7 @@ def resize_cube(cube: np.ndarray, factor: int, *, nearest: bool = False) -> np.n
 
 
 def square_crop_offset(h: int, w: int, size: int | None = None) -> tuple[int, int, int]:
-    """Centered-square crop box for a (H, W) frame -> ``(x0, y0, side)``.
-
-    ``side`` is clamped to ``min(h, w)`` so the box always fits; ``size=None``
-    takes the largest centered square.
-    """
+    """Centered-square crop box for a (H, W) frame -> ``(x0, y0, side)``."""
     side = min(h, w) if size is None else min(int(size), h, w)
     return (w - side) // 2, (h - side) // 2, side
 
@@ -150,20 +131,7 @@ def render_quiver(
     quality: int = 8,
     preset: str | None = None,
 ) -> str:
-    """Animate the *stored* boundary displacements as a quiver over the frames.
-
-    Uses the ``deltaA_per_cycle.pkl`` arrays directly — no optical flow is run
-    here, unlike :func:`ocularrigidity.viewer.gif.render_mask_quiver`, which
-    tracks the boundary itself. The drawing (and every :class:`QuiverStyle`
-    option) is the shared :func:`ocularrigidity.viewer.quiver.draw_quiver`.
-
-    The one-cycle video is the concatenation of ``N`` cardiac cycles, each with
-    its own anchors; pass ``cycle`` to render just one (``None`` renders the
-    whole loop, cycle after cycle). Stored coordinates and displacements are in
-    the *full-resolution* frame, so ``crop_offset`` and ``coord_scale`` map them
-    onto the cropped, downscaled frames actually being drawn — and ``masks``,
-    when given (required by the CSI options), must already be in that same space.
-    """
+    """Animate the *stored* boundary displacements as a quiver over the frames."""
     T = frames.shape[0]
     n_cycles = len(displacement_per_cycle)
     frame_per_cycle = T // n_cycles
@@ -173,8 +141,6 @@ def render_quiver(
         else [max(0, min(int(cycle), n_cycles - 1))]
     )
 
-    # Stored coords/displacements live in the full frame: shift into the crop,
-    # then scale into the downscaled frame the arrows are drawn on.
     offset = np.asarray(crop_offset, dtype=np.float32)
     disps = [np.asarray(displacement_per_cycle[c]) * coord_scale for c in cycles]
     refs = [
@@ -211,7 +177,7 @@ def render_quiver(
             )
         )
 
-    # mp4 (libx264) keeps these lightweight for the browser; a gif would be huge.
+    # mp4 (libx264) keeps these lightweight for the browser
     return write_mp4(
         np.concatenate(overlay),
         str(output_path),

@@ -15,7 +15,7 @@ def binarize_warped_mask(warped: torch.Tensor, dtype: torch.dtype) -> torch.Tens
 
 _BM_JUMP_THRESHOLD_PX = 20.0  # saut horizontal de la BM (px) juge discontinu
 _BM_BAD_FRAME_FRACTION = (
-    0.5  # colonne noircie si mauvaise dans >= cette fraction des frames
+    0.5
 )
 _BM_MARGIN_COLUMNS = 15  # marge (colonnes) noircie de chaque cote d'une discontinuite
 

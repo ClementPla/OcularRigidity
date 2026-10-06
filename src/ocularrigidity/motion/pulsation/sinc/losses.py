@@ -1,28 +1,4 @@
-"""SiNC losses (Speth et al., "Non-Contrastive Unsupervised Learning of
-Physiological Signals from Video", CVPR 2023), on irregular samples.
-
-The paper takes an FFT of a uniformly sampled clip. Here the spectrum is a
-direct DFT at each sample's own timestamps, restricted to the valid samples, so
-dropped frames and speed augmentation need no resampling of the output: gaps
-are simply absent from the sum, and a sped-up clip just carries shorter times.
-
-All three losses read the same power spectrum on a frequency grid shared by
-the batch (the variance loss averages spectra across samples):
-
-* bandwidth — power outside ``[f_lo, f_hi]`` over total power;
-* sparsity  — in-band power outside ``peak ± delta`` over in-band power;
-* variance  — squared 1-D Wasserstein distance between the batch-averaged
-  in-band spectrum and a prior over rates. This is what stops every clip from
-  collapsing onto one frequency, i.e. what replaces an expected BPM.
-
-The paper's prior is uniform over the band. On this cohort (HR 52–90 bpm, 5th–
-95th percentile) a uniform 30–180 bpm prior wants half the power above 105 bpm,
-and the network learns to supply it by locking clips onto the 2nd harmonic:
-across epochs the variance loss and the harmonic rate correlated at −0.84.
-:meth:`SiNCLoss.set_prior` replaces it with the population's rate distribution
-(see :func:`rate_prior`); only the aggregate distribution is used, never a
-clip's own rate.
-"""
+"""SiNC losses (Speth et al., "Non-Contrastive Unsupervised Learning of Physiological Signals from Video", CVPR 2023), on irregular samples."""
 
 from dataclasses import dataclass
 
@@ -36,9 +12,7 @@ class SiNCLossConfig:
     f_hi: float = 3.0  # Hz (180 bpm)
     # Half-width of the peak window in the sparsity loss (paper: 6 bpm).
     delta_hz: float = 0.1
-    # Grid spacing and extent. f_max should sit just below the lowest Nyquist
-    # frequency in the cohort (frame clocks run 82–89 Hz): higher, and aliased
-    # bins double-count; much lower, and power above it goes unpenalised.
+    # Grid spacing and extent.
     df: float = 0.025
     f_max: float = 40.0
     w_bandwidth: float = 1.0
@@ -49,12 +23,7 @@ class SiNCLossConfig:
 def masked_power_spectrum(
     x: torch.Tensor, t: torch.Tensor, mask: torch.Tensor, freqs: torch.Tensor
 ) -> torch.Tensor:
-    """Normalised power ``(B, F)`` of ``x`` at ``freqs``, over valid samples only.
-
-    ``x``, ``t``, ``mask`` are ``(B, T)``. The mean over valid samples is removed
-    first: the gap pattern leaks roughly 10 % of any DC offset into the cardiac
-    band. Each spectrum is normalised to unit sum.
-    """
+    """Normalised power ``(B, F)`` of ``x`` at ``freqs``, over valid samples only."""
     x = x.float()
     t = t.float()
     w = mask.float()
@@ -77,7 +46,6 @@ class SiNCLoss(torch.nn.Module):
         self.register_buffer(
             "in_band", (freqs >= cfg.f_lo) & (freqs <= cfg.f_hi), persistent=False
         )
-        # Persistent, so a checkpoint carries the prior it was trained with.
         n_band = int(self.in_band.sum())
         self.register_buffer("prior", torch.full((n_band,), 1.0 / n_band))
 
@@ -101,7 +69,7 @@ class SiNCLoss(torch.nn.Module):
         with torch.autocast(device_type=x.device.type, enabled=False):
             psd = masked_power_spectrum(x, t, mask, self.freqs)
 
-            # DC is removed by construction; keep it out of the denominator too.
+            # DC is removed by construction
             psd_nodc = psd[:, 1:]
             in_band = self.in_band[1:]
             bandwidth = psd_nodc[:, ~in_band].sum(-1) / psd_nodc.sum(-1).clamp_min(
@@ -142,13 +110,7 @@ def rate_prior(
     n_samples: int = 200_000,
     seed: int = 0,
 ) -> np.ndarray:
-    """Density of clip rates over ``band_freqs``: population rates × speed.
-
-    Speed augmentation multiplies each clip's rate by a uniform draw from
-    ``speed_range``, so the prior is the rate histogram convolved with that.
-    Smoothed with a Gaussian of ``smooth_hz``, then mixed with a uniform floor
-    (``floor`` of the mass) so no in-band rate is ruled out entirely.
-    """
+    """Density of clip rates over ``band_freqs``: population rates × speed."""
     rng = np.random.default_rng(seed)
     rates = np.asarray(rates_bpm, float)
     rates = rates[np.isfinite(rates) & (rates > 0)]
@@ -173,11 +135,7 @@ def peak_frequency(
     df: float = 0.002,
     chunk: int = 256,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """In-band peak of a long waveform, for evaluation: ``(peak_hz, freqs, psd)``.
-
-    Frequencies are processed in chunks, since a whole video times a fine grid
-    would not fit as one ``(B, T, F)`` phase tensor.
-    """
+    """In-band peak of a long waveform, for evaluation: ``(peak_hz, freqs, psd)``."""
     freqs = torch.arange(f_lo, f_hi + df / 2, df, device=x.device)
     x, t, w = x.float(), t.float(), mask.float()
     n = w.sum(-1, keepdim=True).clamp_min(1.0)

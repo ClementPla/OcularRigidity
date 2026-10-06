@@ -5,11 +5,7 @@ from pathlib import Path
 
 
 def setup_logging(name: str, log_file: Path, rank_tag: str = "") -> logging.Logger:
-    """Logger writing to both ``log_file`` and stderr.
-
-    ``rank_tag`` is interpolated into the format string for sharded stages
-    (``" [shard 0]"``); the default reproduces the unsharded format exactly.
-    """
+    """Logger writing to both ``log_file`` and stderr."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)

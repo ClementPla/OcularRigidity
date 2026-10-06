@@ -27,35 +27,7 @@ def render_membrane_trace(
     old_color_rgb: tuple[int, int, int] = (255, 0, 0),  # red: about to vanish
     border_kernel_size: int = 2,
 ) -> None:
-    """Render a looping animation where each mask boundary leaves a fading trace.
-
-    For every frame the mask boundary is extracted via morphological gradient
-    and stamped into a trace buffer at full intensity. The buffer decays
-    multiplicatively between frames, so older positions fade out. The trace is
-    composited over the grayscale frame with a color that interpolates from
-    ``current_color_rgb`` (fresh) to ``old_color_rgb`` (faded), giving the
-    green -> yellow -> red -> gone trail.
-
-    Parameters
-    ----------
-    frames : (T, H, W) uint8
-        Grayscale source frames.
-    masks : (T, H, W)
-        Binary segmentation masks (bool or 0/1 integer).
-    output_path : str or Path
-        Destination path; the extension determines the format (.gif, .mp4, ...).
-    side_by_side : bool, default False
-        If True, concatenate the original frame and the overlay horizontally.
-    fps : int
-        Output frame rate.
-    decay : float
-        Per-frame multiplicative decay in (0, 1) applied to the trace buffer.
-    current_color_rgb, old_color_rgb : (R, G, B), each component in [0, 255]
-        Endpoints of the color ramp along the trace.
-    border_kernel_size : int
-        Side length of the square structuring element used for the boundary
-        extraction (morphological gradient).
-    """
+    """Render a looping animation where each mask boundary leaves a fading trace."""
     if frames.ndim != 3:
         raise ValueError(f"`frames` must have shape (T, H, W); got {frames.shape}.")
     if frames.shape != masks.shape:
@@ -132,14 +104,7 @@ def render_mask_quiver(
     show_csi_summary: bool = True,
     show_only_csi_anchors: bool = False,
 ) -> None:
-    """Track the mask boundary with optical flow and animate it as a quiver.
-
-    Anchors are sampled on the reference frame's mask boundary (every
-    ``stride``-th border pixel, so the flow only tracks what gets drawn) and
-    followed across the sequence; the drawing itself — and every option below —
-    is :func:`ocularrigidity.viewer.quiver.draw_quiver`, shared with the
-    stored-displacement renderer used by the Streamlit viewer.
-    """
+    """Track the mask boundary with optical flow and animate it as a quiver."""
     if frames.ndim != 3:
         raise ValueError(f"`frames` must have shape (T, H, W); got {frames.shape}.")
     if frames.shape != masks.shape:

@@ -1,9 +1,4 @@
-"""The physiological prior: where in frequency to look for the heartbeat.
-
-Shared by the trace bandpass (:mod:`...traces`) and the rate estimators
-(:mod:`...rate`), which is why it lives at the package root rather than inside
-either stage.
-"""
+"""The physiological prior: where in frequency to look for the heartbeat."""
 
 from dataclasses import dataclass
 
@@ -13,12 +8,8 @@ class CardiacBand:
     """Where to look for the heartbeat, and what rate we expect to find."""
 
     bpm_range: tuple[float, float] = (30.0, 180.0)
-    # When set, the search band is narrowed to
-    # [(1-frac), (1+frac)] * expected_bpm, overriding ``bpm_range``.
     expected_bpm: float | None = None
     expected_bpm_band_frac: float = 0.3
-    # Width (bpm) of the Gaussian prior around ``expected_bpm`` used to score
-    # candidate peaks. Distinct from ``harmonic_tolerance_bpm``.
     prior_sigma_bpm: float = 12.0
 
     @property

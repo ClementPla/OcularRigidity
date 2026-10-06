@@ -9,7 +9,7 @@ from ocularrigidity.segmentation.fovea import (
 
 seed_everything(42)
 
-# Path to the annotation CSV (columns: image, x, y, patient). Adjust to your data.
+# Path to the annotation CSV (columns: image, x, y, patient).
 ANNOTATIONS_CSV = "/media/clement/HD/Santiago/OcularRigidity/annotations/fovea.csv"
 
 

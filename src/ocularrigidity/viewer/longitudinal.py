@@ -1,17 +1,4 @@
-"""The six longitudinal designs, as data rather than as page code.
-
-Each design answers the same question — *is the probed rigidity metric related to
-this clinical measure?* — but pairs the visits differently, so each has its own
-frame to plot and its own statistic to rank by. Defining them once here lets the
-Streamlit page both *plot* one measure and *screen* all of them through exactly
-the same code path (and lets the screening be cached, which matters: it fits a
-model per measure per design).
-
-A design is built with :func:`build` (frame + the two columns to regress) and
-scored with :func:`score` (N, effect size, p-value). :func:`screen` runs the
-score over every measure and ranks it, correcting for the fact that picking the
-best of ~40 measures is a multiple comparison.
-"""
+"""The six longitudinal designs, as data rather than as page code."""
 
 from __future__ import annotations
 
@@ -46,12 +33,6 @@ EFFECT_LABEL = {
 
 GROUP_COLS = ["PatientId", "Eye"]
 
-# Ranking is done on a RANK-based p (Spearman / Mann-Whitney), never on Pearson.
-# A screen sorted by Pearson p is a leverage-point detector: on this cohort the
-# top "hit" of the co-progression design was r = -0.84, p = 2e-20 — and r = +0.03
-# once the single most extreme eye was dropped (its Spearman rho was -0.03). The
-# Pearson r is still reported next to it: when the two disagree that badly, the
-# association is one point, not a finding.
 SPEARMAN_COL = "Spearman ρ"
 
 
@@ -65,11 +46,7 @@ def numeric_subset(long_df: pd.DataFrame, measure: str) -> pd.DataFrame:
 def build(
     design: str, long_df: pd.DataFrame, probe: str, measure: str, params: dict
 ) -> tuple[pd.DataFrame, str, str]:
-    """The frame and the two columns this design regresses, for one measure.
-
-    For :data:`GROUPS` the ``y`` column is the categorical ``"Group"``: the frame
-    is a box-plot input rather than a scatter.
-    """
+    """The frame and the two columns this design regresses, for one measure."""
     if design == COPROGRESSION:
         slopes = (
             numeric_subset(long_df, measure)
@@ -119,8 +96,6 @@ def build(
                 d[measure] <= median, f"Low {measure}", f"High {measure}"
             )
             return d, probe, "Group"
-        # Otherwise the lagged pairing of NEXT_CHANGE, dichotomised: the probe at
-        # a visit, against how fast the measure moved over the interval after it.
         pairs = baseline_vs_next_rate(
             long_df,
             measure,
@@ -144,15 +119,7 @@ def build(
 def score(
     design: str, long_df: pd.DataFrame, probe: str, measure: str, params: dict
 ) -> dict | None:
-    """One measure under one design: ``{N, effect, Spearman ρ, p}``, or None.
-
-    ``p`` is what the screen ranks on, and it is always **rank-based** — Spearman
-    for the correlation designs, Mann-Whitney for the group split (see
-    :data:`SPEARMAN_COL`). The design's own effect size is reported beside it:
-    Pearson r, or the cluster-robust slope for :data:`NEXT_CHANGE`, where an eye
-    contributes several intervals and a naive p would reward whichever measure
-    repeats most within an eye.
-    """
+    """One measure under one design: ``{N, effect, Spearman ρ, p}``, or None."""
     frame, x, y = build(design, long_df, probe, measure, params)
     if frame.empty:
         return None
@@ -164,9 +131,6 @@ def score(
         ]
         if len(arms) != 2 or min(len(a) for a in arms) < 3:
             return None
-        # Rank-based already: the probe is skewed, so a t-test would follow the
-        # tail rather than the shift between the groups. Effect = the AUC (0.5 =
-        # the two groups are indistinguishable).
         u, p = mannwhitneyu(arms[0], arms[1], alternative="two-sided")
         n1, n2 = len(arms[0]), len(arms[1])
         return {"N": n1 + n2, "effect": float(u) / (n1 * n2), "p": float(p)}
@@ -183,8 +147,6 @@ def score(
         res = cluster_robust_ols(frame, x, y, covariates=covariates)
         if "slope" not in res:
             return None
-        # Here the clustered p *is* the rank-agnostic one we want (it is the
-        # repeated-measures problem, not the outlier problem, that dominates).
         return {
             "N": res["n"],
             "effect": res["slope"],
@@ -208,17 +170,7 @@ def screen(
     measures: list[str],
     params: dict,
 ) -> pd.DataFrame:
-    """Score every measure under one design and rank it by p, with BH q-values.
-
-    Returns ``measure, N, <effect>, Spearman ρ, p, q (BH)``, most significant
-    first. Two things make the top row readable rather than misleading:
-
-    * ``p`` is rank-based (see :func:`score`), so a single leverage point cannot
-      manufacture a hit — sorting on a Pearson p would do exactly that here;
-    * ``q (BH)`` is the number to act on. The top rows were *selected* for a small
-      p out of ~40 tries, so their raw p is optimistic by construction — about two
-      of forty land under 0.05 by chance alone.
-    """
+    """Score every measure under one design and rank it by p, with BH q-values."""
     rows = []
     for m in measures:
         try:

@@ -5,15 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 def get_line_orientation(file: Path | str | np.ndarray) -> float:
-    """
-    Get the orientation of a line in an image using Hough Transform.
-
-    Args:
-        file (Path | str | np.ndarray): Path to the image file or the image array.
-
-    Returns:
-        float: The orientation of the line in degrees.
-    """
+    """Get the orientation of a line in an image using Hough Transform."""
     if isinstance(file, (Path, str)):
         pil_img = Image.open(file).convert("RGB")
         img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)

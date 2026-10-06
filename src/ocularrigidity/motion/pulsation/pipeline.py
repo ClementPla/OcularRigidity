@@ -1,17 +1,7 @@
-"""End-to-end orchestration: paths → registration → extraction → folding.
-
-Wires the collaborators together:
-
-    VideoRegistrator → VideoTimelineAligner → PulseExtractor
-                                            → NCycleReconstructor
-
-and packages the outcome as a :class:`CardiacPipelineResults`.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from ocularrigidity.motion.pulsation.extractor import PulseExtractor
 from ocularrigidity.motion.pulsation.n_cycle_reconstructor import (
@@ -23,49 +13,27 @@ from ocularrigidity.motion.pulsation.phase import (
     SelectBestComponent,
     ThicknessAnchoredPhaseEstimator,
 )
+from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
 from ocularrigidity.motion.pulsation.rate import LombScargleRateEstimator
 from ocularrigidity.motion.pulsation.traces import (
     BandPassFilterTraceSource,
-    CoherentTraceSource,
-    DecomposedTraceSource,
     MaskThicknessTraceSource,
 )
+from ocularrigidity.motion.pulsation.sinc.trace_source import (
+        LearnedTraceSource,
+        load_sinc_module,
+    )
 from ocularrigidity.motion.video_timeline_aligner import TimeUnits, VideoTimelineAligner
 from ocularrigidity.registration.config import RegistrationConfig
 from ocularrigidity.registration.registration_engine import VideoRegistrator
 
-if TYPE_CHECKING:
-    from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
-
-
 def build_extractor(registrator, aligner, stage_configs: dict) -> PulseExtractor:
-    """The composed chain, from the per-stage configs.
-
-        thickness -> bandpass -> Lomb-Scargle rate -> IQ phase on the best trace
-
-    or, when ``stage_configs["sinc"]`` names a checkpoint,
-
-        thickness -> bandpass -> SiNC waveform -> Lomb-Scargle rate -> IQ phase
-
-    (the bandpass is kept in the SiNC chain only so the results record the same
-    ``filtered_signal``). When ``stage_configs["anchor"]`` is set, the phase is
-    then rotated so phase 0 is minimal choroid thickness: every folded cycle
-    starts deflated and inflates first.
-
-    ``stage_configs`` is what ``PulsationConfig.chain_for_video`` returns, so
-    the study config stays the single place the recipe is written down. Older
-    stage configs without the ``sinc``/``anchor`` keys build the classical chain.
-    """
+    """The composed chain, from the per-stage configs."""
     mask = MaskThicknessTraceSource(registrator, aligner, stage_configs["trace"])
     source = BandPassFilterTraceSource(mask, stage_configs["bandpass"])
     # source = CoherentTraceSource(source, stage_configs["coherence"])
     # source = DecomposedTraceSource(source, stage_configs["decomposition"])
     if stage_configs.get("sinc") is not None:
-        from ocularrigidity.motion.pulsation.sinc.trace_source import (
-            LearnedTraceSource,
-            load_sinc_module,
-        )
-
         source = LearnedTraceSource(source, load_sinc_module(stage_configs["sinc"]))
 
     phase = IQDemodPhaseEstimator(
@@ -100,17 +68,8 @@ def run_composed_pipeline(
     verbose: bool = True,
     target_fs: Optional[float] = None,
 ) -> CardiacPipelineResults:
-    """End-to-end run of the composed chain, packaged as results.
-
-    ``registrator`` accepts an already-built :class:`VideoRegistrator` instead
-    of constructing one from the roots. A batch caller uses it to hand in a
-    registrator primed with a cache payload decoded ahead of time on another
-    process (see scripts/pulsation/infer.py); the roots are then unused.
-
-    ``target_fs`` resamples the uniform grid to that rate (see
-    :class:`VideoTimelineAligner`); ``None`` keeps the acquisition rate.
-    """
-    from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
+    """End-to-end run of the composed chain, packaged as results."""
+    
 
     if registrator is None:
         registrator = VideoRegistrator(

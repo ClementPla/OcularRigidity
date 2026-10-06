@@ -1,12 +1,4 @@
-"""Filtre Laplacien d'une Gaussienne (LoG) sur les B-scans OCT.
-
-Portage Python de ``laplacianOfAGaussian.m`` (+ l'usage RPE de
-``EYYstrain_analysis.m`` : ``kernel = fspecial('log', 9, 3); -conv2(I, kernel, 'same')``).
-
-Le noyau ``fspecial('log', hsize, sigma)`` de MATLAB est reproduit a l'identique
-par ``fspecial_log`` ci-dessous, puis convolue (avec negation, comme le MATLAB)
-pour donner une reponse positive sur les couches claires fines telles que la RPE.
-"""
+"""Filtre Laplacien d'une Gaussienne (LoG) sur les B-scans OCT."""
 
 from __future__ import annotations
 
@@ -16,12 +8,7 @@ import torch.nn.functional as F
 
 
 def fspecial_log(hsize: int, sigma: float) -> np.ndarray:
-    """Reproduction exacte de ``fspecial('log', hsize, sigma)`` (MATLAB).
-
-    Renvoie un noyau carre ``(hsize, hsize)`` de somme nulle (float64).
-    """
-    # Coordonnees centrees : equivalent de meshgrid(-siz:siz) pour hsize impair,
-    # et gere aussi hsize pair (coordonnees demi-entieres), comme MATLAB.
+    """Reproduction exacte de ``fspecial('log', hsize, sigma)`` (MATLAB)."""
     coords = np.arange(hsize, dtype=np.float64) - (hsize - 1) / 2.0
     x, y = np.meshgrid(coords, coords)
 
@@ -45,23 +32,7 @@ def laplacian_of_gaussian(
     kernel_size: int,
     sigma: float,
 ):
-    """LoG negatif ``-conv2(image, fspecial('log', kernel_size, sigma), 'same')``.
-
-    Parameters
-    ----------
-    image : np.ndarray | torch.Tensor
-        B-scan ``(H, W)`` ou pile ``(T, H, W)``.
-    kernel_size : int
-        Taille (cote) du noyau LoG carre.
-    sigma : float
-        Ecart-type de la Gaussienne (« taille du lissage »).
-
-    Returns
-    -------
-    np.ndarray | torch.Tensor
-        Image filtree (meme type/forme que l'entree). Bords en zero-padding
-        (comme ``conv2(..., 'same')``).
-    """
+    """LoG negatif ``-conv2(image, fspecial('log', kernel_size, sigma), 'same')``."""
     is_numpy = isinstance(image, np.ndarray)
     x = torch.as_tensor(image, dtype=torch.float32) if is_numpy else image.float()
 
@@ -77,7 +48,6 @@ def laplacian_of_gaussian(
     ).view(1, 1, kernel_size, 1)
 
     # Le noyau LoG est symetrique : conv2 (convolution) == conv2d (correlation).
-    # 'same' pour un noyau impair == zero-padding de (kernel_size // 2).
     pad = kernel_size // 2
     out = -F.conv2d(x4, kernel, padding=(pad,0))
     out = out.squeeze(1)

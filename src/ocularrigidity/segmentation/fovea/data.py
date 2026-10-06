@@ -1,18 +1,4 @@
-"""Dataset + DataModule for foveal-point keypoint training.
-
-This is a scaffold to adapt to your annotation format. Annotations are expected
-as one (x, y) foveal-pit click per labeled frame. The default loader reads a CSV
-with columns: ``image, x, y, patient`` (``image`` = path to a grayscale frame,
-``x``/``y`` = foveal coordinates in that frame's pixels, ``patient`` = id used
-for a leak-free train/val split).
-
-Augmentation note: lateral (x) translation is the dominant augmentation on
-purpose. Without it the model learns the shortcut "fovea = image center"; with
-it the fovea is pushed off-center so the model must localize the real anatomy.
-albumentations transforms the keypoint together with the image, so labels stay
-correct. Keep the x-translation range wide but not so wide that the (central)
-fovea leaves the frame — an off-frame point is an invalid label.
-"""
+"""Dataset + DataModule for foveal-point keypoint training."""
 
 from pathlib import Path
 from typing import Optional
@@ -126,8 +112,7 @@ class FoveaKeypointDataModule(LightningDataModule):
         self.val.transforms = self.val_transforms()
 
     def _keypoint_params(self):
-        # remove_invisible=False keeps the point through flips; out-of-frame is
-        # caught in __getitem__ so a bad augmentation range surfaces loudly.
+        # remove_invisible=False keeps the point through flips
         return A.KeypointParams(format="xy", remove_invisible=False)
 
     def train_transforms(self):

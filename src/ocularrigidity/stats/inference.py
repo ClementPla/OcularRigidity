@@ -1,12 +1,4 @@
-"""Regression with standard errors that survive repeated measures.
-
-The interval-level designs in :mod:`ocularrigidity.stats.temporal` hand one row
-per *visit interval*, so one eye contributes several rows. A plain Pearson /
-OLS p-value treats those as independent subjects and is therefore
-anti-conservative — it reads ~200 points where the study has ~95 eyes. Clustering
-the standard errors on the eye fixes the inference (the slope is unchanged; its
-uncertainty grows to reflect that the rows repeat).
-"""
+"""Regression with standard errors that survive repeated measures."""
 
 from __future__ import annotations
 
@@ -17,13 +9,7 @@ from statsmodels.stats.multitest import multipletests
 
 
 def fdr_qvalues(pvalues) -> np.ndarray:
-    """Benjamini-Hochberg q-values for a family of p-values.
-
-    Screening every clinical measure and keeping the best few is a multiple
-    comparison: with 40 measures, two land under p < 0.05 by chance alone. The
-    q-value is the false-discovery rate at which that measure would be called —
-    it is the number to read when the measure was *selected* for being small.
-    """
+    """Benjamini-Hochberg q-values for a family of p-values."""
     p = np.asarray(pvalues, dtype=float)
     finite = np.isfinite(p)
     q = np.full(p.shape, np.nan)
@@ -40,16 +26,7 @@ def cluster_robust_ols(
     group_cols=("PatientId", "Eye"),
     covariates: tuple[str, ...] = (),
 ) -> dict:
-    """OLS of ``y`` on ``x`` with standard errors clustered by ``group_cols``.
-
-    ``covariates`` are adjusted for (partialled out), e.g. the measure's own
-    baseline value — progression usually depends on how far the disease already
-    is, and that starting point may itself correlate with ``x``.
-
-    Returns a dict with the slope on ``x``, its cluster-robust standard error,
-    t / p, the 95% CI, the number of rows and of clusters, and the model R².
-    Returns ``{"n": ...}`` alone when there is not enough data to fit.
-    """
+    """OLS of ``y`` on ``x`` with standard errors clustered by ``group_cols``."""
     cols = [x, y, *covariates]
     d = df[cols + list(group_cols)].copy()
     for c in cols:

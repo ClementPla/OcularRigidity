@@ -1,16 +1,4 @@
-"""Interactive regression explorer — any variable against any other.
-
-Two modes: *any X vs any Y* over the whole cohort table (so a pulsatile metric
-can be confronted with an ONH sector or a clinical measure directly), and
-*test–retest*, which regresses one cardiac cycle against another and is the
-honest ceiling on everything the first mode can find.
-
-The first mode also has a **Δ Y** switch, which turns the scatter from one point
-per visit into one point per eye: X at the eye's earliest visit against the
-per-year slope of Y from there on. That is the Longitudinal page's
-*Present → future* design, except that both variables are picked by hand rather
-than being fixed to (rigidity probe × clinical measure).
-"""
+"""Interactive regression explorer"""
 
 import itertools
 
@@ -99,8 +87,7 @@ if mode == "Two variables":
         data = baseline_vs_slope_wide(df, x, y, min_points=min_points)
         xcol, ycol = f"{x}_baseline", f"{y}_slope"
         if color != "(none)":
-            # An eye's colour is whatever it was at the visit the baseline came
-            # from; Type and Diagnosis can change between visits.
+            # An eye's colour is whatever it was at the visit the baseline came from
             first = (
                 df.sort_values("Date")
                 .groupby(["PatientId", "Eye"], as_index=False)[color]

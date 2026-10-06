@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 from ocularrigidity.registration.sparse_demons import track_points_with_demons
 from ocularrigidity.segmentation.postprocess.interfaces import (
@@ -5,7 +7,11 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 )
 from scipy.signal import savgol_filter
 
-import numpy as np
+from ocularrigidity.data.compression import read_gray
+from ocularrigidity.data.io import load_mask
+from ocularrigidity.pipeline_config import DELTA_A, N_CYCLES
+from ocularrigidity.segmentation.closing_structures import trim_choroid
+
 import SimpleITK as sitk
 import cv2
 
@@ -106,22 +112,7 @@ def shoelace_area(coords):
 
 
 def compute_delta_A_from_displacements(reference_border, displacements):
-    """Computes the change in choroidal area (delta A) across frames
-
-    using boundary displacement vectors.
-
-    Parameters:
-    -----------
-    reference_border : np.ndarray
-        The baseline polygon boundary coordinates (N, 2) where columns are [row, col].
-    displacements : np.ndarray
-        The structural displacement array of shape (T, N, 2) tracking [d_row, d_col].
-
-    Returns:
-    --------
-    delta_A : np.ndarray
-        Array of shape (T,) containing the change in area for each frame.
-    """
+    """Computes the change in choroidal area (delta A) across frames"""
     T, N, _ = displacements.shape
     delta_A = np.zeros(T, dtype=np.float64)
 
@@ -133,7 +124,6 @@ def compute_delta_A_from_displacements(reference_border, displacements):
         # Drop any points that became NaN due to lost tracking
         deformed_border = deformed_border[~np.isnan(deformed_border).any(axis=1)]
         if len(deformed_border) < 3:
-            # Not enough points to form a polygon, skip this frame
             delta_A[t] = np.nan
             continue
 
@@ -164,22 +154,7 @@ def compute_minimal_A(reference_border, displacements):
 
 
 def compute_delta_A_differential(reference_border, displacements):
-    """Computes delta A directly using the differential boundary integral
-
-    (u * n) ds along the ordered perimeter. This should give the same result as the shoelace method (up to sign).
-
-    Parameters:
-    -----------
-    reference_border : np.ndarray
-        Ordered baseline coordinates (N, 2) mapped as [row, col] -> [y, x].
-    displacements : np.ndarray
-        Displacement vectors (T, N, 2) mapped as [d_row, d_col] -> [dy, dx].
-
-    Returns:
-    --------
-    delta_A : np.ndarray
-        Array of shape (T,) containing the structural area variance.
-    """
+    """Computes delta A directly using the differential boundary integral"""
     T, N, _ = displacements.shape
     delta_A = np.zeros(T, dtype=np.float64)
 
@@ -188,7 +163,6 @@ def compute_delta_A_differential(reference_border, displacements):
     x = reference_border[:, 1]
 
     # Compute segment differentials (vectors joining vertex i to i+1)
-    # np.roll(..., -1) gets the index i+1
     dx = np.roll(x, -1) - x
     dy = np.roll(y, -1) - y
 
@@ -210,17 +184,68 @@ def compute_delta_A_differential(reference_border, displacements):
         avg_dx = 0.5 * (dx_disp + np.roll(dx_disp, -1))
 
         # Core cross-product integration: (dx * delta_y) - (dy * delta_x)
-        # The sign automatically adjusts for expansion vs contraction
         segment_area_changes = (dx_valid * avg_dy) - (dy_valid * avg_dx)
 
         # Sum along the entire closed boundary contour
-        # Take absolute value of the sum to stay invariant to clockwise/counter-clockwise ordering
         delta_A[t] = np.sum(segment_area_changes)
 
     # Adjust sign if reference loop direction is inverted relative to standard coordinate axes
-    # We can verify the orientation by checking a simple shoelace sign
     reference_orientation = np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y)
     if reference_orientation < 0:
         delta_A = -delta_A
 
     return delta_A
+
+
+def extract_displacement(
+    video_path: Path = None,
+    mask_path: Path = None,
+    video: np.ndarray = None,
+    mask: np.ndarray = None,
+    N_cycles: int = N_CYCLES,
+    method=DELTA_A.method,
+    smooth_window: int = DELTA_A.smooth_window,
+    lk_window: int = DELTA_A.lk_window,
+    trim: int = DELTA_A.trim
+):
+    if video is None:
+        video = read_gray(video_path)
+    if mask is None:
+        mask = load_mask(mask_path)
+
+    trimmed_masks = trim_choroid(
+        mask,
+        trim,
+    )
+
+    frame_per_cycle = video.shape[0] // N_cycles
+    deltaA_per_cycle = []
+    minA_per_cycle = []
+    displacement_per_cycle = []
+    reference_coordinates_per_cycle = []
+    for i in range(N_cycles):
+        start_frame = i * frame_per_cycle
+        end_frame = (i + 1) * frame_per_cycle
+        video_cycle = video[start_frame:end_frame]
+        mask_cycle = trimmed_masks[start_frame:end_frame]
+        displacement, reference_border_coordinates = extract_displacement_at_boundaries(
+            video_cycle,
+            mask_cycle,
+            smooth_window=smooth_window,
+            lk_window=lk_window,
+            method=method,
+        )
+        delta_a_differential = compute_delta_A_from_displacements(
+            reference_border_coordinates, displacement
+        )
+        deltaA_per_cycle.append(delta_a_differential)
+        minA = compute_minimal_A(reference_border_coordinates, displacement)
+        minA_per_cycle.append(minA)
+        displacement_per_cycle.append(displacement)
+        reference_coordinates_per_cycle.append(reference_border_coordinates)
+    return (
+        deltaA_per_cycle,
+        minA_per_cycle,
+        displacement_per_cycle,
+        reference_coordinates_per_cycle,
+    )

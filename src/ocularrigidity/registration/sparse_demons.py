@@ -51,8 +51,7 @@ def track_points_with_demons(
         demons.SetStandardDeviations(std_dev)
         field = demons.Execute(f, m, disp)
 
-    # field kept at the finest level's resolution; the transform interpolates
-    # it in physical space, so upsampling to full size is unnecessary.
+    # field kept at the finest level's resolution
     transform = sitk.DisplacementFieldTransform(
         sitk.Cast(field, sitk.sitkVectorFloat64)
     )

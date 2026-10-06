@@ -94,7 +94,8 @@ class ChoroidSegmentationModule(pl.LightningModule, PyTorchModelHubMixin):
         lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer, T_0=10, T_mult=2, eta_min=1e-6
         )
-        # We return the optimizer and the scheduler in a dictionary format, as required by PyTorch Lightning
+        # We return the optimizer and the scheduler in a dictionary format, as
+        # required by PyTorch Lightning
         return {
             "optimizer": optimizer,
             "lr_scheduler": {

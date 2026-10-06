@@ -19,7 +19,6 @@ def output_path_for(measure_value: str, output_folder: Path) -> Path:
     """Mirror the input path structure under output_folder, saving as .npz."""
     rel = Path(measure_value.lstrip("/"))
     # If MeasureValue points at a folder (containing cube.bin), use that folder name.
-    # If it points at cube.bin directly, use its parent.
     if rel.suffix == ".bin":
         rel = rel.parent
     return output_folder / rel / "cube.mp4"
@@ -58,7 +57,7 @@ def main():
     logger.info("=" * 60)
     logger.info("Starting compression")
 
-    fps = 30  # arbitrary, since this is not really a video.
+    fps = 30
     df = load_measurements()
     logger.info(f"Loaded {len(df)} measurements")
     logger.info(f"Using cq={15}, fps={fps} for compression")

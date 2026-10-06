@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,11 +10,12 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 
-from ocularrigidity.motion.pulsation import NCycleConfig
+from ocularrigidity.data.compression import cube_to_mkv_lossless
 from ocularrigidity.registration.config import RegistrationConfig
 
 if TYPE_CHECKING:
     from ocularrigidity.motion.pulsation import (
+        NCycleConfig,
         NCycleReconstructor,
         PulseExtractor,
     )
@@ -20,13 +23,7 @@ if TYPE_CHECKING:
 
 
 def _find_stage(source, attr: str):
-    """Walk a wrapped trace-source chain for the stage carrying ``attr``.
-
-    The composed chain nests sources (``Decomposed(Coherent(BandPass(Mask)))``),
-    and the results object needs values that live on specific links of it.
-    Walking by capability rather than by position keeps this working when a
-    stage is inserted or dropped.
-    """
+    """Walk a wrapped trace-source chain for the stage carrying ``attr``."""
     seen = set()
     while source is not None and id(source) not in seen:
         seen.add(id(source))
@@ -37,12 +34,7 @@ def _find_stage(source, attr: str):
 
 
 class _SkipLargePayloads:
-    """File wrapper that seeks past big pickle payloads instead of reading them.
-
-    ``pickletools.genops`` only needs an argument's *length* to keep walking the
-    opcode stream, so a zero-filled placeholder of the right size is enough. The
-    bytes never leave the disk.
-    """
+    """File wrapper that seeks past big pickle payloads instead of reading them."""
 
     def __init__(self, f, threshold: int = 1 << 16):
         self._f = f
@@ -68,14 +60,13 @@ def peek_cardiac_freq(path: Path) -> Optional[float]:
             found_key = False
             for op, arg, _pos in pickletools.genops(_SkipLargePayloads(fh)):
                 if found_key:
-                    # The key string is memoised before its value is emitted,
-                    # and protocol 4+ may open a frame in between.
+                    # The key string is memoised before its value is
+                    # emitted, and protocol 4+ may open a frame in
+                    # between.
                     if op.name in ("MEMOIZE", "FRAME", "PUT", "BINPUT", "LONG_BINPUT"):
                         continue
                     if op.name in ("BINFLOAT", "FLOAT"):
                         return arg
-                    # Not a plain float (a numpy scalar, None): let the caller
-                    # unpickle properly rather than guess.
                     return None
                 # 'override_cardiac_freq' is a different key and does not match.
                 if arg == "cardiac_freq":
@@ -91,13 +82,10 @@ class CardiacPipelineResults:
     video: Path
     config: dict  # the per-stage config dict; provenance for this chain
     fold_config: Optional[NCycleConfig]
-    # Registration provenance (the registrator is not pickled with the result)
     skip_first_n_frames: int
     drop_last_n_frames: int
     flatten_rpe: bool
     correct_transversal: bool
-    # Effective search band after ``expected_bpm`` anchoring, and the frequency
-    # override actually in force (if any).
     bpm_range: tuple[float, float]
     override_cardiac_freq: Optional[float]
 
@@ -106,8 +94,8 @@ class CardiacPipelineResults:
     timestamps_seconds: np.ndarray
     uniform_time: np.ndarray
     gap_mask: np.ndarray
-    signal: np.ndarray  # 2D (was `thickness`)
-    interpolated_signal: np.ndarray  # 2D (was `interpolated_thickness`)
+    signal: np.ndarray
+    interpolated_signal: np.ndarray
     filtered_signal: np.ndarray  # 2D
     separable_components: np.ndarray  # 2D
     ica_mixing: np.ndarray  # 2D
@@ -132,21 +120,9 @@ class CardiacPipelineResults:
     n_cycle: Optional[int] = None
 
     # --- Registration provenance, in full ---------------------------------
-    # The four flat fields in the provenance block (``skip_first_n_frames``,
-    # ``drop_last_n_frames``, ``flatten_rpe``, ``correct_transversal``) are
-    # all a result carried before this existed,
-    # which leaves out everything a sweep actually varies (``lateral_method``,
-    # ``crop_factor``, ``scale_factor``, the bandpasses). Holding the config
-    # itself means a result stays self-describing when those defaults move.
-    #
-    # ``None`` is a plain class attribute, so it also stands in for the missing
-    # instance attribute when an older pickle -- which never calls ``__init__``
-    # -- is loaded, so reading it off an old result gives ``None`` rather than
-    # an ``AttributeError``.
     registration: Optional[RegistrationConfig] = None
 
-    # Convenience accessors so viewers written against the extractor work
-    # against results too.
+    # Convenience accessors so viewers written against the extractor work against results too.
     @property
     def expected_bpm(self):
         """The HR the band was anchored on, whichever chain produced this."""
@@ -161,12 +137,7 @@ class CardiacPipelineResults:
 
     @property
     def phase_track(self) -> "PhaseTrack":
-        """The stored phase, rebuilt as the object the estimators hand back.
-
-        Every field a :class:`PhaseTrack` carries is already saved here, so the
-        phase-derived diagnostics stay available on a loaded result without the
-        extractor that produced it.
-        """
+        """The stored phase, rebuilt as the object the estimators hand back."""
         from ocularrigidity.motion.pulsation.phase import PhaseTrack
 
         return PhaseTrack(
@@ -195,12 +166,7 @@ class CardiacPipelineResults:
         *,
         stage_configs: Optional[dict] = None,
     ) -> "CardiacPipelineResults":
-        """Package a composed :class:`PulseExtractor` (the test.ipynb chain).
-
-        ``config`` holds the per-stage config dict — the provenance for this
-        chain. The peak-locked fields have no counterpart (the composed
-        extractor *is* one phase method) and are filled with NaN / False.
-        """
+        """Package a composed :class:`PulseExtractor` (the test.ipynb chain)."""
         ex = extractor
         rec = reconstructor
         reg = ex.registered_video
@@ -281,3 +247,16 @@ class CardiacPipelineResults:
     def load(cls, path: Path) -> "CardiacPipelineResults":
         with open(path, "rb") as f:
             return pickle.load(f)
+
+
+def write_fold_outputs(
+    result: CardiacPipelineResults,
+    one_cycle_path: Path,
+    measure_path: Path,
+    fps: int,
+) -> None:
+    """Lossless cycle video + measures pickle."""
+    one_cycle_path.parent.mkdir(parents=True, exist_ok=True)
+    cube_to_mkv_lossless(result.cycles, str(one_cycle_path), fps=fps)
+    measure_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save(measure_path, include_cycles=False)

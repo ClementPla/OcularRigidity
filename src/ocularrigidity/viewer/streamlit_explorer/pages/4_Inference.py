@@ -77,17 +77,6 @@ sb.header("Inference")
 scale = sb.select_slider("scale_factor", options=[0.25, 0.5, 0.75, 1.0], value=0.5)
 batch = sb.slider("batch_size", 1, 32, 16, 1)
 use_amp = sb.checkbox("use_amp (fp16)", value=True)
-use_gc = sb.checkbox("use_graphcut", value=True)
-
-sb.header("Graph-cut", help="Only used when use_graphcut is on.")
-gc_lambda = sb.slider("lambda_smooth", 0.0, 5.0, 0.5, 0.1)
-gc_max_step = sb.slider("max_step", 1, 6, 2, 1)
-gc_prob = sb.slider("prob_threshold", 0.0, 1.0, 0.3, 0.05)
-gc_bm = sb.slider("bm_threshold", 0.0, 1.0, 0.5, 0.05)
-gc_temporal = sb.checkbox("temporal_smooth", value=False)
-gc_t_iters = sb.slider("temporal_iterations", 1, 10, 4, 1)
-gc_t_mu = sb.slider("temporal_mu", 0.0, 5.0, 1.0, 0.1)
-gc_t_sigma = sb.slider("temporal_sigma", 0.0, 5.0, 2.0, 0.1)
 
 sb.header("Display")
 alpha = sb.slider("Overlay opacity", 0.0, 1.0, 0.4, 0.05)
@@ -107,16 +96,6 @@ def _segment_and_render():
         st.error("This case has no `one_cycle.mkv`.")
         return None
 
-    gc_kwargs = dict(
-        lambda_smooth=gc_lambda,
-        max_step=int(gc_max_step),
-        prob_threshold=gc_prob,
-        bm_threshold=gc_bm,
-        temporal_smooth=bool(gc_temporal),
-        temporal_iterations=int(gc_t_iters),
-        temporal_mu=gc_t_mu,
-        temporal_sigma=gc_t_sigma,
-    )
     with st.spinner("Loading video…"):
         cube_full = R.read_cube(
             str(mkv), _indices=np.arange(max_frame)
@@ -127,8 +106,6 @@ def _segment_and_render():
             cube_full,
             scale_factor=float(scale),
             batch_size=int(batch),
-            use_graphcut=bool(use_gc),
-            graphcut_kwargs=gc_kwargs if use_gc else None,
             use_amp=bool(use_amp),
             return_logit=False,
             verbose=False,
@@ -141,7 +118,7 @@ def _segment_and_render():
     ).astype(bool)
 
     sig = hashlib.md5(
-        f"{case}|{scale}|{batch}|{use_amp}|{use_gc}|{gc_kwargs}|{alpha}|{factor}".encode()
+        f"{case}|{scale}|{batch}|{use_amp}|{alpha}|{factor}".encode()
     ).hexdigest()[:10]
     base = f"infer_{sig}"
     oc = R.write_mp4(
@@ -160,7 +137,6 @@ def _segment_and_render():
         "oc": oc,
         "seg": seg,
         "coverage": coverage,
-        "params": gc_kwargs,
     }
 
 

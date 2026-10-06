@@ -8,28 +8,11 @@ from ocularrigidity.consts import MEASUREMENTS_PATH, STUDY_PATH
 from ocularrigidity.data.measurements.studies import Study
 
 # ---------------------------------------------------------------------------
-# Join grains
-#
-# The Measurements table mixes three kinds of measurement, and each one has to
-# be joined on its own key. Using a single (PatientId, Eye, Date) key silently
-# drops the last two:
-#
-#   VISIT_EYE  the measurement is of one eye, at one visit (IOP, OPA, ...)
-#   EYE        the measurement is static per eye; biometry is acquired once and
-#              reused for years, so joining on Date loses ~2/3 of the values
-#   VISIT      the measurement is of the patient, not the eye. These rows are
-#              stored with Eye == "other" (always for blood pressure, and for
-#              HR from 2021 onwards), so any key containing Eye matches nothing
-# ---------------------------------------------------------------------------
 VISIT_EYE = ["PatientId", "Eye", "Date"]
 EYE = ["PatientId", "Eye"]
 VISIT = ["PatientId", "Date"]
 
-#: Output column -> (source MeasureName values, join keys). The source list is
-#: exact-match and ordered: the first instrument that has a value for a given
-#: key wins. The 'ORA <x>' / '<x>' and 'IOLMaster AL' / 'Axial Length' pairs are
-#: the same quantity exported under two names by two eras of the database; they
-#: never co-occur on the same key, so their relative order is inconsequential.
+# : Output column -> (source MeasureName values, join keys).
 MEASURE_SPECS: dict[str, tuple[list[str], list[str]]] = {
     "OPA": (["Pascal OPA"], VISIT_EYE),
     "IOPg": (["ORA IOPg", "IOPg"], VISIT_EYE),
@@ -45,17 +28,12 @@ MEASURE_SPECS: dict[str, tuple[list[str], list[str]]] = {
 
 
 def _merge_measure(df, df_aux, name, measure_names, on_keys, numeric=False):
-    """Merge a single derived column, selecting from `measure_names` in priority
-    order. `measure_names` is an exact-match list, highest priority first; the
-    first instrument that has a value for a given key wins (coalesce). Within a
-    single instrument the most recent value wins, which only matters for keys
-    that span several dates (the EYE grain)."""
+    """Merge a single derived column, selecting from `measure_names` in priority order."""
     aux = df_aux[df_aux["MeasureName"].isin(measure_names)].copy()
     if aux.empty:
         df[name] = pd.NA
         return df
 
-    # priority rank so the preferred instrument wins on collisions
     rank = {m: i for i, m in enumerate(measure_names)}
     aux["_rank"] = aux["MeasureName"].map(rank)
 
@@ -86,8 +64,7 @@ def load_measurements(
     iop_instrument: str = "Pascal IOP",  # 'Pascal IOP' (diastolic) matches Pascal OPA
     verbose: bool = False,
 ) -> pd.DataFrame:
-    """One row per Plex Macular Video, with the requested clinical measures
-    merged on their natural grain (see MEASURE_SPECS)."""
+    """One row per Plex Macular Video, with the requested clinical measures merged on their natural grain (see MEASURE_SPECS)."""
     wanted: list[str] = []
     if include_OPA:
         wanted.append("OPA")
@@ -116,8 +93,6 @@ def load_measurements(
     df["MeasureValue"] = df["MeasureValue"].str.replace("\\", "/", regex=False)
     df = df.dropna(subset=["MeasureValue"])
 
-    # SQLite LIKE is case-insensitive, so 'PLEX'/'Plex' variants both arrive ->
-    # may produce duplicate rows per (PatientId, Eye, Date). Collapse them.
     df = df.drop_duplicates(subset=["PatientId", "Eye", "Date", "MeasureValue"])
     df["YearMonth"] = pd.to_datetime(df["Date"]).dt.to_period("M")
     df["Year"] = pd.to_datetime(df["Date"]).dt.to_period("Y")
@@ -138,8 +113,7 @@ def load_measurements(
         df = df.dropna(subset=["Diagnosis", "Type"])
 
     if include_IOP and full_raw_df is not None:
-        # exact instrument; fall back only to other Pascal-like diastolic sources
-        # if you want — but do NOT silently mix Goldman/ORA conventions.
+        # exact instrument
         df = _merge_measure(
             df,
             full_raw_df,
@@ -161,12 +135,6 @@ def load_measurements(
             print(f"After merging {name} on ({grain}), {n}/{len(df)} have a value.")
 
     if which_study is not None:
-        # An eye can be enrolled in several studies at once (59 of them are), so
-        # the Studies table holds more than one row per (PatientId, Eye). Select
-        # the study *first*, then filter by membership: de-duplicating on
-        # (PatientId, Eye) before the selection keeps whichever row came first
-        # and silently drops eyes that genuinely belong to the requested study
-        # (42 of the 144 prospective eyes, i.e. ~30% of the arm).
         with sqlite3.connect(STUDY_PATH) as con:
             study_df = pd.read_sql_query(
                 "SELECT PatientId, Eye FROM Studies WHERE Study = ?",
@@ -183,7 +151,7 @@ def load_measurements(
         ]
         df = df[keep].copy()
         # Constant by construction: the rows that survive are exactly the ones
-        # enrolled in `which_study`. Kept so callers can still read df["Study"].
+        # enrolled in `which_study`.
         df["Study"] = which_study.value
         if verbose:
             n_pat = df["PatientId"].nunique()

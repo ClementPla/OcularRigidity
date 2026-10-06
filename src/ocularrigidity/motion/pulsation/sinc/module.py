@@ -1,20 +1,8 @@
-"""Lightning wrapper: augmentation, SiNC loss, whole-video validation.
+"""Lightning wrapper: augmentation, SiNC loss, whole-video validation."""
 
-Speed augmentation resamples the raw window on the GPU and keeps the native
-frame spacing for the output times, so a clip played at ``speed`` carries its
-pulse at ``speed`` × the true rate. That spreads the batch's frequencies, which
-is what the variance loss needs; merely rescaling timestamps would not, since
-the network would still see identical frames.
+from huggingface_hub import PyTorchModelHubMixin
 
-Validation has two parts:
-
-* ``validation_step`` — the same losses on fixed validation clips;
-* ``on_validation_epoch_end`` — the network run over every held-out video with
-  a measured HR, the in-band spectral peak taken as its rate, and the error
-  against HR logged (MAE, share within 10 %, share at a harmonic).
-"""
-
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 import numpy as np
 import pytorch_lightning as pl
@@ -31,7 +19,7 @@ from ocularrigidity.motion.pulsation.sinc.model import PulseNet
 
 @dataclass
 class SiNCTrainConfig:
-    clip_len: int = 870  # ~10 s at 87 Hz
+    clip_len: int = 870
     min_speed: float = 0.7
     max_speed: float = 1.4
     flip_columns: bool = True
@@ -39,8 +27,6 @@ class SiNCTrainConfig:
     weight_decay: float = 1e-2
     width: int = 32
     head_width: int = 64
-    # Variance-loss prior: "cohort" (training-population rates × speed
-    # augmentation, see losses.rate_prior) or "uniform" (the paper's).
     prior: str = "cohort"
     loss: SiNCLossConfig = field(default_factory=SiNCLossConfig)
 
@@ -51,12 +37,7 @@ def resample_clips(
     clip_len: int,
     speed: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Linear resampling of raw windows ``(B, L_raw, 2, W)`` at ``speed``.
-
-    Returns ``x (B, clip_len, 2, W)``, frame mask ``(B, clip_len)`` and times
-    ``(B, clip_len)`` on the native spacing. A resampled frame touching a gap is
-    a gap (NaN propagates through the interpolation).
-    """
+    """Linear resampling of raw windows ``(B, L_raw, 2, W)`` at ``speed``."""
     B, L_raw = w.shape[:2]
     span = (clip_len - 1) * speed
     start = torch.rand(B, device=w.device) * (L_raw - 2 - span).clamp_min(0)
@@ -71,7 +52,7 @@ def resample_clips(
     return x, mask, t
 
 
-class SiNCModule(pl.LightningModule):
+class SiNCModule(pl.LightningModule, PyTorchModelHubMixin):
     def __init__(self, config: SiNCTrainConfig | None = None, val_videos=None):
         """``val_videos``: list of ``(x, dt, hr)`` for whole-video validation."""
         super().__init__()
@@ -79,7 +60,10 @@ class SiNCModule(pl.LightningModule):
             config = SiNCTrainConfig(
                 **{**config, "loss": SiNCLossConfig(**config["loss"])}
             )
-        self.config = cfg = config or SiNCTrainConfig()
+        cfg = config or SiNCTrainConfig()
+        if isinstance(cfg.loss, dict):  # reloaded from the Hub's config.json
+            cfg = replace(cfg, loss=SiNCLossConfig(**cfg.loss))
+        self.config = cfg
         if cfg.prior not in ("cohort", "uniform"):
             raise ValueError(f"unknown prior {cfg.prior!r}")
         self.save_hyperparameters({"config": asdict(cfg)})
@@ -88,10 +72,7 @@ class SiNCModule(pl.LightningModule):
         self.val_videos = val_videos or []
 
     def set_cohort_prior(self, rates_bpm: np.ndarray) -> None:
-        """Variance-loss prior from population rates (no-op for ``prior="uniform"``).
-
-        Call once before training; the prior is a buffer, so checkpoints keep it.
-        """
+        """Variance-loss prior from population rates (no-op for ``prior="uniform"``)."""
         cfg = self.config
         if cfg.prior != "cohort":
             return
@@ -174,13 +155,7 @@ class SiNCModule(pl.LightningModule):
 
 
 def rate_metrics(est_bpm: np.ndarray, hr: np.ndarray) -> dict[str, float]:
-    """Agreement of estimated rates with measured HR.
-
-    The measured HR is not necessarily taken during the scan, so absolute error
-    mixes estimation error with physiological drift; the correlations (Pearson,
-    and Spearman, which a few harmonic outliers cannot dominate) say whether
-    the estimate tracks the between-subject variation.
-    """
+    """Agreement of estimated rates with measured HR."""
     from scipy.stats import pearsonr, spearmanr
 
     rel = est_bpm / hr

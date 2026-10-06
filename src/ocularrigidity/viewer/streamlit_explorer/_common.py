@@ -1,8 +1,4 @@
-"""Shared Streamlit helpers: cached loaders and the sidebar method selector.
-
-Imported by every page via the absolute package path so it resolves no matter
-which script Streamlit launches.
-"""
+"""Shared Streamlit helpers: cached loaders and the sidebar method selector."""
 
 from __future__ import annotations
 
@@ -33,13 +29,13 @@ from ocularrigidity.viewer import longitudinal as L
 
 HOVER_IDS = ("case_id", "PatientId", "Date", "Eye")
 
-#: Browser-side statistics for :func:`show_regression`. Read once at import.
+# : Browser-side statistics for :func:`show_regression`.
 _LIVE_STATS_JS = (Path(__file__).parent / "_live_stats.js").read_text()
 _PLOTLY_JS = f"https://cdn.plot.ly/plotly-{get_plotlyjs_version()}.min.js"
 
 
 class Selection(NamedTuple):
-    """What the sidebar picked. A tuple, so it keys the cached loaders directly."""
+    """What the sidebar picked."""
 
     root: str
     iop: str
@@ -53,11 +49,7 @@ class Selection(NamedTuple):
 
 @st.cache_data(show_spinner="Building the cohort table…")
 def cached_cohort(sel: Selection) -> pd.DataFrame:
-    """The one wide table every cohort page reads — see :func:`build_cohort`.
-
-    The first call for a root has to measure ΔCT over every mask (minutes);
-    it is pickled next to the pipeline outputs, so later runs are instant.
-    """
+    """The one wide table every cohort page reads"""
     return build_cohort(
         sel.root,
         study=sel.study,
@@ -68,7 +60,7 @@ def cached_cohort(sel: Selection) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def cached_cycles(sel: Selection) -> pd.DataFrame:
-    """Per-(video, cardiac cycle) metrics — the test-retest / reliability input."""
+    """Per-(video, cardiac cycle) metrics"""
     _cases, cycles = load_pulsation_results(Path(sel.root))
     cycles = filter_misregistration(
         cycles, Path(sel.root) / "misregistration_flags.csv"
@@ -93,11 +85,7 @@ def cached_design(
     measure: str,
     params: tuple[tuple[str, object], ...],
 ) -> tuple[pd.DataFrame, str, str]:
-    """One design's plotting frame — cached for the same reason as the screening.
-
-    Every tab body reruns on every click, so the ~60 frames behind the plots would
-    otherwise be rebuilt each time.
-    """
+    """One design's plotting frame"""
     return L.build(design, cached_clinical_long(sel), probe, measure, dict(params))
 
 
@@ -105,13 +93,7 @@ def cached_design(
 def cached_screen(
     sel: Selection, probe: str, design: str, params: tuple[tuple[str, object], ...]
 ) -> pd.DataFrame:
-    """Rank every measure under one design — a model per measure, so cached.
-
-    Streamlit runs *every* tab body on *every* rerun, so without this a single
-    click would re-fit all six designs over all ~40 measures. ``params`` is the
-    design's settings as sorted key/value pairs, which keeps it hashable (and
-    means moving one tab's slider only invalidates that tab's ranking).
-    """
+    """Rank every measure under one design"""
     long_df = cached_clinical_long(sel)
     return L.screen(design, long_df, probe, available_measures(long_df), dict(params))
 
@@ -124,7 +106,7 @@ def available_measures(long_df: pd.DataFrame) -> list[str]:
 
 
 def sidebar_selector() -> Selection | None:
-    """Root / cohort picker shared across pages; persists in session."""
+    """Root / cohort picker shared across pages"""
     st.sidebar.header("Experiment")
     root = st.sidebar.text_input(
         "Experiments root",
@@ -173,26 +155,7 @@ def show_regression(
     hover: Sequence[str] = HOVER_IDS,
     show_stats: bool = True,
 ) -> None:
-    """OLS scatter whose N / r / ρ / slope describe the points *currently shown*.
-
-    The stats used to be a row of ``st.metric`` above the chart, and they went
-    stale the moment anyone clicked a legend entry: Streamlit reruns Python on a
-    widget change, and a Plotly legend click is not one, so the row kept
-    reporting the whole cohort while the plot showed a subset. They now sit in a
-    box inside the plot and are recomputed in the browser on every legend
-    toggle, together with the fitted line — which turns "does this association
-    survive dropping the OHT eyes?" into one click.
-
-    The cost is that the figure is rendered through ``components.html`` rather
-    than ``st.plotly_chart``: it needs its own plotly.js from the CDN, and it
-    does not inherit the Streamlit theme (hence the explicit template).
-    ``_live_stats.js`` holds the browser side; its formulas are the ones
-    :func:`ocularrigidity.viewer.cohort_data.regression_stats` uses, verified
-    against scipy.
-
-    ``show_stats=False`` drops the box, for the designs whose rows repeat within
-    an eye and whose inference therefore has to be clustered instead.
-    """
+    """OLS scatter whose N / r / ρ / slope describe the points *currently shown*."""
     if C.regression_stats(df, x, y).get("n", 0) < 3:
         st.warning(f"Not enough finite points to regress {y} on {x} (need ≥ 3).")
         return
@@ -240,7 +203,6 @@ def show_regression(
         )
     fig.update_layout(height=height, margin=dict(l=10, r=10, t=30, b=10))
 
-    # Stable per configuration, so an unchanged chart is not remounted on rerun.
     div_id = (
         "reg-"
         + hashlib.md5(f"{x}|{y}|{color}|{logx}|{logy}|{len(df)}".encode()).hexdigest()[

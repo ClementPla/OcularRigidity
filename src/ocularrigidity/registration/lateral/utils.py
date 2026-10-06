@@ -11,27 +11,7 @@ def robust_temporal_dx(
     win: int = 15,
     max_velocity: float = 4.0,
 ) -> torch.Tensor:
-    """Reject temporally inconsistent lateral shifts and re-interpolate them.
-    A frame is kept only if it satisfies every enabled criterion:
-
-      - ``conf >= conf_z`` (when ``conf`` is given): drops frames whose
-        correlation peak was too weak to mean anything. Note confidence can only
-        *remove* a frame, never rescue an inconsistent one -- a sharp
-        (high-confidence) peak that locks onto a different lateral feature than
-        its neighbours is exactly the jitter we want to discard, so the temporal
-        tests below take precedence.
-      - ``|dx - rolling_median| <= k * MAD``: the primary consistency test,
-        scaled by the robust median-absolute-deviation. ``k`` is tight by default
-        because real motion does not jump frame-to-frame.
-      - ``|dx - rolling_median| <= max_velocity``: a hard cap (in pixels) on how
-        far a single frame may stray from the local trend. We measure deviation
-        from the rolling median rather than the raw consecutive difference
-        ``|dx[t] - dx[t-1]|`` on purpose: an isolated outlier inflates *two*
-        consecutive differences and would wrongly condemn its innocent
-        neighbour, whereas the median trend stays put.
-
-    Rejected frames are linearly interpolated from the surviving ones.
-    """
+    """Reject temporally inconsistent lateral shifts and re-interpolate them."""
     dx = dx.float()
     good = torch.ones_like(dx, dtype=torch.bool)
     if conf is not None:
@@ -57,7 +37,6 @@ def smooth_translations(dx: torch.Tensor, sigma: float = 1.5) -> torch.Tensor:
 
     radius = int(4 * sigma + 0.5)
 
-    # Create 1D Gaussian kernel
     x = torch.arange(-radius, radius + 1, device=dx.device, dtype=torch.float32)
     kernel = torch.exp(-(x**2) / (2 * sigma**2))
     kernel = kernel / kernel.sum()
@@ -74,7 +53,7 @@ def smooth_translations(dx: torch.Tensor, sigma: float = 1.5) -> torch.Tensor:
 
 
 def _median_filter_1d(x: torch.Tensor, win: int = 11) -> torch.Tensor:
-    """Rolling median (replicate-padded). `win` is clamped to an odd value <= len."""
+    """Rolling median (replicate-padded)."""
     n = x.numel()
     if n < 3:
         return x

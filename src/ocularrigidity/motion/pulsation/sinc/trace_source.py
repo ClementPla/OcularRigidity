@@ -1,29 +1,11 @@
-"""A trained SiNC network as a trace source for :class:`PulseExtractor`.
+"""A trained SiNC network as a trace source for :class:`PulseExtractor`."""
 
-Wraps a :class:`MaskThicknessTraceSource` for its timeline and gap mask (the
-same bad-frame rule the training cache was built with), feeds the registered
-BM/CSI lines through the shared preprocessing, and returns the network output
-as a single trace. Downstream stages are unchanged::
-
-    mask = MaskThicknessTraceSource(registrator, aligner, stages["trace"])
-    PulseExtractor(
-        trace_source=LearnedTraceSource(
-            BandPassFilterTraceSource(mask, stages["bandpass"]), module
-        ),
-        rate_estimator=LombScargleRateEstimator(stages["rate"]),  # expected_bpm=None
-        phase_estimator=ThicknessAnchoredPhaseEstimator(
-            IQDemodPhaseEstimator(stages["phase"]), reference=mask
-        ),
-    )
-
-The network's waveform has an arbitrary sign and lag, so IQ phase 0 means
-nothing physical; the anchoring wrapper moves it onto minimal choroid thickness,
-which is what makes the folded cycles start at the same point of every beat.
-"""
+from functools import lru_cache
 
 import numpy as np
 import torch
 
+from ocularrigidity.consts import SINC_REVISION
 from ocularrigidity.motion.pulsation.sinc.module import SiNCModule
 from ocularrigidity.motion.pulsation.sinc.preprocess import boundaries_to_uniform
 from ocularrigidity.motion.pulsation.traces import AbstractTraceSource, Traces
@@ -41,12 +23,7 @@ def _find(source, attr):
 
 
 class LearnedTraceSource(AbstractTraceSource):
-    """``source`` is a :class:`MaskThicknessTraceSource` or any decorator over
-    one (e.g. its bandpass). Wrapping the bandpass keeps ``filtered_signal`` in
-    the chain, so :class:`CardiacPipelineResults` records the same fields as
-    the classical chain and its consumers (amplitude, viewers) keep working;
-    the network itself reads the registered boundaries, not that signal.
-    """
+    """``source`` is a :class:`MaskThicknessTraceSource` or any decorator over one (e.g. its bandpass)."""
 
     def __init__(self, source: AbstractTraceSource, module: SiNCModule):
         super().__init__()
@@ -86,13 +63,14 @@ class LearnedTraceSource(AbstractTraceSource):
         self.source.reset()
 
 
-_MODULES: dict = {}
+def load_sinc_module(revision: str = SINC_REVISION, device: str = "cuda") -> SiNCModule:
+    """The trained module from the Hub, loaded once per process."""
+    return _load(revision, device)
 
 
-def load_sinc_module(checkpoint, device: str = "cuda") -> SiNCModule:
-    """A trained module, loaded once per process and checkpoint."""
-    key = (str(checkpoint), device)
-    if key not in _MODULES:
-        module = SiNCModule.load_from_checkpoint(checkpoint, map_location=device)
-        _MODULES[key] = module.eval()
-    return _MODULES[key]
+@lru_cache(maxsize=None)
+def _load(revision: str, device: str) -> SiNCModule:
+    module = SiNCModule.from_pretrained(
+        "ClementP/OCTVideoPulsationMeasure", revision=revision
+    )
+    return module.to(device).eval()

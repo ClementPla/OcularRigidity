@@ -1,30 +1,4 @@
-"""3D vesselness of the main choroidal vessels from an OCT/OCTA volume.
-
-The output is a dark-tube response, not a segmentation: thresholding is left to
-the caller. Each step is there for one reason:
-
-1. **Flatten** amplitude and flow on the BM (the choroid mask's top boundary),
-   so a depth index means "distance below the BM". Both channels come from the
-   same acquisition, so the same per-A-scan shift aligns them.
-2. **Bin** the depth axis by ``depth_bin``. The smallest Hessian scale is
-   several binned voxels, so a box average over ``depth_bin`` native pixels
-   removes nothing the filter would see; it only makes the voxels ~cubic and
-   the volume ``depth_bin`` times cheaper on the GPU.
-3. **Normalise** each channel by its per-(B-scan, depth) median over choroid
-   voxels, then take the log. The median removes the B-scan brightness stripes
-   and the depth attenuation; the log makes the multiplicative speckle additive
-   for the Hessian.
-4. **Inpaint retinal shadows.** Large retinal vessels shadow the amplitude and
-   leave projection artifacts in the flow, in the same (B-scan, A-scan) columns
-   at every depth. Those columns are the retinal vessels, mapped by a ridge
-   filter on the retinal flow MIP (where they have far more contrast than
-   their shadows have on the amplitude). Each shadowed voxel copies a random
-   unshadowed neighbour at the same depth, which keeps the speckle texture:
-   a smooth fill would respond less to the Hessian than its surroundings and
-   print the retinal network back into the output.
-5. **Fuse** the two channels (z-scored over the choroid) and compute a
-   multiscale Hessian dark-tube response on the GPU.
-"""
+"""3D vesselness of the main choroidal vessels from an OCT/OCTA volume."""
 
 from __future__ import annotations
 
@@ -51,25 +25,15 @@ __all__ = [
 
 @dataclass
 class ChoroidVesselnessConfig:
-    # Depth binning: 6 x ~2 um axial ~= the ~12 um lateral pitch of a 6x6 mm,
-    # 500x500 scan. Set to 1 for volumes that are already isotropic.
     depth_bin: int = 6
-    # Depth kept below the BM, in native pixels. Voxels deeper than the CSI are
-    # zeroed anyway; this only bounds the memory.
+    # Depth kept below the BM, in native pixels.
     max_depth: int = 330
-    # Hessian scales, in binned voxels (~12 um). 3-8 = radii of ~35-100 um,
-    # i.e. the large vessels; add 2 to pick up medium ones (and more noise).
     sigmas: tuple[float, ...] = (3.0, 4.5, 6.0, 8.0)
     # Weight of amplitude vs flow in the fused signal (flow gets 1 - w).
     amplitude_weight: float = 0.5
-    # Retinal slab for the flow MIP, native pixels relative to the BM. The
-    # lower end stays clear of the RPE and choriocapillaris.
+    # Retinal slab for the flow MIP, native pixels relative to the BM.
     retina_range: tuple[int, int] = (-200, -15)
-    # Ridge scales on the MIP, lateral px (~12 um): radii of ~18-48 um, above
-    # the capillary bed, which casts no shadow.
     shadow_sigmas: tuple[float, ...] = (1.5, 2.5, 4.0)
-    # A column is a vessel when its ridge response exceeds median + k * MAD,
-    # i.e. is calibrated on the background whatever the vessel density.
     shadow_k: float = 1.5
     # Shadows are a little wider than the lumen that casts them (lateral px).
     shadow_dilation: int = 1
@@ -81,13 +45,9 @@ class ChoroidVesselnessConfig:
 
 @dataclass
 class ChoroidVesselness:
-    """Everything in the flattened, binned frame ``(T, Zb, W)``.
+    """Everything in the flattened, binned frame ``(T, Zb, W)``."""
 
-    ``z`` index ``k`` is ``k * depth_bin`` to ``(k + 1) * depth_bin`` native
-    pixels below ``bm`` (the smoothed boundary actually used for flattening).
-    """
-
-    response: np.ndarray  # (T, Zb, W) float32, dark-tube response, 0 outside the choroid
+    response: np.ndarray
     fused: np.ndarray  # (T, Zb, W) float32, the signal the Hessian saw
     choroid: np.ndarray  # (T, Zb, W) bool, voxels between BM and CSI
     shadow: np.ndarray | None  # (T, W) bool, inpainted columns
@@ -96,10 +56,7 @@ class ChoroidVesselness:
     config: ChoroidVesselnessConfig = field(repr=False, default=None)
 
     def to_native(self, volume: np.ndarray, depth: int) -> np.ndarray:
-        """Any ``(T, Zb, W)`` array of this frame back in the native ``(T, depth, W)`` frame.
-
-        Nearest bin; voxels above the BM or below the last bin are 0 / False.
-        """
+        """Any ``(T, Zb, W)`` array of this frame back in the native ``(T, depth, W)`` frame."""
         T, Zb, W = volume.shape
         y = np.arange(depth)[None, :, None]
         k = np.floor((y - self.bm[:, None, :]) / self.depth_bin).astype(np.int64)
@@ -124,10 +81,7 @@ def _fill_nan(b: np.ndarray) -> np.ndarray:
 def flatten_on_boundary(
     volume: np.ndarray, boundary: np.ndarray, z_range: tuple[int, int]
 ) -> np.ndarray:
-    """Resample ``(T, H, W)`` so that ``boundary`` (T, W) is a flat row.
-
-    Row ``j`` of the output is native depth ``boundary + z_range[0] + j``.
-    """
+    """Resample ``(T, H, W)`` so that ``boundary`` (T, W) is a flat row."""
     T, H, W = volume.shape
     z = np.arange(*z_range)
     idx = np.clip(np.rint(boundary[:, None, :] + z[None, :, None]), 0, H - 1)
@@ -145,7 +99,7 @@ def _normalise(v: np.ndarray, valid: np.ndarray) -> np.ndarray:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN rows, handled below
         med = np.nanmedian(np.where(valid, v, np.nan), axis=2, keepdims=True)
-    # Rows with no valid voxel lie entirely outside the choroid; any scale will do.
+    # Rows with no valid voxel lie entirely outside the choroid
     med = np.where(np.isfinite(med) & (med > 0), med, 1.0)
     # The offset keeps the zero-valued voxels finite.
     return np.log(v / med + 0.05).astype(np.float32)
@@ -158,13 +112,7 @@ def shadow_mask(
     dilation: int = 1,
     min_size: int = 50,
 ) -> np.ndarray:
-    """``(T, W)`` columns under retinal vessels, from the retinal flow MIP.
-
-    Each B-scan is divided by its median (the same brightness stripes as in the
-    choroid), then a bright-ridge filter at ``sigmas`` keeps the vessels large
-    enough to cast a shadow. A pixel is kept when its response is ``k`` robust
-    SDs above the median; components under ``min_size`` px are noise.
-    """
+    """``(T, W)`` columns under retinal vessels, from the retinal flow MIP."""
     e = np.log1p(np.asarray(flow_enface, dtype=np.float32))
     e -= np.median(e, axis=1, keepdims=True)
     ridge = sato(e, sigmas=sigmas, black_ridges=False)
@@ -182,15 +130,7 @@ def inpaint_columns(
     seed: int = 0,
     tries: int = 30,
 ) -> np.ndarray:
-    """Fill ``hole`` (T, W) at every depth of ``v`` (T, Z, W) with nearby voxels.
-
-    Each filled voxel copies one ``valid``, unshadowed voxel at the same depth,
-    drawn at a Gaussian lateral offset of scale ``sigma``. On average this is
-    the normalized convolution of the neighbours, but unlike that mean it keeps
-    their speckle variance, so the Hessian sees the same texture inside the
-    shadow as around it. Voxels without a donor after ``tries`` draws get the
-    Gaussian-weighted mean.
-    """
+    """Fill ``hole`` (T, W) at every depth of ``v`` (T, Z, W) with nearby voxels."""
     rng = np.random.default_rng(seed)
     T, _, W = v.shape
     donor = valid & ~hole[:, None, :]
@@ -213,11 +153,7 @@ def inpaint_columns(
 
 
 def _eigvalsh3(H: torch.Tensor) -> torch.Tensor:
-    """Closed-form eigenvalues of symmetric 3x3 matrices, ascending.
-
-    cuSOLVER's batched ``eigvalsh`` refuses batches of ~1e7; this is exact to
-    float precision and runs in one elementwise pass.
-    """
+    """Closed-form eigenvalues of symmetric 3x3 matrices, ascending."""
     a, b, c = H[..., 0, 0], H[..., 1, 1], H[..., 2, 2]
     d, e, f = H[..., 0, 1], H[..., 1, 2], H[..., 0, 2]
     q = (a + b + c) / 3
@@ -241,13 +177,7 @@ def _eigvalsh3(H: torch.Tensor) -> torch.Tensor:
 def dark_tube_response(
     volume: np.ndarray, sigmas: tuple[float, ...], device: str = "cuda"
 ) -> np.ndarray:
-    """Max over scales of a Frangi-like dark-tube measure, sigma^2-normalised.
-
-    With eigenvalues sorted by magnitude ``|e1| <= |e2| <= |e3|``, a dark tube
-    has ``e2, e3 > 0`` (bright walls on both sides across the vessel) and
-    ``e1 ~ 0`` (constant along it). Response is ``sqrt(e2 e3)``, damped when
-    ``e1`` is not small relative to ``e2`` — which rejects dark blobs.
-    """
+    """Max over scales of a Frangi-like dark-tube measure, sigma^2-normalised."""
     v = torch.from_numpy(np.ascontiguousarray(volume, dtype=np.float32)).to(device)
     v = v[None, None]
     best = torch.zeros(volume.shape, device=device)
@@ -307,27 +237,13 @@ def choroid_vesselness(
     config: ChoroidVesselnessConfig | None = None,
     shadow: np.ndarray | None = None,
 ) -> ChoroidVesselness:
-    """Dark-tube response of the main choroidal vessels of one volume.
-
-    Args:
-        amplitude: ``(T, H, W)`` structural OCT, B-scan major (as in
-            ``volume.ipynb`` after the transpose).
-        flow: ``(T, H, W)`` OCTA channel (``phase.bin``) of the *same*
-            acquisition, or ``None`` to use the amplitude alone.
-        bm, csi: ``(T, W)`` choroid top and bottom boundaries, in the same
-            (native, unregistered) frame as the volumes, e.g. from
-            ``extract_boundaries_fast(raw_masks)``. NaNs are interpolated.
-        shadow: ``(T, W)`` bool columns to inpaint. By default they are found
-            on the retinal flow MIP; without ``flow`` nothing is inpainted
-            unless a mask is given here.
-    """
+    """Dark-tube response of the main choroidal vessels of one volume."""
     cfg = config or ChoroidVesselnessConfig()
     b = cfg.depth_bin
 
     bm = _fill_nan(bm)
     csi = _fill_nan(csi)
-    # The mask's boundary jitters by a pixel or two per A-scan; flattening on
-    # the raw trace would print that jitter into every layer.
+    # The mask's boundary jitters by a pixel or two per A-scan
     bm_s = gaussian_filter(median_filter(bm, size=(3, 9)), sigma=(1, 3))
     thickness = gaussian_filter(csi - bm, sigma=2)
 
@@ -352,15 +268,12 @@ def choroid_vesselness(
         v = _normalise(_bin_depth(flat.astype(np.float32), b), valid)
         if shadow is not None:
             v = inpaint_columns(v, shadow, choroid, cfg.inpaint_sigma)
-        # z-scored so that `amplitude_weight` means the same for both channels
         return (v - v[valid].mean()) / v[valid].std()
 
     fused = prep(amplitude)
     if flow is not None:
         w = cfg.amplitude_weight
         fused = w * fused + (1 - w) * prep(flow)
-    # 0 is the choroid's typical level: outside voxels are neutral rather than
-    # a bright sclera or a dark vitreous that would read as a tube wall.
     fused[~choroid] = 0.0
 
     response = dark_tube_response(fused, cfg.sigmas, cfg.device)

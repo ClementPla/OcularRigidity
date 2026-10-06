@@ -17,13 +17,7 @@ class UniformTraceConfig:
 
 @dataclass
 class Traces:
-    """Candidate temporal traces on the uniform grid.
-
-    ``values`` is ``(T_kept, K)`` — only the samples where every trace is finite
-    are kept, so decomposition and periodogram code can assume no NaNs.
-    ``kept_mask`` and ``gap_mask`` are on the *full* uniform grid, so anything
-    needing gap-awareness (peak locking, folding) can recover the alignment.
-    """
+    """Candidate temporal traces on the uniform grid."""
 
     values: np.ndarray  # (T_kept, K)
     uniform_time: np.ndarray  # (T_uniform,)
@@ -64,13 +58,7 @@ class Traces:
 
 
 class AbstractTraceSource(ABC):
-    """Produces the candidate traces a pulse extractor will work from.
-
-    Implement :meth:`compute` and you are done; ``traces`` caches it. If your
-    source is a per-frame 2-D map (something × time), prefer subclassing
-    :class:`AbstractUniformTraceSource`, which already handles resampling onto
-    the uniform grid, gap marking and the cardiac bandpass.
-    """
+    """Produces the candidate traces a pulse extractor will work from."""
 
     def __init__(self):
         self._traces: Traces | None = None
@@ -78,7 +66,7 @@ class AbstractTraceSource(ABC):
 
     @abstractmethod
     def compute(self) -> Traces:
-        """Build the traces. Called once; the result is cached in ``traces``."""
+        """Build the traces."""
 
     @property
     def traces(self) -> Traces:
@@ -92,13 +80,7 @@ class AbstractTraceSource(ABC):
 
 
 class AbstractUniformTraceSource(AbstractTraceSource):
-    """Base for sources backed by a per-frame ``(T, W)`` map.
-
-    Subclasses supply :meth:`raw_signal` (holes marked NaN) and optionally
-    override :meth:`bad_frame`. Resampling onto the uniform grid, gap marking,
-    NaN-aware spatial smoothing and the cardiac bandpass are shared here — they
-    are properties of *making a trace*, not of any particular signal domain.
-    """
+    """Base for sources backed by a per-frame ``(T, W)`` map."""
 
     def __init__(
         self,
@@ -120,7 +102,7 @@ class AbstractUniformTraceSource(AbstractTraceSource):
         """Per-frame signal, shape ``(T, W)``, holes marked as NaN."""
 
     def bad_frame(self) -> np.ndarray:
-        """Per-original-frame invalidity flag. Default: fully-NaN rows."""
+        """Per-original-frame invalidity flag."""
         return np.isnan(self.signal).all(axis=1)
 
     # -- shared plumbing ------------------------------------------------
@@ -155,7 +137,7 @@ class AbstractUniformTraceSource(AbstractTraceSource):
 
     @property
     def interpolated_signal(self):
-        """``signal`` interpolated onto the uniform grid; gaps set to NaN."""
+        """``signal`` interpolated onto the uniform grid"""
         if self._interpolated_signal is None:
             signal = self.signal
             valid = ~np.isnan(signal).any(axis=1)
@@ -180,7 +162,7 @@ class AbstractUniformTraceSource(AbstractTraceSource):
 
     @property
     def interpolated_validity(self):
-        """Per-sample validity fraction on the uniform grid; gaps set to 0."""
+        """Per-sample validity fraction on the uniform grid"""
         if self._interpolated_validity is None:
             valid = (~np.isnan(self.signal)).astype(np.float32)
             out = interp1d(

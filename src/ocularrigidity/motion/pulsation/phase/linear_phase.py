@@ -7,23 +7,11 @@ from ocularrigidity.motion.pulsation.traces.base import Traces
 
 
 class LinearPhaseEstimator(AbstractPhaseEstimator):
-    """Estimates phase as a linear function of time.
-
-    The ramp starts at the first uniform sample; one of three mutually
-    exclusive anchors shifts it:
-
-    ``initial_phase``
-        Phase of that first sample, in cycles. The only anchor that does not
-        involve ``f0``, so it can be fixed *before* the rate is estimated.
-    ``offset_time``
-        Phase 0 falls this many seconds after the first sample.
-    ``offset_in_frame``
-        The same, counted in frames (converted with the sampling rate).
-    """
+    """Estimates phase as a linear function of time."""
 
     requires_rate: ClassVar[bool] = True
 
-    #: (which anchor is set, its value), or None for a bare ramp.
+    # : (which anchor is set, its value), or None for a bare ramp.
     _anchor: Optional[tuple[str, float]] = None
 
     def phase_from_trace(self, trace, traces: Traces, rate):
@@ -42,9 +30,7 @@ class LinearPhaseEstimator(AbstractPhaseEstimator):
             return 0.0
         kind, value = self._anchor
         if kind == "initial_phase":
-            # A phase is already an angle: scaling by 2π is the whole
-            # conversion, and no f0 enters. That is what lets this anchor be
-            # set before the rate is known.
+            # A phase is already an angle: scaling by 2π is the whole conversion, and no f0 enters.
             return -2 * np.pi * value
         if kind == "offset_time":
             return 2 * np.pi * value * frequency

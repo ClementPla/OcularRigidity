@@ -7,6 +7,8 @@ import cupy as cp
 
 from cupyx.scipy.ndimage import distance_transform_edt as gdt
 
+from ocularrigidity.motion.one_cycle import estimate_cardiac_amplitude
+
 
 def extract_thickness_gpu(masks_cpu, verbose: bool = False) -> np.ndarray:
     T, H, W = masks_cpu.shape
@@ -31,19 +33,13 @@ def extract_thickness_gpu(masks_cpu, verbose: bool = False) -> np.ndarray:
 
 
 def compute_deltaY_masks(mask: np.ndarray) -> np.ndarray:
-    """
-    Extract the deltaY (thickness) feature from a (T, H, W) mask.
-    Returns a (T, W) array of floats, with NaN where the column has no mask content.
-    """
+    """Extract the deltaY (thickness) feature from a (T, H, W) mask."""
 
     return np.sum(mask, axis=1).astype(np.float32)
 
 
 def compute_deltaY_boundaries(bm: np.ndarray, csi: np.ndarray) -> np.ndarray:
-    """
-    Extract the deltaY (thickness) feature from boundary masks.
-    Returns a (T, W) array of floats, with NaN where the column has no mask content.
-    """
+    """Extract the deltaY (thickness) feature from boundary masks."""
     if isinstance(bm, torch.Tensor):
         bm = bm.cpu().numpy()
     if isinstance(csi, torch.Tensor):
@@ -52,17 +48,38 @@ def compute_deltaY_boundaries(bm: np.ndarray, csi: np.ndarray) -> np.ndarray:
 
 
 def extract_thickness_distance(mask: np.ndarray, verbose: bool = False) -> np.ndarray:
-    """
-    Per-frame mean thickness via distance transform.
-    For each mask pixel, compute distance to the nearest boundary.
-    The skeleton ridge has the maximum value; 2× that is the local thickness.
-    Returns (T, W) of mean local thickness per column.
-    """
+    """Per-frame mean thickness via distance transform."""
     T, H, W = mask.shape
     out = np.zeros((T, W), dtype=np.float32)
     for t in tqdm(range(T), disable=not verbose, leave=False):
         dt = distance_transform_edt(mask[t])
         # Local thickness at each pixel = 2 × distance to nearest boundary
-        # For column stats, take the max along y (effectively at the medial axis)
         out[t] = 2 * dt.max(axis=0)
     return out
+
+
+def measure_deltaY(masks: np.ndarray, video: str, n_cycles: int, config) -> list[dict]:
+    """Per-cycle cardiac amplitude of one segmented clip."""
+    thickness = compute_deltaY_masks(masks)
+    T = thickness.shape[0]
+
+    rows = []
+    for cycle in range(n_cycles):
+        current_cycle = thickness[cycle * T // n_cycles : (cycle + 1) * T // n_cycles]
+        fits, _ = estimate_cardiac_amplitude(
+            current_cycle,
+            n_harmonics=config.n_harmonics,
+            residual_threshold_percentile=config.residual_threshold_percentile,
+            amplitude_threshold_percentile=config.amplitude_threshold_percentile,
+        )
+        amplitude = fits.max(axis=0) - fits.min(axis=0)
+        rows.append(
+            {
+                "video": video,
+                "cycle": cycle,
+                "deltaY": float(np.mean(amplitude)),
+                "Amplitudes": amplitude,
+                "Fits": fits,
+            }
+        )
+    return rows

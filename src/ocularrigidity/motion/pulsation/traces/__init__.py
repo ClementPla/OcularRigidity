@@ -1,10 +1,4 @@
-"""Stage 1 — trace sources.
-
-``base.py`` holds the contract (:class:`Traces`, :class:`AbstractTraceSource`)
-and the shared uniform-grid plumbing. One module per source: ``mask.py`` for
-segmented thickness, ``decomposition.py`` for the ICA/PCA wrapper. Add a new
-source as a new module here and export it below.
-"""
+"""Stage 1"""
 
 from ocularrigidity.motion.pulsation.traces.aggregate import (
     AggregateConfig,

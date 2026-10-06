@@ -38,25 +38,7 @@ def register_videos(
     verbose: bool = True,
     return_params: bool = False,
 ):
-    """Register a video by lateral (x) shift, then per-column vertical (y) BM alignment.
-
-    ``raw_frames`` is either gray ``(T, H, W)`` or colour ``(T, H, W, 3)``, and
-    comes back in the layout it went in. Colour channels are warped together (the
-    shifts are estimated once, on the luminance), so they stay in register.
-
-    Returns ``(registered_masks, registered_frames)``, plus a ``params`` dict
-    ``{"dx": (T,), "dy": (T, W), "bad_columns": (W,)}`` when ``return_params``.
-
-    - ``lateral_method``: ``"xcorr"`` (vertical-mean profiles) or ``"fullframe``
-      (2D phase correlation); ``dx`` is all-zeros when ``correct_transversal`` is False.
-    - ``flatten_rpe``: align the BM to a constant row rather than to the reference
-      frame's BM curve.
-    - ``axial_refinement``: optional second axial pass aligning each A-scan on
-      the volume's temporal median (adds ``"dy_median"`` (T, W) to ``params``).
-
-    Columns whose BM is unreliable (``filter_bad_ascans_per_bms``) are zeroed in
-    both frames and masks, across all frames.
-    """
+    """Register a video by lateral (x) shift, then per-column vertical (y) BM alignment."""
     if verbose:
         print(
             f"Registering {len(raw_frames)} frames | "
@@ -69,16 +51,12 @@ def register_videos(
         if config is None:
             config = RegistrationConfig()
         if config.method != "classical":
-            # This function *is* the classical estimator. Running it under a
-            # config that says otherwise would produce a classical transform
-            # stamped with the learned method in its cache key — a mislabelled
-            # cache that nothing downstream could detect.
+            # This function *is* the classical estimator.
             raise ValueError(
                 f'register_videos is the classical estimator, but config.method '
                 f'is "{config.method}". Use '
                 "ocularrigidity.registration.fused.segment_and_register instead."
             )
-        # Unpack once here so the body (and the call sites) stay config-driven.
         correct_transversal = config.correct_transversal
         correct_axial = config.correct_axial
         flatten_rpe = config.flatten_rpe
@@ -97,8 +75,6 @@ def register_videos(
         batch_size = config.batch_size
 
         raw_masks = torch.as_tensor(raw_masks)
-        # Work channels-first throughout (a gray video is just C = 1) and restore
-        # the caller's layout on the way out.
         raw_frames, layout = to_bchw(torch.as_tensor(raw_frames))
 
         T, H, W = raw_masks.shape
@@ -132,7 +108,7 @@ def register_videos(
         # --- Lateral (x) registration: estimated once, decoupled from the y warp ---
         global_dx = (
             estimate_lateral_dx(
-                to_gray(raw_frames),  # the shift is measured on the luminance
+                to_gray(raw_frames),
                 ref_idx,
                 lateral_method,
                 subpixel=subpixel,
@@ -156,9 +132,6 @@ def register_videos(
         target_bm = torch.nanmean(ref_bm) if flatten_rpe else ref_bm.unsqueeze(0)
 
         # One preallocated buffer per output, written a batch at a time.
-        # Collecting chunks and torch.cat-ing them at the end holds the whole
-        # volume twice — ~9 GB extra for a 3000-frame cube — and pays a full
-        # copy to concatenate. The displacements are (T, W) and stay a list.
         n_channels = raw_frames.shape[1]
         registered_masks = torch.empty((T, H, W), dtype=mask_dtype)
         registered_frames = torch.empty((T, n_channels, H, W), dtype=frame_dtype)
@@ -175,8 +148,6 @@ def register_videos(
 
             masks_chunk = raw_masks[start:end].to(device, torch.float32).unsqueeze(1)
             frames_chunk = raw_frames[start:end].to(device, torch.float32)
-            # Mask rides along as channel 0, so it takes the exact same warp:
-            # t x (1 + C) x H x W — 2 channels for gray, 4 for colour.
             data = torch.cat([masks_chunk, frames_chunk], dim=1)
 
             grid_y = ys.view(1, H, 1).expand(t, H, W)
@@ -197,8 +168,6 @@ def register_videos(
 
             # Per-column vertical displacement onto the target BM level, when correct_axial.
             if correct_axial:
-                # Re-read the BM from the (possibly x-aligned) mask so the vertical
-                # displacement is measured in the already-shifted frame.
                 if correct_transversal:
                     bm, _ = clean_boundaries(
                         *extract_boundaries_fast(data[:, 0].cpu().numpy())
@@ -253,8 +222,6 @@ def register_videos(
                 params["dy_median"] = dy_median
 
         # Blank A-scan columns whose BM is unreliable, in both frames and masks.
-        # Columns are the last axis of both (frames are still channels-first), so
-        # the same indexing covers gray and colour.
         bad_cols = filter_bad_ascans_per_bms(registered_masks)
         if bool(bad_cols.any()):
             registered_frames[..., bad_cols] = 0

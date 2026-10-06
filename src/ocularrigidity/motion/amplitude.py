@@ -26,8 +26,6 @@ def systolic_diastolic_amplitude_from_thickness(
         phase_full = r.phase_uniform
         good_full = r.good_uniform
 
-    # Frames usable at all: finite phase, flagged good, and present in
-    # the thickness map (gap_mask marks missing samples).
     finite_thk = ~np.isnan(thk).all(axis=1)
     usable = good_full & np.isfinite(phase_full) & finite_thk
     if usable.sum() < n_bins * min_frames_per_bin:
@@ -60,8 +58,6 @@ def systolic_diastolic_amplitude_from_thickness(
 
     with np.errstate(invalid="ignore"):
         amp_per_col = np.nanmax(template, axis=0) - np.nanmin(template, axis=0)
-    # noise floor on the peak-to-trough statistic: the extremum picks two
-    # bins, so the relevant uncertainty combines their standard errors.
     noise_floor = np.sqrt(2.0) * np.nanmedian(noise, axis=0)
     with np.errstate(invalid="ignore", divide="ignore"):
         snr = amp_per_col / noise_floor

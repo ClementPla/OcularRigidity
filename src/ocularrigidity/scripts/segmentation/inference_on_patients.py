@@ -1,25 +1,9 @@
-"""Segment every raw cohort video.
-
-Decode (CPU), inference (GPU) and largest-CC + save (CPU) are pipelined so the
-GPU is never idle: decode runs in DataLoader workers, which hand back a torch
-tensor rather than a numpy array so the multi-GB cube travels through shared
-memory instead of being pickled down a socket; largest-CC + save run on a
-background thread.
-
-The GPU pass is already saturated per batch, so the only way past it is more
-cards: ``--num-shards``/``--shard`` split the volumes over several GPUs, one
-process each (see scripts/pipeline.sh).
-
-Resumable: volumes whose ``mask.npz`` exists are skipped, and a volume that
-fails is logged and stepped over rather than aborting the run.
-"""
+"""Segment every raw cohort video."""
 
 import os
 
 from ocularrigidity.scripts.dataset import VolumeDataset, identity_collate
 
-# MUST be set at the very top before importing numpy, cv2, or torch
-# to prevent C++ OpenMP background thread locks.
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -35,24 +19,16 @@ import torch
 from torch.utils.data import DataLoader
 
 from ocularrigidity.consts import (
-    CHECKPOINT_PATH,
     ROOT_MASKS,
+    SEGMENTATION_BATCH_SIZE,
 )
-from ocularrigidity.data.io import save_mask
 from ocularrigidity.data.measurements.dataframe import load_measurements
-from ocularrigidity.pipeline_config import SEGMENTATION
 from ocularrigidity.scripts._logging import setup_logging
 from ocularrigidity.segmentation.inference import infer
-from ocularrigidity.segmentation.postprocess.blob import (
-    keep_largest_connected_component,
-)
-from ocularrigidity.segmentation.trainer.pl_module import ChoroidSegmentationModule
+from ocularrigidity.segmentation.utils import get_model, write_raw_mask
 
 OUTPUT_FOLDER = ROOT_MASKS
 
-# One cube in flight is ~4.7 GB, so the queue depth is bounded deliberately:
-# two decode workers already cover the GPU pass, and each extra prefetched item
-# is another 4.7 GB of shared memory (times the number of shards).
 NUM_DECODE_WORKERS = 2
 PREFETCH_FACTOR = 1
 
@@ -62,18 +38,6 @@ def output_path_for(measure_value: str, output_folder: Path) -> Path:
     if rel.suffix == ".bin":
         rel = rel.parent
     return output_folder / rel / "mask.npz"
-
-
-def finalize(raw_mask: np.ndarray, out_path: Path) -> None:
-    """Largest-CC + write. Runs on a background thread while the GPU moves on."""
-    mask = keep_largest_connected_component(raw_mask)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    # Write then rename, so a run killed mid-write never leaves a truncated
-    # mask.npz that the next pass would skip as "already done". The name keeps
-    # the .npz suffix because np.savez appends one otherwise.
-    tmp_path = out_path.with_name(out_path.name + ".tmp.npz")
-    save_mask(mask, tmp_path)
-    tmp_path.replace(out_path)
 
 
 def parse_args():
@@ -93,7 +57,7 @@ def parse_args():
     p.add_argument(
         "--batch-size",
         type=int,
-        default=SEGMENTATION.batch_size,
+        default=SEGMENTATION_BATCH_SIZE,
         help="Frames per GPU forward pass.",
     )
     p.add_argument(
@@ -122,18 +86,9 @@ def main():
 
     torch.backends.cudnn.benchmark = True
 
-    model = (
-        ChoroidSegmentationModule.load_from_checkpoint(CHECKPOINT_PATH).cuda().eval()
-    )
-    logger.info(f"Loaded checkpoint: {CHECKPOINT_PATH}")
+    model = get_model()
 
     if not args.no_compile:
-        # dynamic=False plus pad_last_batch below means exactly one input shape
-        # for the whole run, so this compiles once rather than specialising per
-        # volume. The cost lands on the first volume's `gpu` figure — expect it
-        # to read a minute or two high, and judge throughput from the second.
-        # A compile failure degrades to eager instead of killing a run that is
-        # otherwise going to be left alone for an hour.
         torch._dynamo.config.suppress_errors = True
         model = torch.compile(model, dynamic=False)
         logger.info("torch.compile enabled (dynamic=False, fixed batch shape)")
@@ -149,9 +104,6 @@ def main():
         else:
             tasks.append(measure_value)
 
-    # Shard *after* the skip check: splitting the cohort instead would hand one
-    # shard everything left to do whenever the remaining volumes happen to
-    # cluster on one side of the split.
     remaining = len(tasks)
     tasks = tasks[args.shard :: args.num_shards]
 
@@ -172,19 +124,13 @@ def main():
         num_workers=NUM_DECODE_WORKERS,
         shuffle=False,
         prefetch_factor=PREFETCH_FACTOR,
-        # No pin_memory: page-locking a 4.7 GB cube costs ~4 s and saves ~1 s of
-        # copy, and the locked pages are RAM the kernel cannot reclaim while two
-        # shards and a desktop compete for it.
         collate_fn=identity_collate,  # return raw tuple, no batch stacking
     )
 
     n_ok, n_fail = 0, 0
     pending = None  # in-flight finalize(), one volume behind the GPU
 
-    # One writer thread: the CC pass is already internally parallel, and a
-    # deeper queue would just hold more 4.7 GB masks in RAM.
     with ThreadPoolExecutor(max_workers=1) as writer:
-
         def drain(job):
             nonlocal n_ok, n_fail
             if job is None:
@@ -201,9 +147,7 @@ def main():
 
         t_mark = time.perf_counter()
         for i, (measure_value, data, load_error) in enumerate(loader, start=1):
-            # Time blocked on the loader. Near zero means the decode workers are
-            # keeping up and the GPU is the wall; large means they are not, and
-            # the fix is more workers rather than more cards.
+            # Time blocked on the loader.
             t_wait = time.perf_counter() - t_mark
 
             if load_error is not None:
@@ -222,8 +166,6 @@ def main():
                         batch_size=args.batch_size,
                         scale_factor=1.0,
                         return_logit=False,
-                        use_graphcut=False,
-                        graphcut_kwargs={"max_step": 1, "prob_threshold": 0.1},
                         post_process=False,  # done on the writer thread below
                         pin_memory=False,  # see the DataLoader note above
                         accumulate_on_cpu=True,
@@ -243,16 +185,15 @@ def main():
             finally:
                 del data
 
-            # Collect the previous volume before queueing this one, so at most
-            # one mask is in flight. A non-zero wait here means largest-CC + save
-            # has become the wall rather than the GPU.
+            # Collect the previous volume before queueing this one, so at
+            # most one mask is in flight.
             t_writer = time.perf_counter()
             drain(pending)
             t_writer = time.perf_counter() - t_writer
 
             pending = (
                 writer.submit(
-                    finalize, raw_mask, output_path_for(measure_value, OUTPUT_FOLDER)
+                    write_raw_mask, raw_mask, output_path_for(measure_value, OUTPUT_FOLDER)
                 ),
                 measure_value,
             )

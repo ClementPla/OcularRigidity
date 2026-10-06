@@ -7,7 +7,7 @@ import dateparser
 import pandas as pd
 from tqdm.auto import tqdm
 
-try:  # pdfium extracts text ~20x faster than pypdf
+try:
     import pypdfium2 as pdfium
 except ImportError:  # pragma: no cover - fallback when pdfium is unavailable
     pdfium = None
@@ -25,12 +25,7 @@ def list_rnfl_report(root: Path):
 
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
-    """Extract text from a PDF file.
-
-    Both backends were checked to produce identical parses on the 355 MRW
-    reports of the cohort; pdfium is used when available because it is ~20x
-    faster.
-    """
+    """Extract text from a PDF file."""
     if pdfium is None:
         reader = PdfReader(pdf_path)
         return "\n".join(p.extract_text() for p in reader.pages)
@@ -66,7 +61,6 @@ def extract_exam_date(text_list: list[str]) -> str:
 
 
 def extract_OD_lines(text_list: list[str]) -> list[str]:
-    # Search for the line that starts with "OD" and return the next lines until OS is found or the end of the list
     od_lines = []
     for i, line in enumerate(text_list):
         if line.startswith("OD"):
@@ -124,11 +118,7 @@ def _extract_mrw_report(report: Path) -> list[dict]:
 
 
 def extract_mrw_reports(root: Path, workers: int | None = None):
-    """Extract text from all MRW reports in the given root directory.
-
-    PDF text extraction is CPU-bound and releases no GIL, so reports are parsed
-    in a process pool. Pass ``workers=1`` to force sequential parsing.
-    """
+    """Extract text from all MRW reports in the given root directory."""
     mrw_reports = list_mrw_report(root)
     if workers is None:
         workers = min(len(mrw_reports), os.cpu_count() or 1)
@@ -169,11 +159,7 @@ def _extract_rnfl_report(report: Path) -> list[dict]:
 
 
 def extract_rnfl_reports(root: Path, workers: int | None = None):
-    """Extract text from all RNFL reports in the given root directory.
-
-    PDF text extraction is CPU-bound and releases no GIL, so reports are parsed
-    in a process pool. Pass ``workers=1`` to force sequential parsing.
-    """
+    """Extract text from all RNFL reports in the given root directory."""
     rnfl_reports = list_rnfl_report(root)
     if workers is None:
         workers = min(len(rnfl_reports), os.cpu_count() or 1)
@@ -197,11 +183,7 @@ def extract_rnfl_reports(root: Path, workers: int | None = None):
 
 
 def extract_reports(root: Path, workers: int | None = None):
-    """Extract text from all MRW and RNFL reports in the given root directory.
-
-    PDF text extraction is CPU-bound and releases no GIL, so reports are parsed
-    in a process pool. Pass ``workers=1`` to force sequential parsing.
-    """
+    """Extract text from all MRW and RNFL reports in the given root directory."""
     mrw_df = extract_mrw_reports(root, workers)
     rnfl_df = extract_rnfl_reports(root, workers)
     return pd.merge(mrw_df, rnfl_df, on=["Eye", "File ID", "Exam Date"], how="outer")

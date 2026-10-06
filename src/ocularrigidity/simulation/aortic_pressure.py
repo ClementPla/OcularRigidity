@@ -12,13 +12,13 @@ t = np.arange(0, T, 1 / fs)
 
 mean_HR = 60.0 / 60  # 60 bpm
 
-# RSA:
+# RSA
 RSA_freq = 15 / 60  # 15 bpm
-RSA_amplitude = 0.1 * mean_HR  # 10% variation in heart rate due to RSA
+RSA_amplitude = 0.1 * mean_HR
 
 # Mayer reflex
 Mayer_freq = 6 / 60  # 6 bpm
-Mayer_amplitude = 0.05 * mean_HR  # 5% variation in heart rate due to Mayer reflex
+Mayer_amplitude = 0.05 * mean_HR
 
 
 modulation = (
@@ -52,7 +52,7 @@ plt.show()
 RR = np.diff(beat_times)
 
 
-T_sys, Q_peak = 0.3, 350.0  # SV ~ 75 mL with this shape
+T_sys, Q_peak = 0.3, 350.0
 nsys = int(round(T_sys * fs)) + 1
 x = np.arange(nsys) / (fs * T_sys)
 pulse = Q_peak * x * np.exp(1.0 - x)  # Poisson-like, peaks at x=1

@@ -1,30 +1,13 @@
-"""Boundary map → one pulse waveform.
+"""Boundary map → one pulse waveform."""
 
-Input is the ``(B, T, 2, W)`` pooled BM/CSI map with NaN on gaps and holes,
-plus a ``(B, T)`` frame-validity mask. The network:
-
-1. normalises each clip (per-column mean removed, one global scale);
-2. runs a 2-D conv stack over (time, column) with dilated temporal kernels,
-   halving the column axis as it goes;
-3. pools columns with learned attention — a learned version of the pipeline's
-   "which A-scans carry the pulse" selection;
-4. finishes with a short dilated 1-D stack and emits one sample per frame.
-
-Fully convolutional in time, so the same weights run on a 10-s clip or a whole
-video. Receptive field is ~1.5 s: enough to shape a pulse, far too short to
-invent a periodicity the input does not carry.
-"""
+from huggingface_hub import PyTorchModelHubMixin
 
 import torch
 from torch import nn
 
 
 def normalise(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """``(B, T, 2, W)`` + ``(B, T)`` → ``(B, 4, T, W)`` network input.
-
-    Channels: BM, CSI, thickness (CSI − BM), frame validity. Invalid entries
-    are zero after normalisation.
-    """
+    """``(B, T, 2, W)`` + ``(B, T)`` → ``(B, 4, T, W)`` network input."""
     x = torch.cat([x, x[:, :, 1:2] - x[:, :, 0:1]], dim=2)  # (B, T, 3, W)
     valid = ~torch.isnan(x) & mask[:, :, None, None]
     v = valid.float()
@@ -70,7 +53,7 @@ class Block1d(nn.Module):
         return x + self.act(self.norm(self.conv(x)))
 
 
-class PulseNet(nn.Module):
+class PulseNet(nn.Module, PyTorchModelHubMixin):
     def __init__(self, width: int = 32, head_width: int = 64):
         super().__init__()
         self.encoder = nn.Sequential(
@@ -97,6 +80,6 @@ class PulseNet(nn.Module):
 
     @torch.no_grad()
     def column_attention(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """Mean attention over time per pooled column, ``(B, W')`` — diagnostics."""
+        """Mean attention over time per pooled column, ``(B, W')``"""
         h = self.encoder(normalise(x, mask))
         return torch.softmax(self.attn(h), dim=-1).mean(2).squeeze(1)

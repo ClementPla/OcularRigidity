@@ -1,26 +1,10 @@
-"""Frame-layout helpers, so the registration works on gray *and* colour videos.
-
-The pipeline speaks three layouts:
-
-* ``(T, H, W)`` — grayscale, what the OCT gives us and what every boundary /
-  correlation routine expects;
-* ``(T, H, W, C)`` — colour, channels last, how videos are decoded and displayed;
-* ``(T, C, H, W)`` — channels first, what ``grid_sample`` needs.
-
-Rather than sprinkle ``if is_color`` through every warp, the registration
-converts once with :func:`to_bchw`, does everything channels-first (a gray video
-simply carries ``C = 1``), and converts back with :func:`restore_layout`.
-Anything that measures a *displacement* — correlation, fovea, BM boundaries —
-runs on the luminance instead, via :func:`to_gray`: the shift is a property of
-the scene, not of the channel it is measured in.
-"""
+"""Frame-layout helpers, so the registration works on gray *and* colour videos."""
 
 from __future__ import annotations
 
 import numpy as np
 import torch
 
-# A trailing axis this small is a channel, never an image width.
 _CHANNEL_SIZES = (1, 3, 4)
 
 # ITU-R BT.601 luma weights.
@@ -32,11 +16,7 @@ CHANNELS_FIRST = "chw"  # (T, C, H, W)
 
 
 def frame_layout(frames) -> str:
-    """Which of the three layouts ``frames`` is in.
-
-    A 4-D stack is read as channels-last when its trailing axis is 1/3/4 — an
-    image is never that narrow — and as channels-first otherwise.
-    """
+    """Which of the three layouts ``frames`` is in."""
     if frames.ndim == 3:
         return GRAY
     if frames.ndim == 4:
@@ -47,7 +27,7 @@ def frame_layout(frames) -> str:
 
 
 def to_bchw(frames) -> tuple[torch.Tensor, str]:
-    """Convert any layout to ``(T, C, H, W)``; returns it with the layout to restore."""
+    """Convert any layout to ``(T, C, H, W)``"""
     if isinstance(frames, np.ndarray):
         frames = torch.from_numpy(frames)
     layout = frame_layout(frames)
@@ -68,11 +48,7 @@ def restore_layout(frames: torch.Tensor, layout: str) -> torch.Tensor:
 
 
 def to_gray(frames) -> torch.Tensor:
-    """Luminance ``(T, H, W)`` of a stack in any layout (a no-op on gray input).
-
-    Three channels are combined with the BT.601 luma weights; any other channel
-    count is averaged.
-    """
+    """Luminance ``(T, H, W)`` of a stack in any layout (a no-op on gray input)."""
     if isinstance(frames, np.ndarray):
         frames = torch.from_numpy(frames)
     if frame_layout(frames) == GRAY:

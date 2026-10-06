@@ -1,13 +1,4 @@
-"""Train the Stage-0 SiNC rate model and compare it with the current chain.
-
-    python -m ocularrigidity.scripts.pulsation.train_sinc cache
-    python -m ocularrigidity.scripts.pulsation.train_sinc train --epochs 60
-    python -m ocularrigidity.scripts.pulsation.train_sinc evaluate --ckpt <path>
-
-``cache`` reads every measure.pkl of the run once (~1 h from the HDD).
-``evaluate`` writes a per-video table of measured HR, the stored (HR-anchored)
-rate, the chain without expected BPM, and SiNC, plus a metric summary.
-"""
+"""Train the Stage-0 SiNC rate model and compare it with the current chain."""
 
 import argparse
 from pathlib import Path
@@ -71,7 +62,6 @@ def cmd_train(args):
         samples_per_epoch=512,
         seed=0,
     )
-    # Fixed validation clips: draw them once so every epoch sees the same ones.
     val_clips = [val_ds[i] for i in range(len(val_ds))]
 
     with_hr = val_idx[val_idx["HR"].notna()]
@@ -94,8 +84,6 @@ def cmd_train(args):
         logger=CSVLogger(SINC_ROOT / "runs", name=args.name),
         callbacks=[
             ModelCheckpoint(
-                # val/loss kept falling while the rate got worse (harmonic
-                # lock), so the default selects on the rate itself.
                 monitor=args.monitor,
                 mode="min",
                 save_top_k=2,

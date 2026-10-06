@@ -17,13 +17,9 @@ class MaskTraceConfig(UniformTraceConfig):
     """Extra knobs specific to the segmented-thickness source."""
 
     col_slice: slice | None = None
-    # A frame whose mean thickness deviates by more than this fraction of the
-    # video median is treated as a bad frame.
-    outlier_thickness_frac: float = 0.25
+    outlier_thickness_frac: float = 0.5
     # Columns that are a hole (0/NaN) in at least this fraction of frames are
-    # dropped, wherever they sit — e.g. the optic nerve head, which leaves a
-    # hole in the middle of every frame. 1.0 drops only always-invalid columns;
-    # lower it if the ONH boundary jitters from frame to frame.
+    # dropped, wherever they sit
     max_column_hole_frac: float = 1.0
 
 
@@ -40,16 +36,12 @@ class MaskThicknessTraceSource(AbstractUniformTraceSource):
         self.registered_video = registered_video
 
     def raw_signal(self) -> np.ndarray:
-        """Thickness restricted to ``col_slice``, with holes (0/NaN) and outlier
-        frames → NaN."""
+        """Thickness restricted to ``col_slice``, with holes (0/NaN) and outlier frames → NaN."""
         cfg: MaskTraceConfig = self.config
         col_slice = cfg.col_slice
         src = self.registered_video.thickness
         thickness = (src[:, col_slice] if col_slice is not None else src).copy()
 
-        # Unify hole-marking on NaN so all downstream validity checks (which key
-        # on isnan) catch degenerate boundaries, then drop persistently-invalid
-        # columns — border trim and interior holes (ONH) alike.
         thickness[thickness == 0] = np.nan
         hole_frac = np.isnan(thickness).mean(axis=0)
         keep_cols = hole_frac < cfg.max_column_hole_frac

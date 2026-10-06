@@ -1,28 +1,4 @@
-"""Coherence-based A-scan selection as a trace-source *wrapper*.
-
-Every other trace score judges a trace **in isolation** — its own periodogram
-power / concentration / FAP, or its instantaneous envelope — so a trace that is
-strongly periodic on its own (a noise resonance, a local artifact) but
-incoherent with the ensemble goes uncaught. This wrapper keeps the A-scans whose
-cardiac phase stays in a *constant* relation to the ensemble over time —
-**coherent even when not in phase** — and drops the rest.
-
-The primitive is the phase-locking value (PLV)::
-
-    C_jk = | mean_t  w(t) · exp( i (phi_j(t) - phi_k(t)) ) |
-
-which is invariant to a *constant* phase offset by construction: two A-scans
-carrying the same pulsation at a fixed lag score C = 1, while a drifting or
-random relationship decays to 0. That offset-invariance is exactly what PCA/ICA
-lack — a lagged pulsation splits across a sin/cos pair of components there, but
-stays a single coherent group here.
-
-It consumes and produces the same :class:`Traces` contract, so it composes with
-the other sources. Put it *before* the rate/phase stages, so Lomb-Scargle and
-the phase estimator run on an already-coherent subset::
-
-    coherent = CoherentTraceSource(MaskThicknessTraceSource(reg, aligner))
-"""
+"""Coherence-based A-scan selection as a trace-source *wrapper*."""
 
 from dataclasses import dataclass
 from typing import Literal, Optional
@@ -36,24 +12,13 @@ from ocularrigidity.motion.pulsation.traces.base import AbstractTraceSource, Tra
 @dataclass
 class CoherenceConfig:
     # How membership is scored.
-    #   "consensus"   — PLV of each trace to an iteratively refined ensemble
-    #                   phase; O(K), robust, the default.
-    #   "eigenvector" — leading eigenvector of the K×K coherence matrix; also
-    #                   yields an eigengap that says whether there is *one*
-    #                   coherent population or several.
     mode: Literal["consensus", "eigenvector"] = "consensus"
 
-    # Weight each instant by the trace envelope, so moments where a trace is
-    # momentarily weak (noise, dropout) count less toward its coherence.
     weight_by_envelope: bool = True
 
-    # Standardize each trace to unit variance before the analytic signal, so no
-    # single high-amplitude trace dominates the consensus by scale alone.
     standardize: bool = True
 
-    # consensus mode: decontamination iterations. The consensus is recomputed
-    # with the previous PLV as a membership weight, so incoherent traces stop
-    # polluting the reference after the first pass.
+    # consensus mode: decontamination iterations.
     n_iter: int = 3
 
     # How the score becomes a selection.
@@ -62,25 +27,13 @@ class CoherenceConfig:
     keep_quantile: float = 0.5      # selection="quantile" (keep the top half)
     top_k: Optional[int] = None     # selection="top_k"
 
-    # Never return fewer than this many traces — guards against over-pruning a
-    # case where coherence is genuinely low everywhere.
     min_traces: int = 8
 
     verbose: bool = True
 
 
 class CoherentTraceSource(AbstractTraceSource):
-    """Wraps a source and returns only its coherently-pulsating traces.
-
-    Diagnostics populated by :meth:`compute` (all indexed by the *base* source's
-    trace order):
-
-    ``scores``      per-trace coherence in [0, 1].
-    ``selected``    indices kept, sorted.
-    ``eigengap``    λ1/λ2 of the coherence matrix (eigenvector mode only); large
-                    ⇒ a single dominant coherent population.
-    ``coherent_fraction``  λ1 / trace (eigenvector mode only).
-    """
+    """Wraps a source and returns only its coherently-pulsating traces."""
 
     def __init__(self, source: AbstractTraceSource, config: Optional[CoherenceConfig] = None):
         super().__init__()
@@ -93,13 +46,7 @@ class CoherentTraceSource(AbstractTraceSource):
 
     # -- analytic signal ------------------------------------------------
     def _analytic(self, values: np.ndarray):
-        """Per-trace wrapped phase and envelope of the (already bandpassed) traces.
-
-        ``values`` is ``(T_kept, K)`` and gap-free, so the Hilbert transform's
-        narrowband assumption holds directly. The kept samples are treated as
-        evenly spaced; any small phase distortion across bridged gaps is common
-        to every trace and cancels in the phase *differences* the scores use.
-        """
+        """Per-trace wrapped phase and envelope of the (already bandpassed) traces."""
         x = values - values.mean(axis=0, keepdims=True)
         if self.config.standardize:
             sd = x.std(axis=0, keepdims=True)
@@ -119,7 +66,7 @@ class CoherentTraceSource(AbstractTraceSource):
             # Envelope- and membership-weighted ensemble phase per instant.
             acc = (P * amp * m[None, :]).sum(axis=1)         # (T,)
             ref = np.exp(-1j * np.angle(acc))                # conj consensus phasor
-            # PLV of each trace to the consensus; a constant lag cancels here.
+            # PLV of each trace to the consensus
             num = np.abs((P * ref[:, None] * amp).sum(axis=0))   # (K,)
             den = amp.sum(axis=0) + 1e-12
             plv = num / den

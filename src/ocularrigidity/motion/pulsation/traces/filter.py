@@ -1,12 +1,4 @@
-"""Cardiac bandpass + NaN-aware spatial smoothing of a uniform-grid source.
-
-A stage of its own, so a source can be fed to the decomposition raw and the band
-can be changed without rebuilding the signal map.
-
-Filtering runs on the *full* uniform grid rather than on ``source.traces``:
-``filtfilt`` needs contiguous, evenly-spaced samples, and the kept-sample view
-has the gaps collapsed out of it.
-"""
+"""Cardiac bandpass + NaN-aware spatial smoothing of a uniform-grid source."""
 
 from dataclasses import dataclass, field
 
@@ -29,12 +21,7 @@ class BandPassFilterTraceConfig:
 
 
 class BandPassFilterTraceSource(AbstractTraceSource):
-    """Wraps a uniform source and returns its bandpassed traces.
-
-    One trace per column of the source's signal map, restricted to the cardiac
-    band and smoothed across columns with ``sigma_col`` (validity-weighted, so
-    holes do not bleed into their neighbours).
-    """
+    """Wraps a uniform source and returns its bandpassed traces."""
 
     def __init__(
         self,
@@ -65,7 +52,7 @@ class BandPassFilterTraceSource(AbstractTraceSource):
 
     @property
     def interpolated_validity(self) -> np.ndarray:
-        """Source validity with gap samples zeroed — the filter's weights."""
+        """Source validity with gap samples zeroed"""
         not_gap = (~self.gap_mask).astype(np.float32)[:, None]
         return self.source.interpolated_validity * not_gap
 
@@ -81,9 +68,6 @@ class BandPassFilterTraceSource(AbstractTraceSource):
         cfg = self.config
         gap = self.source.gap_mask
 
-        # Gap samples are zero-filled and given zero weight: filtfilt needs a
-        # continuous series, and the weights keep those samples from pulling
-        # the smoother. They are re-marked NaN once filtering is done.
         not_gap = (~gap).astype(np.float32)[:, None]
         data = np.nan_to_num(self.source.interpolated_signal, nan=0.0) * not_gap
 
@@ -105,9 +89,6 @@ class BandPassFilterTraceSource(AbstractTraceSource):
 
     def compute(self) -> Traces:
         filtered = self.filtered_signal
-        # Same kept-sample rule as the uniform sources: a sample survives only
-        # if every trace is finite there, so the decomposition and the
-        # periodogram can assume no NaNs.
         kept = ~np.isnan(filtered).any(axis=1)
 
         if not kept.any():

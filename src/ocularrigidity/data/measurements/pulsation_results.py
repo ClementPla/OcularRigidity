@@ -4,7 +4,8 @@ from tqdm.auto import tqdm
 import pickle
 import numpy as np
 from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
-from ocularrigidity.pipeline_config import FRIEDENWALD, N_CYCLES
+from ocularrigidity.friedenwald import FRIEDENWALD
+from ocularrigidity.pipeline_config import N_CYCLES
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.data.measurements.dataframe import load_measurements
 from ocularrigidity.friedenwald import K_from_deltaCT_mm, PV_ratio_deltaCT_mm, deltaCT_to_deltaV_uL
@@ -19,24 +20,13 @@ from ocularrigidity.thickness.delta import (
     measure_delta_ct_from_disp,
 )
 
-#: Columns trimmed off each side of the mask before ΔCT is measured: the edges
-#: of the B-scan are unreliable. Matches the notebooks and the report.
 TRIM = 100
 
 
 def load_pulsation_results(
     root_cardiac_pipeline: Path, overwrite=False
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Per-case and per-cycle pulsation measures, cached.
-
-    Reads the ``measures`` / ``deltaY.pkl`` outputs of the cardiac pipeline.
-    Returns ``(cases, cycles)``: one row per video, and one row per
-    (video, cardiac cycle).
-
-    The first call walks every mask and re-measures ΔCT, which takes minutes; the
-    result is pickled next to the pipeline outputs and reused. Pass
-    ``overwrite=True`` after re-running the pipeline.
-    """
+    """Per-case and per-cycle pulsation measures, cached."""
     formatted_results_path = root_cardiac_pipeline / "formatted_results.pkl"
     formatted_cycles_path_cycles = (
         root_cardiac_pipeline / "formatted_results_cycles.pkl"
@@ -86,8 +76,6 @@ def load_pulsation_results(
 
         cts, min_cts, mask_cts, mask_thick_cts = [], [], [], []
         ups, downs, asyms = [], [], []
-        # Every frame is needed for the mask-thickness series, not just the
-        # per-cycle reference frames, so decode the whole stack once.
         masks = trim_choroid(load_mask(mask_file), TRIM)
         mask_ct_series = mask_ct_series_mm(masks)  # (T,) mm
         for i in range(N_CYCLES):

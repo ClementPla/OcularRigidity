@@ -14,17 +14,12 @@ from ocularrigidity.motion.pulsation.phase.base import AbstractPhaseEstimator
 class IQPhaseConfig:
     smoother_cycles: float = 2.0
     density_threshold: float = 0.5
-    freq_tolerance: float = 0.2
+    # Max relative deviation of the instantaneous frequency
+    freq_tolerance: float | None = 0.2
 
 
 class IQDemodPhaseEstimator(AbstractPhaseEstimator):
-    """Quadrature demodulation at the cardiac frequency.
-
-    Mixing the trace down by ``exp(-2iπ f0 t)`` puts the cardiac component at DC,
-    where a low-pass of a couple of cycles isolates it; the residual envelope
-    angle is the slow phase drift around the nominal beat. Needs ``f0``, hence
-    ``requires_rate``.
-    """
+    """Quadrature demodulation at the cardiac frequency."""
 
     requires_rate: ClassVar[bool] = True
 
@@ -52,8 +47,6 @@ class IQDemodPhaseEstimator(AbstractPhaseEstimator):
         I_filled = np.where(nan, 0.0, z.real)
         Q_filled = np.where(nan, 0.0, z.imag)
 
-        # Normalized (NaN-aware) convolution: divide the smoothed signal by the
-        # smoothed validity so gaps dilute rather than bias the estimate.
         I_num = gaussian_filter1d(I_filled, sigma=sigma_t, mode="nearest")
         Q_num = gaussian_filter1d(Q_filled, sigma=sigma_t, mode="nearest")
         den = gaussian_filter1d(valid, sigma=sigma_t, mode="nearest")
@@ -68,7 +61,6 @@ class IQDemodPhaseEstimator(AbstractPhaseEstimator):
         # Estimate the instantaneous frequency from the unwrapped phase
         unwrapped_phase = np.unwrap(phase)
         inst_freq = np.gradient(unwrapped_phase, dt) / (2 * np.pi)
-        # Remove from good the points where the instantaneous frequency is not within a reasonable range of the expected frequency
-        freq_tolerance = cfg.freq_tolerance * f0  # 20% tolerance
-        good = good & (np.abs(inst_freq - f0) < freq_tolerance)
+        if cfg.freq_tolerance is not None:
+            good = good & (np.abs(inst_freq - f0) < cfg.freq_tolerance * f0)
         return phase, good

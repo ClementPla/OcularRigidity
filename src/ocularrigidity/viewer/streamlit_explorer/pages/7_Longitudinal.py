@@ -1,17 +1,4 @@
-"""Longitudinal analyses of the prospective cohort.
-
-Mirrors ``notebooks/cohort_analysis/prospective.ipynb``: each Rigidity visit is
-tagged with its diagnosis and with the clinical measures of the same calendar
-month, then a probed rigidity metric (K, RelativeGrowth, …) is confronted with
-those measures five ways — co-progression, present-vs-future, present-vs-next
-change, visit-pair rates and plain cross-sectional association — plus a group
-comparison. The designs themselves live in
-:mod:`ocularrigidity.viewer.longitudinal`; this page only drives them.
-
-Measures are either picked by hand or **screened**: every measure is tested under
-every design and the most significant ones are plotted, with BH q-values so the
-selection is not read as a discovery.
-"""
+"""Longitudinal analyses of the prospective cohort."""
 
 import streamlit as st
 
@@ -97,11 +84,7 @@ if not screen_all and not selected:
 
 
 def targets_for(design: str, params: dict) -> list[str]:
-    """The measures this tab plots: its own top N when screening, else the picks.
-
-    When screening, the ranking table is rendered first — it is the actual answer,
-    the plots below it are just the top rows drawn out.
-    """
+    """The measures this tab plots: its own top N when screening, else the picks."""
     if not screen_all:
         return selected
 
@@ -356,7 +339,6 @@ with tabs[5]:
         if len(eyes) < 6:
             st.warning(f"Only {len(eyes)} eyes pass the slope-quality filter.")
         else:
-            # More negative = losing faster, so the *low* arm is the progressing one.
             if split_how == "Median":
                 cut = eyes[change_col].median()
                 eyes["Group"] = np.where(

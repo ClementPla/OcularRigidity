@@ -20,7 +20,6 @@ def morph_close(masks, kernel_size=3, iterations=1):
     return masks
 
 
-
 def remove_small_objects(masks, min_size=100):
     for i in range(masks.shape[0]):
         objects = skimage.measure.label(masks[i], connectivity=2)

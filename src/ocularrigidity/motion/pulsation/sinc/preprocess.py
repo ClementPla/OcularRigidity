@@ -1,12 +1,4 @@
-"""Boundaries → the model's input map, shared by the training cache and inference.
-
-One function, so the cache built from ``measure.pkl`` and the live
-:class:`LearnedTraceSource` cannot drift apart.
-
-The registered BM/CSI positions are integer pixels: a single A-scan moves by
-about ±0.7 px, mostly quantisation. Averaging ``pool`` neighbouring columns
-recovers sub-pixel motion and shrinks the map at the same time.
-"""
+"""Boundaries → the model's input map, shared by the training cache and inference."""
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -31,12 +23,7 @@ def boundaries_to_uniform(
     gap_mask: np.ndarray,
     n_cols: int = N_COLS,
 ) -> np.ndarray:
-    """Pooled BM/CSI deviations on the uniform grid, ``(T_uniform, 2, n_cols)``.
-
-    Each column's temporal median is removed, which leaves small numbers that
-    survive float16 storage (raw positions ~500 px would lose the sub-pixel
-    part). Gap samples and holes are NaN.
-    """
+    """Pooled BM/CSI deviations on the uniform grid, ``(T_uniform, 2, n_cols)``."""
     pooled = pool_columns(np.asarray(boundaries, dtype=np.float32), n_cols)
     with np.testing.suppress_warnings() as sup:
         sup.filter(RuntimeWarning)

@@ -1,16 +1,4 @@
-"""Differentiable Spatial-to-Numerical Transform (DSNT) for single-landmark
-sub-pixel localization, implemented inline (no `dsntnn` dependency).
-
-A model outputs a 1-channel heatmap; `flat_softmax` turns it into a spatial
-probability map, and `dsnt` takes its expectation to get a sub-pixel coordinate.
-Training combines a coordinate (euclidean) loss with a Jensen-Shannon regularizer
-that keeps the predicted heatmap tight around the target.
-
-Coordinate convention (matches the linspace DSNT grid): a pixel index ``i`` over
-a size-``n`` axis maps to the normalized value ``(2*i - (n - 1)) / n`` in ~[-1, 1].
-Use `pixel_to_normalized` / `normalized_to_pixel` so dataset targets and inference
-decoding stay consistent with the grid used here.
-"""
+"""Differentiable Spatial-to-Numerical Transform (DSNT) for single-landmark sub-pixel localization, implemented inline (no `dsntnn` dependency)."""
 
 import torch
 import torch.nn.functional as F
@@ -33,20 +21,14 @@ def _coord_grid(n: int, device, dtype) -> torch.Tensor:
 
 
 def flat_softmax(logits: torch.Tensor) -> torch.Tensor:
-    """Spatial softmax over (H, W). Input/Output: (B, C, H, W)."""
+    """Spatial softmax over (H, W)."""
     b, c, h, w = logits.shape
     flat = F.softmax(logits.reshape(b, c, h * w), dim=-1)
     return flat.reshape(b, c, h, w)
 
 
 def dsnt(heatmap: torch.Tensor) -> torch.Tensor:
-    """Expected coordinate of a spatial-prob heatmap.
-
-    Args:
-        heatmap: (B, C, H, W), each (H, W) slice sums to 1.
-    Returns:
-        coords: (B, C, 2) normalized (x, y) in ~[-1, 1].
-    """
+    """Expected coordinate of a spatial-prob heatmap."""
     b, c, h, w = heatmap.shape
     xs = _coord_grid(w, heatmap.device, heatmap.dtype)  # (W,)
     ys = _coord_grid(h, heatmap.device, heatmap.dtype)  # (H,)
@@ -58,7 +40,7 @@ def dsnt(heatmap: torch.Tensor) -> torch.Tensor:
 
 
 def euclidean_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Per-keypoint euclidean distance. pred/target: (B, C, 2) -> (B, C)."""
+    """Per-keypoint euclidean distance."""
     return torch.linalg.norm(pred - target, dim=-1)
 
 
@@ -69,7 +51,6 @@ def _render_gaussian(coords: torch.Tensor, h: int, w: int, sigma_px: float) -> t
     ys = _coord_grid(h, device, dtype).view(1, 1, h, 1)
     cx = coords[..., 0].view(*coords.shape[:2], 1, 1)
     cy = coords[..., 1].view(*coords.shape[:2], 1, 1)
-    # One pixel ~ 2/size in normalized units.
     sx = sigma_px * 2.0 / w
     sy = sigma_px * 2.0 / h
     g = torch.exp(-((xs - cx) ** 2) / (2 * sx**2) - ((ys - cy) ** 2) / (2 * sy**2))
@@ -80,11 +61,7 @@ def _render_gaussian(coords: torch.Tensor, h: int, w: int, sigma_px: float) -> t
 def js_reg_loss(
     heatmap: torch.Tensor, target_coords: torch.Tensor, sigma_px: float = 1.0
 ) -> torch.Tensor:
-    """Jensen-Shannon divergence between the predicted heatmap and a Gaussian
-    rendered at the target coordinate. Keeps the heatmap unimodal and tight.
-
-    Returns (B, C).
-    """
+    """Jensen-Shannon divergence between the predicted heatmap and a Gaussian rendered at the target coordinate."""
     target = _render_gaussian(target_coords, heatmap.shape[2], heatmap.shape[3], sigma_px)
     m = 0.5 * (heatmap + target)
 

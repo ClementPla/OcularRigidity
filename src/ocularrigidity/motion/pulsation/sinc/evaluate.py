@@ -1,10 +1,4 @@
-"""Rate estimates for comparison: SiNC versus the current chain.
-
-The stored ``measure.pkl`` rate is not a fair baseline wherever an HR was
-measured: the chain's search band is clamped to ±30 % of that HR, so it cannot
-miss by more. ``open_band_bpm`` reruns the same chain (same stage configs, same
-thickness) with no expected BPM, which is the question SiNC has to answer.
-"""
+"""Rate estimates for comparison: SiNC versus the current chain."""
 
 import pickle
 from pathlib import Path
@@ -46,7 +40,7 @@ def open_band_bpm(measure_path: Path) -> float:
     aligner = VideoTimelineAligner(
         stub, m.timestamps_seconds, units_in_timestamps=TimeUnits.SECONDS
     )
-    stages = PULSATION.chain.for_video(expected_bpm=None, verbose=False)
+    stages, _ = PULSATION.chain_for_video(expected_bpm=None, verbose=False)
     source = MaskThicknessTraceSource(stub, aligner, stages["trace"])
     source = BandPassFilterTraceSource(source, stages["bandpass"])
     return LombScargleRateEstimator(stages["rate"]).estimate(source.traces).bpm
@@ -55,7 +49,7 @@ def open_band_bpm(measure_path: Path) -> float:
 def open_band_table(
     cache_dir: Path, measures_root: Path, split: str = "val", out: Path | None = None
 ) -> pd.DataFrame:
-    """Open-band chain rates for one split; cached to ``out`` if given."""
+    """Open-band chain rates for one split"""
     if out is not None and Path(out).exists():
         return pd.read_csv(out)
     index = load_index(cache_dir)

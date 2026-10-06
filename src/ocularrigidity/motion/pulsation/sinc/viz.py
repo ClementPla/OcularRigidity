@@ -1,18 +1,4 @@
-"""Per-video inspection of a trained SiNC model against the thickness it reads.
-
-For one video, :func:`load_view` gathers on the uniform grid:
-
-* the source thickness — the stored ``interpolated_signal`` (the chain's
-  ``col_slice``), each column's slow baseline removed, and its column median
-  (robust to the few columns whose segmentation breaks), lightly smoothed for
-  display;
-* the SiNC waveform, its rate, and its IQ phase anchored on minimal thickness;
-* the trace the stored chain picked (``filtered_signal[:, best_component_idx]``,
-  HR-anchored bandpass), its rate, and its stored phase, anchored the same way.
-
-:func:`plot_view` draws them; :func:`browser` wraps both in patient/video
-dropdowns and a time window for a notebook.
-"""
+"""Per-video inspection of a trained SiNC model against the thickness it reads."""
 
 import pickle
 from dataclasses import dataclass
@@ -35,7 +21,6 @@ from ocularrigidity.motion.pulsation.sinc.preprocess import boundaries_to_unifor
 from ocularrigidity.motion.pulsation.traces import Traces
 
 # Categorical slots 1–3 of the reference palette (validated: CVD ΔE ≥ 9.2).
-# Aqua is under 3:1 on white, so every series also has its own dash + legend.
 COLORS = dict(thickness="#2a78d6", sinc="#eb6834", original="#1baf7a")
 STYLES = dict(thickness="-", sinc="-", original="--")
 LABELS = dict(
@@ -50,7 +35,7 @@ INK, MUTED, GRID = "#1f1f1e", "#6b6a64", "#e4e3dd"
 class VideoView:
     video: str
     split: str
-    hr: float  # measured, may be NaN
+    hr: float
     time: np.ndarray  # (T_u,) s
     gap: np.ndarray  # (T_u,) bool
     thickness_dev: np.ndarray  # (T_u, W) px, baseline removed, smoothed, NaN on gaps
@@ -87,7 +72,7 @@ def _detrend(th: np.ndarray, sigma: float) -> np.ndarray:
 
 
 def _smooth(x: np.ndarray, sigma: float) -> np.ndarray:
-    """NaN-aware Gaussian smoothing along time; NaN stays NaN."""
+    """NaN-aware Gaussian smoothing along time"""
     valid = np.isfinite(x)
     num = gaussian_filter1d(np.where(valid, x, 0.0), sigma, axis=0, mode="nearest")
     den = gaussian_filter1d(valid.astype(float), sigma, axis=0, mode="nearest")
@@ -122,13 +107,7 @@ def load_view(
     measures_root: Path,
     phase_config=None,
 ) -> VideoView:
-    """``video`` is the path of its folder relative to ``measures_root``.
-
-    Videos in the training cache reuse its input and report their split and
-    measured HR. Any other ``measure.pkl`` (another study, say) is run from the
-    pickle itself, through the same preprocessing; its split is "external" and
-    its HR is the one the chain was anchored on, if any.
-    """
+    """``video`` is the path of its folder relative to ``measures_root``."""
     info = _video_info(video, cache_dir)
     with open(Path(measures_root) / video / "measure.pkl", "rb") as f:
         m = pickle.load(f)
@@ -180,7 +159,7 @@ def load_view(
     if phase_config is None:
         from ocularrigidity.pipeline_config import PULSATION
 
-        phase_config = PULSATION.chain.phase
+        phase_config = PULSATION.phase
     track = IQDemodPhaseEstimator(phase_config).estimate(
         traces, RateEstimate(freq=f_sinc)
     )
@@ -223,7 +202,6 @@ def load_view(
 
 # ---------------------------------------------------------------------------
 # Plotting
-# ---------------------------------------------------------------------------
 def _style(ax):
     ax.grid(True, color=GRID, lw=0.6)
     ax.set_axisbelow(True)
@@ -410,14 +388,8 @@ def plot_view(view: VideoView, start: float = 0.0, window: float = 10.0):
 
 # ---------------------------------------------------------------------------
 # Notebook browser
-# ---------------------------------------------------------------------------
 def browser(module: SiNCModule, measures_root: Path, cache_dir: Path | None = None):
-    """Patient → video dropdowns and a time window; views are cached per video.
-
-    Lists every ``measure.pkl`` under ``measures_root`` (``patient/…/measure.pkl``).
-    With ``cache_dir`` (the training cache), labels also show the split and
-    measured HR of videos the cache knows.
-    """
+    """Patient → video dropdowns and a time window"""
     import ipywidgets as w
     from IPython.display import display
 

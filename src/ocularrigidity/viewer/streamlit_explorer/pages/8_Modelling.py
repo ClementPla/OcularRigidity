@@ -1,13 +1,4 @@
-"""Predict one variable from several, with a split that respects the eye.
-
-The other pages test one association at a time. This one fits a model on a set
-of inputs and reports how well it predicts a held-out variable -- which only
-means anything if the split is grouped by patient and the test fold is read
-once. Both are enforced in :mod:`ocularrigidity.stats.supervised`; this page
-only drives it.
-
-The target is either a value at a visit or an eye's per-year rate of change.
-"""
+"""Predict one variable from several, with a split that respects the eye."""
 
 import numpy as np
 import pandas as pd
@@ -60,8 +51,6 @@ mode = c1.radio(
     "visit against the slope of the target from there on.",
 )
 min_points = c1.slider("Min visits per eye", 2, 6, 3) if mode == S.RATE else 3
-# Deliberately not IOP/OPA/AxialLength: those are the ingredients of K, the
-# default target, so they would hand a new user a circular model on first load.
 default_inputs = [
     c for c in ("Age", "minCT", "G RNFL Thickness", "MD", "PSD") if c in numeric
 ][:5]

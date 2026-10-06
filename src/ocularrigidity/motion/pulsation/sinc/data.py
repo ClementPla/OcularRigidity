@@ -1,12 +1,4 @@
-"""Training data for SiNC: a compact cache of every video, and random clips.
-
-``build_cache`` reads each ``measure.pkl`` once (~100 MB each, mostly arrays
-SiNC does not need) and keeps the pooled BM/CSI deviations on the uniform grid
-as float16, ~4 MB a video. The index CSV next to it carries what evaluation
-needs: timing, gap fraction, measured HR and the stored pipeline estimate.
-
-Splits are by patient, so no eye of a validation patient is seen in training.
-"""
+"""Training data for SiNC: a compact cache of every video, and random clips."""
 
 import hashlib
 from concurrent.futures import ProcessPoolExecutor
@@ -80,7 +72,7 @@ def build_cache(
     val_percent: int = 15,
     limit: int | None = None,
 ) -> pd.DataFrame:
-    """Cache every ``measure.pkl`` under ``measures_root``; returns the index."""
+    """Cache every ``measure.pkl`` under ``measures_root``"""
     from ocularrigidity.data.measurements.dataframe import load_measurements
 
     measures_root, cache_dir = Path(measures_root), Path(cache_dir)
@@ -118,13 +110,7 @@ def load_video(cache_dir: Path, video: str) -> np.ndarray:
 
 
 class SiNCClipDataset(Dataset):
-    """Random raw windows, long enough to be resampled to ``clip_len`` at any
-    speed up to ``max_speed`` (resampling itself happens on the GPU).
-
-    Every video is held in memory (~4 MB each). One epoch is
-    ``samples_per_epoch`` draws; windows with more than ``max_gap_frac`` of
-    gap samples are redrawn.
-    """
+    """Random raw windows, long enough to be resampled to ``clip_len`` at any speed up to ``max_speed`` (resampling itself happens on the GPU)."""
 
     def __init__(
         self,

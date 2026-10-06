@@ -1,9 +1,4 @@
-"""Overlay HEYEX layer annotations on a single B-scan.
-
-Works with anything exposing ``shape``, ``data[i]`` and ``layers[name].data`` --
-an eyepy ``EyeVolume`` or, via :func:`plot_acquisition`, an
-:class:`~ocularrigidity.data.heyex.dicom.Acquisition`.
-"""
+"""Overlay HEYEX layer annotations on a single B-scan."""
 
 from __future__ import annotations
 
@@ -14,9 +9,6 @@ from eyepy.config import layer_colors
 
 __all__ = ["plot_acquisition", "plot_bscan_layers"]
 
-# Fixed order, assigned by position and never cycled. Used when the caller opts
-# out of eyepy's canonical colours, which alias PR1/EZ and PR2/IZ and put ILM
-# and BM uncomfortably close together.
 _FALLBACK_RAMP = (
     "#3BA3EC", "#E68332", "#34AF84", "#E866F4",
     "#97A431", "#A48CF4", "#36ADA4", "#F77189",
@@ -34,27 +26,7 @@ def plot_bscan_layers(
     figsize=None,
     ax=None,
 ):
-    """Plot the layers present on one B-scan.
-
-    Args:
-        volume: an eyepy ``EyeVolume`` or any object with ``shape``, ``data``
-            and ``layers`` (see module docstring).
-        bscan_index: index along the slow axis; negative indices are allowed.
-        layers: restrict to these layer names. Default: all present.
-        use_eyepy_colors: eyepy's canonical per-layer colours, so the figure
-            matches ``EyeVolume.plot()``. False picks a colourblind-safer ramp.
-        show_coverage: add a layer x B-scan availability panel. Worth keeping
-            for ONH data, where it shows at a glance that RNFL and BM exist
-            only on the circle scans.
-        crop: zoom the depth axis onto the annotated band. The retina occupies
-            a small part of the A-scan, so without this most of the panel is
-            empty and the labels collide.
-        crop_pad: margin around that band, as a fraction of its thickness.
-
-    Returns:
-        ``(fig, info)``; ``info`` carries the resolved index and per-layer
-        coverage for this B-scan.
-    """
+    """Plot the layers present on one B-scan."""
     n_bscans, height, width = volume.shape
     if not -n_bscans <= bscan_index < n_bscans:
         raise IndexError(f"bscan_index {bscan_index} out of range for {n_bscans} B-scans")
@@ -71,10 +43,6 @@ def plot_bscan_layers(
     coverage = {n: float(np.isfinite(h).mean()) for n, h in heights.items()}
     present = [n for n in names if coverage[n] > 0]
 
-    # Order anatomically, top of the B-scan first, comparing only on columns
-    # where every layer is defined: a layer annotated over a wider span (ILM
-    # often runs past the others, onto a steep slope) would otherwise get a
-    # skewed mean and sort out of order.
     if present:
         common = np.all([np.isfinite(heights[n]) for n in present], axis=0)
         if common.sum() >= 8:
@@ -128,8 +96,6 @@ def plot_bscan_layers(
     else:
         top, bottom = 0.0, height - 1.0
 
-    # Direct labels at the right edge, nudged apart so identity is never
-    # carried by colour alone.
     label_targets.sort(key=lambda t: t[0])
     min_gap = (bottom - top) * 0.045
     for i in range(1, len(label_targets)):
@@ -150,7 +116,6 @@ def plot_bscan_layers(
         f"{len(present)} of {len(names)} layers annotated",
         loc="left",
     )
-    # Legend below the image so it never occludes the curves.
     ax0.legend(
         loc="upper left", bbox_to_anchor=(0, -0.13), fontsize=8,
         ncol=min(6, max(1, len(present))), frameon=False,
@@ -168,7 +133,7 @@ def plot_bscan_layers(
     if show_coverage:
         ax1 = axes[1]
 
-        def depth(name):  # all-NaN layers sort last instead of warning
+        def depth(name):
             d = np.asarray(volume.layers[name].data, dtype=float)
             return d[np.isfinite(d)].mean() if np.any(np.isfinite(d)) else np.inf
 
@@ -186,7 +151,6 @@ def plot_bscan_layers(
         ax1.set_xlabel("B-scan index")
         ax1.set_title("Fraction of A-scans annotated, per layer per B-scan", loc="left")
         ax1.axvline(bscan_index, color="#E4572E", linewidth=2)
-        # Inside the heatmap, so low indices cannot collide with the title.
         ax1.annotate(
             f"B-scan {bscan_index}", xy=(bscan_index, 0.0), xytext=(4, 4),
             textcoords="offset points", ha="left", va="top", fontsize=8,
@@ -221,12 +185,7 @@ class _VolumeShim:
 
 
 def plot_acquisition(acq, bscan_index: int = 0, **kwargs):
-    """:func:`plot_bscan_layers` for an :class:`Acquisition`, with its identity
-    in the title and the circle radius on the x-label where relevant.
-
-    Layers only line up when ``acq`` was loaded with ``bscan_source="e2e"``
-    (the default); a "dicom" acquisition is flagged in the title.
-    """
+    """:func:`plot_bscan_layers` for an :class:`Acquisition`, with its identity in the title and the circle radius on the x-label where relevant."""
     fig, info = plot_bscan_layers(_VolumeShim(acq), bscan_index=bscan_index, **kwargs)
 
     circles = set(acq.circle_frames)

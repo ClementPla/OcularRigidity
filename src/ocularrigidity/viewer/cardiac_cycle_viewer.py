@@ -276,11 +276,7 @@ def plot_cardiac_signals(
 
 
 def get_folded_template(signal, phase, num_bins=100):
-    """
-    signal: The Best IC (green line in your Plot 3)
-    phase: Your self._phase_per_frame (values in [0, 1))
-    num_bins: Number of bins for the template (resolution)
-    """
+    """signal: The Best IC (green line in your Plot 3) phase: Your self._phase_per_frame (values in [0, 1)) num_bins: Number of bins for the template (resolution)"""
     # 1. Discard NaNs
     mask = ~np.isnan(signal) & ~np.isnan(phase)
     clean_sig = signal[mask]

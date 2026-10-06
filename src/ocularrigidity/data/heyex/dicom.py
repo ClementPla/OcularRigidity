@@ -1,34 +1,4 @@
-"""Read Heidelberg HEYEX DICOM exports (a DICOMDIR file-set).
-
-Complements :mod:`ocularrigidity.data.spectralis`, which reads the XML export of
-the same device. The DICOM export is the richer of the two: it keeps the
-per-frame B-scan geometry on the localizer, which is what lets us tell a macular
-raster from an ONH radial-plus-circles acquisition without guessing.
-
-Hierarchy recovered from the file-set::
-
-    patient -> study (one per visit) -> eye (R/L) -> acquisition
-
-with, per eye and visit, one macular raster, one ONH acquisition, their two
-localizers and an encapsulated PDF report.
-
-**Where the segmentation lives.** No public DICOM tag carries it. HEYEX embeds
-two complete E2E files in a private block (creator "Ashvins Private Object
-Information", group 0x0051):
-
-    0x13 -> E2E blob holding the B-scan IMAGE folders
-    0x23 -> E2E blob holding bscanmeta + LAYER_ANNOTATION folders
-
-**Why we default to the blob images rather than PixelData.** The two are the
-same B-scans, but HEYEX vertically realigns each frame when it writes
-``PixelData``, while the layer heights stay in the *unaligned* E2E frame. Layers
-then land on the wrong rows for most frames — tens of pixels out, occasionally
-over a hundred — and the per-frame offset is often zero, which makes the bug
-easy to miss on a lucky frame. So ``load_acquisition`` reads images from the
-blob by default; ask for ``bscan_source="dicom"`` only if you need the DICOM
-greyscale, and the layers are then mapped into that frame for you (see
-``estimate_frame_affine``).
-"""
+"""Read Heidelberg HEYEX DICOM exports (a DICOMDIR file-set)."""
 
 from __future__ import annotations
 
@@ -61,7 +31,7 @@ __all__ = [
     "read_marker_points",
 ]
 
-#: HEYEX layer ids -> eyepy layer names (0 = ILM, 1 = BM, 2 = RNFL, ...).
+# : HEYEX layer ids -> eyepy layer names (0 = ILM, 1 = BM, 2 = RNFL, ...).
 LAYER_ID_TO_NAME = {v: k for k, v in SEG_MAPPING.items()}
 
 PRIVATE_CREATOR = "Ashvins Private Object Information"
@@ -78,15 +48,8 @@ _KIND_BY_SOP = {SOP_OPT: "OCT", SOP_OP8: "LOCALIZER", SOP_PDF: "PDF"}
 
 # ---------------------------------------------------------------------------
 # Indexing
-# ---------------------------------------------------------------------------
 def index_export(root: str | Path) -> list[dict[str, Any]]:
-    """One row per instance in the export.
-
-    Reads the files rather than the ``DICOMDIR`` records: HEYEX populates the
-    directory records sparsely (study rows carry no laterality, series rows no
-    frame count), so walking the tree is both simpler and more informative.
-    Feed the result to :class:`pandas.DataFrame` if you want to pivot it.
-    """
+    """One row per instance in the export."""
     root = Path(root)
     files = [p for p in (root / "DICOM").rglob("*") if p.is_file()]
     if not files:
@@ -154,7 +117,6 @@ def build_tree(root: str | Path) -> dict:
 
 # ---------------------------------------------------------------------------
 # Private E2E blobs
-# ---------------------------------------------------------------------------
 def _as_dataset(ds_or_path) -> pydicom.Dataset:
     if isinstance(ds_or_path, pydicom.Dataset):
         return ds_or_path
@@ -166,8 +128,7 @@ def _private_blob(ds: pydicom.Dataset, block_offset: int) -> bytes | None:
     try:
         return bytes(ds.private_block(PRIVATE_GROUP, PRIVATE_CREATOR)[block_offset].value)
     except Exception:
-        # Creator string missing or renamed: address the element directly. The
-        # block is always 0x10 in the exports we have seen.
+        # Creator string missing or renamed: address the element directly.
         element = ds.get((PRIVATE_GROUP, 0x1000 + block_offset))
         return bytes(element.value) if element is not None and element.value else None
 
@@ -191,17 +152,7 @@ def _open_blob(ds: pydicom.Dataset, block: int):
 
 
 def read_layers(ds_or_path, expect_bscans: int | None = None):
-    """Layer segmentation and B-scan metadata from the private E2E blob.
-
-    Returns ``(layers, bscan_meta)`` where ``layers`` maps a layer name to an
-    ``(n_bscans, width)`` array of row positions (NaN where unset), in DICOM
-    frame order, and ``bscan_meta`` is a list of eyepy ``EyeBscanMeta``.
-    Both are empty when the instance carries no blob.
-
-    Note the coverage is informative: on an ONH acquisition ILM is annotated on
-    every frame while BM and RNFL exist only on the three circle scans, which is
-    the peripapillary RNFL analysis.
-    """
+    """Layer segmentation and B-scan metadata from the private E2E blob."""
     ds = _as_dataset(ds_or_path)
     tmp = _open_blob(ds, BLOCK_META)
     if tmp is None:
@@ -225,12 +176,7 @@ def read_layers(ds_or_path, expect_bscans: int | None = None):
 
 
 def read_bscans_from_blob(ds_or_path, expect_bscans: int | None = None):
-    """B-scan images from the private E2E *image* blob, as uint8.
-
-    These are the images the layers were drawn on -- see the module docstring
-    for why they, not ``PixelData``, are the ones the annotations index.
-    Returns None when the blob is absent.
-    """
+    """B-scan images from the private E2E *image* blob, as uint8."""
     ds = _as_dataset(ds_or_path)
     tmp = _open_blob(ds, BLOCK_IMAGE)
     if tmp is None:
@@ -240,8 +186,6 @@ def read_bscans_from_blob(ds_or_path, expect_bscans: int | None = None):
             series = _pick_series(reader, expect_bscans)
             if series is None:
                 return None
-            # Not series.get_bscans(): that needs the bscanmeta folder, which
-            # lives in the *other* blob.
             stack = np.stack([series.slices[k].get_bscan() for k in sorted(series.slices)])
     finally:
         os.unlink(tmp)
@@ -250,35 +194,19 @@ def read_bscans_from_blob(ds_or_path, expect_bscans: int | None = None):
     return from_e2e_intensity(np.asarray(stack, np.float32).copy())
 
 
-#: Series-level E2E folder holding manually placed point pairs (see
-#: :func:`read_marker_points`). eyepy leaves it as raw bytes.
+# : Series-level E2E folder holding manually placed point pairs (see : :func:`read_marker_points`).
 TYPE_MARKERS = 10038
 
-#: Per-slice E2E folder holding the export-time affine (eyepy leaves it as bytes).
+# : Per-slice E2E folder holding the export-time affine (eyepy leaves it as bytes).
 TYPE_ALIGNMENT = 10012
 
-#: Byte offsets of the y-row of the 2x3 affine inside that record.
+# : Byte offsets of the y-row of the 2x3 affine inside that record.
 _ALIGN_SHEAR_OFFSET = 28
 _ALIGN_SHIFT_OFFSET = 36
 
 
 def read_frame_affine(ds_or_path, expect_bscans=None, width=None):
-    """Exact depth mapping from the E2E frame to ``PixelData``, read from file.
-
-    HEYEX stores the export-time realignment per B-scan, in the private
-    metadata blob, as a 2x3 affine in folder type 10012. eyepy does not parse
-    that type, so it arrives as raw bytes; the y-row sits at byte offsets 28
-    (shear) and 36 (shift), and the transform pivots about the image centre::
-
-        dicom_row(x) = e2e_row(x) + a + b * x
-        b = -shear
-        a = -shift + shear * width / 2
-
-    This is the same quantity :func:`estimate_frame_affine` measures from the
-    pixels, but read rather than fitted -- prefer it when the record is present.
-
-    Returns an ``(n, 2)`` array of ``(a, b)``, or None if the record is absent.
-    """
+    """Exact depth mapping from the E2E frame to ``PixelData``, read from file."""
     import struct
 
     ds = _as_dataset(ds_or_path)
@@ -310,37 +238,7 @@ def read_frame_affine(ds_or_path, expect_bscans=None, width=None):
 
 
 def read_marker_points(ds_or_path, expect_bscans=None, line_frames=None):
-    """Manually placed point pairs -- the disc-margin / RNFL-endpoint markers.
-
-    These are the points you drop in the HEYEX interface on the ONH radial
-    B-scans, two per scan (one either side of the disc). They are *not* layers,
-    so they never show up in :func:`read_layers`; they live in their own
-    series-level record, folder type 10038, which eyepy leaves as raw bytes.
-
-    Layout, little-endian::
-
-        int32  kind        (102 in our exports)
-        int32  n_records   (equals the number of *line* B-scans)
-        n_records x 18 bytes:
-            int32 x1, int32 y1, int32 x2, int32 y2, 2 bytes padding
-
-    The 18-byte stride is the thing to watch: the record is not 4-byte aligned,
-    so reading it as a flat int32 array silently garbles everything after the
-    first entry.
-
-    Coordinates are pixel positions in the *E2E* B-scan frame, the same frame as
-    :func:`read_layers`, so the same affine applies when moving to ``PixelData``.
-
-    Args:
-        line_frames: indices of the B-scans the records belong to, in order.
-            Records are written for the line B-scans only -- an ONH acquisition
-            stores 24, one per radial, and nothing for the 3 circle scans.
-            Defaults to the first ``n_records`` frames.
-
-    Returns:
-        ``(n_bscans, 2, 2)`` array of ``[[x1, y1], [x2, y2]]`` per B-scan, NaN
-        where no point was placed, or None if the record is absent.
-    """
+    """Manually placed point pairs"""
     import struct
 
     ds = _as_dataset(ds_or_path)
@@ -384,12 +282,7 @@ def apply_frame_affine_points(points, affine):
 
 
 def _column_shifts(dicom_frame, e2e_frame, search=170, min_std=1e-3):
-    """Per-A-scan vertical shift between two versions of the same B-scan.
-
-    Returns ``(dy, quality)``, both length ``width``; ``dy`` is NaN where the
-    column carries no signal. Correlating each column separately (rather than
-    the frame as a whole) is what exposes the tilt.
-    """
+    """Per-A-scan vertical shift between two versions of the same B-scan."""
     d = np.asarray(dicom_frame, float)
     e = np.asarray(e2e_frame, float)
     height, width = d.shape
@@ -413,7 +306,7 @@ def _column_shifts(dicom_frame, e2e_frame, search=170, min_std=1e-3):
 
 
 def _robust_line(x, y, iters=3, min_points=20):
-    """Least-squares line with iterative 3-MAD trimming. Returns (a, b)."""
+    """Least-squares line with iterative 3-MAD trimming."""
     if x.size < min_points:
         return np.nan, np.nan
     keep = np.ones(x.size, bool)
@@ -430,28 +323,7 @@ def _robust_line(x, y, iters=3, min_points=20):
 
 
 def estimate_frame_affine(dicom_bscans, e2e_bscans, min_quality=0.5, step=4):
-    """Per-frame depth mapping from the E2E frame to ``PixelData``.
-
-    HEYEX does not merely translate each B-scan when it writes ``PixelData`` --
-    it also tilts it, so the correction is affine *along the A-scan axis*::
-
-        dicom_row(x) = e2e_row(x) + a + b * x
-
-    Measured on a five-visit export this model is exact to well under a pixel
-    (median residual 0.25 px, p90 0.5 px), whereas a per-frame constant leaves
-    up to ~95 px of tilt on a single frame.
-
-    Args:
-        dicom_bscans: ``(n, height, width)`` stack from ``PixelData``.
-        e2e_bscans: the matching stack from the private image blob.
-        min_quality: minimum per-column correlation to trust a shift estimate.
-        step: sample every ``step``-th column (the tilt is smooth; 4 is plenty).
-
-    Returns:
-        ``(n, 2)`` array of ``(a, b)``. Frames with too little signal to fit are
-        filled by linear interpolation over the frame index, so the result is
-        always finite and usable.
-    """
+    """Per-frame depth mapping from the E2E frame to ``PixelData``."""
     dicom = np.asarray(dicom_bscans, float)
     e2e = np.asarray(e2e_bscans, float)
     n, _, width = dicom.shape
@@ -463,7 +335,6 @@ def estimate_frame_affine(dicom_bscans, e2e_bscans, min_quality=0.5, step=4):
         good = np.isfinite(dy) & (quality > min_quality)
         out[i] = _robust_line(xs[good].astype(float), dy[good])
 
-    # Fill unfittable frames from their neighbours rather than returning NaN.
     idx = np.arange(n)
     for col in (0, 1):
         ok = np.isfinite(out[:, col])
@@ -474,17 +345,7 @@ def estimate_frame_affine(dicom_bscans, e2e_bscans, min_quality=0.5, step=4):
 
 
 def apply_frame_affine(layers, affine, width=None):
-    """Move layer heights from the E2E frame into the ``PixelData`` frame.
-
-    Args:
-        layers: ``{name: (n_bscans, width)}`` as returned by :func:`read_layers`.
-        affine: ``(n_bscans, 2)`` array of ``(a, b)`` from
-            :func:`estimate_frame_affine`.
-        width: A-scan count; taken from the arrays when omitted.
-
-    Returns:
-        A new dict with the same keys and shapes. NaNs are preserved.
-    """
+    """Move layer heights from the E2E frame into the ``PixelData`` frame."""
     affine = np.asarray(affine, float)
     out = {}
     for name, values in layers.items():
@@ -496,34 +357,14 @@ def apply_frame_affine(layers, affine, width=None):
 
 
 def estimate_frame_offsets(dicom_bscans, e2e_bscans) -> np.ndarray:
-    """Per-frame constant offset only. Kept for the simple case.
-
-    Prefer :func:`estimate_frame_affine`: a constant ignores the tilt and can
-    be ~50 px out at the edges of a frame.
-    """
+    """Per-frame constant offset only."""
     return estimate_frame_affine(dicom_bscans, e2e_bscans)[:, 0]
 
 
 # ---------------------------------------------------------------------------
 # Geometry
-# ---------------------------------------------------------------------------
 def frame_geometry(ds: pydicom.Dataset) -> list[dict[str, Any]]:
-    """Per-frame B-scan location on the localizer.
-
-    From ``OphthalmicFrameLocationSequence`` (0022,0031). ``orientation`` is
-    ``LINEAR`` for a line B-scan, whose ``coords`` are the two endpoints, or
-    ``NONLINEAR`` for a circle scan, whose ``coords`` are the full traced
-    polyline (768 points) -- so a circle's centre and radius come straight out
-    of the mean, with no convention to remember.
-
-    ``coords`` are returned as **(x, y)** localizer pixels, ready to pass to
-    ``plot`` or ``imshow`` axes. The stored pairs are (row, column), i.e.
-    (y, x), and are swapped here: taken literally they put the ONH scan pattern
-    off the disc entirely, and only the swap centres the radial star on it.
-    Distances and the concentricity test are symmetric, so classification is
-    unaffected either way -- but anything directional (sector assignment,
-    disc-to-fovea axis) is wrong without the swap.
-    """
+    """Per-frame B-scan location on the localizer."""
     out = []
     for fg in ds.PerFrameFunctionalGroupsSequence:
         ofl = fg.OphthalmicFrameLocationSequence[0]
@@ -539,12 +380,7 @@ def frame_geometry(ds: pydicom.Dataset) -> list[dict[str, Any]]:
 
 
 def classify_scan(geom: list[dict], tol: float = 1.0) -> tuple[str, dict]:
-    """Label an acquisition from its frame geometry.
-
-    Circles are flagged by ``NONLINEAR`` orientation; radial and raster are told
-    apart by whether the line B-scans share one midpoint (a star pattern pivots
-    about the ONH, a raster marches across the retina).
-    """
+    """Label an acquisition from its frame geometry."""
     circles = [i for i, g in enumerate(geom) if g["orientation"] == "NONLINEAR"]
     lines = [i for i, g in enumerate(geom) if g["orientation"] != "NONLINEAR"]
     details: dict[str, Any] = {
@@ -586,7 +422,6 @@ def classify_scan(geom: list[dict], tol: float = 1.0) -> tuple[str, dict]:
 
 # ---------------------------------------------------------------------------
 # One acquisition
-# ---------------------------------------------------------------------------
 @dataclass
 class Acquisition:
     """One multi-frame OPT instance: pixels, geometry and layer annotations."""
@@ -636,14 +471,7 @@ class Acquisition:
 
 
 def load_acquisition(path, with_pixels: bool = True, bscan_source: str = "e2e") -> Acquisition:
-    """Load one OPT instance with its geometry and layer annotations.
-
-    ``bscan_source="e2e"`` (default) takes the images from the private image
-    blob, which is the coordinate frame the layers are expressed in.
-    ``bscan_source="dicom"`` takes ``PixelData`` instead and fills
-    :attr:`Acquisition.frame_affine` with the fitted ``(a, b)`` per frame. In
-    both cases ``layers`` is returned already aligned to ``bscans``.
-    """
+    """Load one OPT instance with its geometry and layer annotations."""
     if bscan_source not in ("e2e", "dicom"):
         raise ValueError(f"bscan_source must be 'e2e' or 'dicom', got {bscan_source!r}")
 
@@ -668,11 +496,11 @@ def load_acquisition(path, with_pixels: bool = True, bscan_source: str = "e2e") 
             dicom_px = dicom_px[None]
         if bscan_source == "e2e":
             pixels = read_bscans_from_blob(ds, expect_bscans=n_frames)
-            if pixels is None:  # no blob: fall back, and say so
+            if pixels is None:
                 pixels, bscan_source = dicom_px, "dicom (fallback)"
         else:
             pixels = dicom_px
-            # Read the transform HEYEX stored; only measure it if absent.
+            # Read the transform HEYEX stored
             offsets = read_frame_affine(
                 ds, expect_bscans=n_frames, width=dicom_px.shape[2]
             )
@@ -681,8 +509,6 @@ def load_acquisition(path, with_pixels: bool = True, bscan_source: str = "e2e") 
                 if blob_px is not None:
                     offsets = estimate_frame_affine(dicom_px, blob_px)
             if offsets is not None:
-                # Map annotations into PixelData's frame, so they always index
-                # `bscans` whichever source the caller picked.
                 layers = apply_frame_affine(layers, offsets)
                 if markers is not None:
                     markers = apply_frame_affine_points(markers, offsets)
@@ -691,10 +517,6 @@ def load_acquisition(path, with_pixels: bool = True, bscan_source: str = "e2e") 
     measures = (
         shared.PixelMeasuresSequence[0] if "PixelMeasuresSequence" in shared else None
     )
-    # ONH acquisitions put PixelMeasures per frame instead of shared: the lateral
-    # spacing differs from radial to radial, and again for the circle scans
-    # (a circle's arc is sampled over a different physical length). Distances in
-    # such a B-scan are wrong unless the per-frame value is used.
     frame_spacing = None
     if "PixelMeasuresSequence" in ds.PerFrameFunctionalGroupsSequence[0]:
         frame_spacing = np.array(

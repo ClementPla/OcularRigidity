@@ -1,24 +1,4 @@
-"""Read Heidelberg Spectralis (HEYEX) OCT XML exports.
-
-Python port of the MATLAB helpers ``parseXML.m`` and ``analyzeSpectralisXML.m``
-(M. Hidalgo, 2015).
-
-The DOM is navigated *by tag name* with :mod:`xml.etree`, never positionally:
-the exporter's whitespace text nodes and any added field shift every index, and
-the MATLAB original needed per-field work-arounds because of it. The result is
-a small tree of frozen dataclasses queried by attribute::
-
-    study = SpectralisStudy.from_file("export.xml")
-
-    study.patient.last_name
-    study.series[0].acquisition_time.to_time()   # OCT B-scan timestamp
-    study.series[0].lateral_resolution           # ScaleX, mm / pixel
-    study.series[0].axial_resolution             # ScaleY, mm / pixel
-    study.series[0].oct.context                  # every other leaf field
-
-Nothing is persisted: everything is read straight from the XML on demand, so
-there is no derived table to keep in sync with the source files.
-"""
+"""Read Heidelberg Spectralis (HEYEX) OCT XML exports."""
 
 from __future__ import annotations
 
@@ -34,13 +14,8 @@ import cv2
 
 # --------------------------------------------------------------------------- #
 # Low-level reading helpers
-# --------------------------------------------------------------------------- #
 def _open_xml(path):
-    """Open a local or ``smb://`` path for reading bytes.
-
-    ``smbclient`` (and the rest of the heavy I/O stack) is only imported when an
-    SMB path is actually requested, so importing this module stays cheap.
-    """
+    """Open a local or ``smb://`` path for reading bytes."""
     path = str(path)
     if path.startswith("smb://"):
         from ocularrigidity.data.io import _open  # lazy: pulls smbclient etc.
@@ -50,11 +25,7 @@ def _open_xml(path):
 
 
 def _strip_namespaces(root: ET.Element) -> ET.Element:
-    """Drop any ``{namespace}`` prefix from every tag in the tree.
-
-    Some HEYEX exports wrap the document in an XML namespace, others do not.
-    Stripping it lets the rest of the code navigate with bare tag names.
-    """
+    """Drop any ``{namespace}`` prefix from every tag in the tree."""
     for el in root.iter():
         if isinstance(el.tag, str) and "}" in el.tag:
             el.tag = el.tag.rsplit("}", 1)[1]
@@ -62,12 +33,7 @@ def _strip_namespaces(root: ET.Element) -> ET.Element:
 
 
 def read_root(source) -> ET.Element:
-    """Parse an XML file (or accept an already-parsed element) -> root element.
-
-    This is the Pythonic equivalent of ``parseXML.m``. The recursive
-    struct-building of the MATLAB helper is unnecessary: :class:`ET.Element`
-    *is* the navigable tree.
-    """
+    """Parse an XML file (or accept an already-parsed element) -> root element."""
     if isinstance(source, ET.Element):
         return _strip_namespaces(source)
     try:
@@ -76,8 +42,6 @@ def read_root(source) -> ET.Element:
         try:
             root = ET.fromstring(raw)
         except ET.ParseError:
-            # Heidelberg exports are Latin-1 with no encoding declaration, so the
-            # parser assumes UTF-8 and chokes on accented names (e.g. "é").
             root = ET.fromstring(raw.decode("latin-1"))
     except (OSError, ET.ParseError) as exc:
         raise OSError(f"Failed to read XML file {source!r}: {exc}") from exc
@@ -117,11 +81,7 @@ def _first(node: Optional[ET.Element], *tags: str) -> Optional[ET.Element]:
 
 
 def _leaf_dict(node: Optional[ET.Element]) -> dict[str, str]:
-    """Map every simple leaf child (tag -> text) of ``node``.
-
-    Captures "all the other metadata" generically, so fields we did not give a
-    typed accessor to are still reachable via ``image.context[tag]``.
-    """
+    """Map every simple leaf child (tag -> text) of ``node``."""
     out: dict[str, str] = {}
     if node is None:
         return out
@@ -144,7 +104,6 @@ def _coord(node: Optional[ET.Element]) -> Optional[tuple[float, float]]:
 
 # --------------------------------------------------------------------------- #
 # Data model
-# --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class AcquisitionTime:
     """Wall-clock time an image was acquired (Spectralis stores no date here)."""
@@ -156,13 +115,13 @@ class AcquisitionTime:
 
     @property
     def seconds_of_day(self) -> float:
-        """Seconds since midnight -- handy as a monotonic axis for a sequence."""
+        """Seconds since midnight"""
         return self.hour * 3600 + self.minute * 60 + self.second
 
     def to_time(self) -> time:
         whole = int(self.second)
         micro = int(round((self.second - whole) * 1_000_000))
-        # guard against rounding 0.9999.. -> 1_000_000 micro
+        # guard against rounding 0.9999..
         if micro >= 1_000_000:
             whole, micro = whole + 1, 0
         return time(self.hour, self.minute, whole, micro)
@@ -190,8 +149,7 @@ class Image:
 
     @property
     def file_name(self) -> Optional[str]:
-        # ExamURL looks like "file:///C:\XMLDATA\90F83740.tif"; ntpath.basename
-        # splits on both "\" and "/", so it returns the bare name off Windows too.
+        # ExamURL looks like "file:///C:\XMLDATA\90F83740.tif"
         return ntpath.basename(self.file_path) if self.file_path else None
 
     @property
@@ -272,10 +230,7 @@ class SpectralisStudy:
         return [s.acquisition_time for s in self.series]
 
     def datetimes(self) -> list[Optional[datetime]]:
-        """Full ``datetime`` per series, combining ``study_date`` + B-scan time.
-
-        Falls back to ``None`` where either part is missing.
-        """
+        """Full ``datetime`` per series, combining ``study_date`` + B-scan time."""
         out: list[Optional[datetime]] = []
         for s in self.series:
             if self.study_date is not None and s.acquisition_time is not None:
@@ -288,7 +243,7 @@ class SpectralisStudy:
 
     # ---- optional flat view (only when you really want a table) -------------
     def to_dataframe(self):
-        """One row per series. Imports pandas lazily; nothing is written out."""
+        """One row per series."""
         import pandas as pd
 
         rows = []
@@ -316,7 +271,6 @@ class SpectralisStudy:
 
 # --------------------------------------------------------------------------- #
 # Parsing  (port of analyzeSpectralisXML.m, navigating by tag name)
-# --------------------------------------------------------------------------- #
 def _classify_image(img_el: ET.Element) -> str:
     """Best-effort fundus/OCT classification from ``ImageType/Type``."""
     type_txt = (_text(img_el, "ImageType/Type") or "").upper()
@@ -364,21 +318,13 @@ def _parse_time(img_el: ET.Element) -> Optional[AcquisitionTime]:
 
 
 def _parse_series(series_el: ET.Element) -> list[Series]:
-    """One :class:`Series` per OCT B-scan.
-
-    The usual export has one localizer + one OCT image per ``<Series>``. Some
-    exports (e.g. a repeated B-scan acquisition) put every OCT frame in a single
-    ``<Series>`` with one shared localizer instead; each of those OCT images
-    becomes its own entry here, so a study is always one entry per frame.
-    """
+    """One :class:`Series` per OCT B-scan."""
     images = series_el.findall("Image")
     classified = [(img, _classify_image(img)) for img in images]
 
     oct_els = [img for img, k in classified if k == "oct"]
     fundus_el = next((img for img, k in classified if k == "fundus"), None)
 
-    # Fallback to the historical positional convention (Image[0] = fundus,
-    # Image[1] = OCT) when ImageType is missing or ambiguous.
     if not oct_els and len(images) >= 2:
         oct_els = [images[1]]
     if fundus_el is None and len(images) >= 1:
@@ -393,8 +339,7 @@ def _parse_series(series_el: ET.Element) -> list[Series]:
     for oct_el in oct_els or [None]:
         oct_img = _parse_image(oct_el, "oct") if oct_el is not None else None
 
-        # The OCT B-scan time is the one that matters for a time series; fall
-        # back to the localizer's time only if the OCT image has none.
+        # The OCT B-scan time is the one that matters for a time series
         acq_time = oct_img.acquisition_time if oct_img else None
         if acq_time is None and fundus_img is not None:
             acq_time = fundus_img.acquisition_time
@@ -421,7 +366,7 @@ def _parse_patient(patient_el: ET.Element) -> Patient:
             birth_date = date(y, m, d)
     return Patient(
         last_name=_text(patient_el, "LastName"),
-        # HEYEX exports use the plural "FirstNames"; keep "FirstName" as a fallback.
+        # HEYEX exports use the plural "FirstNames"
         first_name=_text(patient_el, "FirstNames") or _text(patient_el, "FirstName"),
         sex=_text(patient_el, "Sex") or _text(patient_el, "Gender"),
         patient_id=_text(patient_el, "PatientID") or _text(patient_el, "ID"),
@@ -459,20 +404,13 @@ def _parse_study(root: ET.Element, source: Optional[str]) -> SpectralisStudy:
 
 # --------------------------------------------------------------------------- #
 # Functional alias mirroring analyzeSpectralisXML.m
-# --------------------------------------------------------------------------- #
 def analyze(path) -> SpectralisStudy:
-    """Drop-in replacement for ``analyzeSpectralisXML`` returning one object.
-
-    The MATLAB function returned ``[patientData, timeSeries]``; here both live
-    on the returned :class:`SpectralisStudy` (``.patient`` and ``.series``).
-    """
+    """Drop-in replacement for ``analyzeSpectralisXML`` returning one object."""
     return SpectralisStudy.from_file(path)
 
 
 def load_video(path, return_fundus=False):
-    """
-    Returns a np.ndarray and the timestamps associated.
-    """
+    """Returns a np.ndarray and the timestamps associated."""
     xml_file = list(path.glob("*.xml"))
     if not xml_file:
         raise ValueError(f"No XML file found in {path}")
