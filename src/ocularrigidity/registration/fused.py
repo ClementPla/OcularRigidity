@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from tqdm.auto import tqdm
 
 from ocularrigidity.registration.config import RegistrationConfig
@@ -21,12 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FusedResult:
-    """Everything one video's fused pass produced.
-
-    ``raw_masks`` is the segmentation before any warp — the artifact the
-    standalone segmentation stage used to write, kept because it is what lets a
-    later run resume at the registration without segmenting again.
-    """
+    """Everything one video's fused pass produced."""
 
     registered_frames: np.ndarray  # (T, H, W) uint8
     transform: dict  # {"dx": (T,), "dy": (T, W)} float32
@@ -40,12 +36,7 @@ class FusedResult:
 
 
 def _normalise(frames_u8: torch.Tensor) -> torch.Tensor:
-    """``(B, H, W)`` uint8 -> ``(B, 1, H, W)`` float, the encoder's scaling.
-
-    The same ``(x/255 - 0.5) / 0.5`` that ``prepare_data.py`` wrote the training
-    crops with and that ``segmentation.inference.infer`` applies; the regressor
-    was trained on features from exactly this input, so it is not negotiable.
-    """
+    """``(B, H, W)`` uint8 -> ``(B, 1, H, W)`` float, the encoder's scaling."""
     return frames_u8.unsqueeze(1).float().div_(255.0).sub_(0.5).div_(0.5)
 
 
@@ -56,12 +47,7 @@ def _encode_segment(
     amp_dtype: torch.dtype,
     keep_largest_cc: bool = True,
 ) -> tuple[torch.Tensor, list[torch.Tensor]]:
-    """One encode, two outputs: the mask and the pyramid the regressor wants.
-
-    Returns ``(mask (B, H, W) bool, pyramid list fine->coarse)``. The mask is
-    cleaned on the device — cc3d would be a CPU round-trip per batch, and it
-    holds the GIL, so it would stall the pass instead of overlapping with it.
-    """
+    """One encode, two outputs: the mask and the pyramid the regressor wants."""
     with torch.autocast("cuda", dtype=amp_dtype):
         feats = seg_model.model.encoder(_normalise(batch_u8))
         logits = seg_model.model.segmentation_head(seg_model.model.decoder(feats))
@@ -69,8 +55,7 @@ def _encode_segment(
         mask = keep_largest_connected_component_gpu(logits.squeeze(1) > 0.0)
     else:
         mask = logits.squeeze(1) > 0.0
-    # feats[0] and feats[1] are the stride-1 input and an empty stride-2 stage;
-    # the regressor's pyramid is the four real scales, i.e. forward_features().
+    # feats[0] and feats[1] are the stride-1 input and an empty stride-2 stage
     return mask, list(feats[2:])
 
 
@@ -105,6 +90,55 @@ def _trajectory_medoid(
     return int((traj - traj.median()).abs().argmin().item())
 
 
+def _upper_interface(masks: torch.Tensor) -> torch.Tensor:
+    """Row of the first True of each column of ``(B, H, W)`` masks, NaN if none."""
+    top = torch.argmax(masks.to(torch.uint8), dim=1).float()
+    return torch.where(masks.any(dim=1), top, torch.full_like(top, float("nan")))
+
+
+def _smooth_along_x(r: torch.Tensor, sigma: float) -> torch.Tensor:
+    """NaN-aware median then Gaussian of ``r (B, W)`` along x"""
+    if sigma <= 0:
+        return r
+    k = int(sigma)
+    if k > 0:
+        padded = F.pad(r[:, None], (k, k), value=float("nan"))[:, 0]
+        r = padded.unfold(1, 2 * k + 1, 1).nanmedian(dim=-1).values
+    half = int(3 * sigma) + 1
+    x = torch.arange(-half, half + 1, device=r.device, dtype=r.dtype)
+    kernel = torch.exp(-0.5 * (x / sigma) ** 2)[None, None]
+    valid = torch.isfinite(r)
+    num = F.conv1d(torch.where(valid, r, torch.zeros_like(r))[:, None], kernel, padding=half)
+    den = F.conv1d(valid.to(r.dtype)[:, None], kernel, padding=half)
+    return torch.where(den > 1e-3, num / den.clamp_min(1e-3), torch.full_like(num, float("nan")))[:, 0]
+
+
+def _bm_alignment(
+    masks: torch.Tensor,
+    dx: torch.Tensor,
+    dy: torch.Tensor,
+    ref_idx: int,
+    shape: tuple[int, int],
+    batch: int,
+    sigma: float,
+) -> torch.Tensor:
+    """What to add to ``dy (T, W)`` so every frame's BM lands on the reference's."""
+    device = masks.device
+
+    def registered_bm(s: int, e: int) -> torch.Tensor:
+        out, _ = warp(masks[s:e, None].float(), dx[s:e].to(device), dy[s:e].to(device), shape)
+        return _upper_interface(out[:, 0] > 0.5)
+
+    reference = registered_bm(ref_idx, ref_idx + 1)
+    correction = torch.empty_like(dy)
+    for s in range(0, masks.shape[0], batch):
+        e = min(s + batch, masks.shape[0])
+        r = _smooth_along_x(registered_bm(s, e) - reference, sigma)
+        fill = torch.nan_to_num(r.nanmedian(dim=1, keepdim=True).values, nan=0.0)
+        correction[s:e] = torch.where(torch.isfinite(r), r, fill).cpu()
+    return correction
+
+
 def _resolve_ref_idx(
     ref_idx: int | None, config: RegistrationConfig, T: int
 ) -> int | None:
@@ -124,20 +158,7 @@ def segment_and_register(
     device: str = "cuda",
     verbose: bool = True,
 ) -> FusedResult:
-    """Segment and register one already-trimmed volume in a single encode pass.
-
-    ``frames`` is ``(T, H, W)`` uint8, with ``skip_first_n_frames`` /
-    ``drop_last_n_frames`` already applied by the caller — the transform is
-    indexed on the trimmed volume, exactly as the classical cache is.
-
-    ``(dx, dy)`` come from the trained regressor alone. No temporal filtering
-    is applied to them: the model is the estimator, and smoothing its output
-    with the classical ``robust_temporal_dx`` would mix two estimators whose
-    failure modes are unrelated.
-
-    ``ref_idx`` (or an int ``config.reference_selection``) fixes the reference
-    frame and skips the probe; negative indices count from the end.
-    """
+    """Segment and register one already-trimmed volume in a single encode pass."""
     import time
 
     timings: dict = {}
@@ -171,9 +192,6 @@ def segment_and_register(
             mask, feats = _encode_segment(seg_model, d_frames[sel], amp_dtype)
             probe_area[s : s + len(sel)] = mask.sum(dim=(1, 2)).double()
             probe_feats.append(feats)
-            # The probe's *masks* are recomputed in the main pass rather than kept:
-            # N is a percent or two of T, and stitching them in would complicate
-            # the main loop for no measurable gain.
         # Concatenate into one pyramid over all probe frames: (N, C, h, w) per scale.
         probe_pyramid = [
             torch.cat([f[i] for f in probe_feats], dim=0)
@@ -186,28 +204,19 @@ def segment_and_register(
         ref_local = pivot_local
 
         if config.reference_selection == "motion_medoid":
-            # Area alone is not enough on a subsample: a frame can sit at the median
-            # area and still be at the extreme of the eye's axial drift, which makes
-            # every warp in the volume larger than it needs to be. So measure dy
-            # from the pivot to every probe frame and take the frame at the *median
-            # of that trajectory* — the centre of the motion, not of the areas.
             ref_local = _trajectory_medoid(
                 reg_model, probe_pyramid, pivot_local, batch, amp_dtype, (H, W)
             )
 
         ref_idx = int(probe_idx[ref_local])
         ref_feats = [f[ref_local : ref_local + 1].clone() for f in probe_pyramid]
-        probe_pyramid = None  # ~1.5 GB; the reference was cloned out of it
+        probe_pyramid = None
         timings["probe"] = _tick() - t0
 
     # --- main pass: one encode per frame, feeding both heads ---------------
     t0 = _tick()
     dx = torch.empty(T, dtype=torch.float32)
     dy = torch.empty(T, W, dtype=torch.float32)
-    # Areas are accumulated a batch at a time, never reduced over the whole
-    # volume: `d_masks.sum(dim=(1, 2))` on a (T, 1536, 1024) bool tensor
-    # promotes to int64 and asks for a 35 GB intermediate, which survives on an
-    # idle card and OOMs the moment a second shard shares it.
     areas = torch.empty(T, dtype=torch.float64)
     for s in tqdm(
         range(0, T, batch),
@@ -229,9 +238,13 @@ def segment_and_register(
         dx[s:e], dy[s:e] = b_dx.float().cpu(), b_dy.float().cpu()
     timings["encode+segment+register"] = _tick() - t0
 
-    # The reference is picked from a subsample, so say where it actually landed
-    # in the distribution it was estimating. 50 is the ideal; a value far from
-    # it means `probe_frames` is too small for this volume.
+    if config.dy_align_bm:
+        t0 = _tick()
+        dy = dy + _bm_alignment(
+            d_masks, dx, dy, ref_idx, (H, W), batch, config.dy_align_bm_sigma
+        )
+        timings["align-bm"] = _tick() - t0
+
     ref_percentile = float((areas < areas[ref_idx]).double().mean().item() * 100.0)
 
     # --- warp: mask rides as channel 0, so it takes the exact same transform -
@@ -251,9 +264,7 @@ def segment_and_register(
     del d_frames, d_masks
     torch.cuda.empty_cache()
 
-    # Blank the columns whose BM is unreliable, in frames and masks alike —
-    # the same postprocess `register_videos` ends on, so the artifacts this
-    # writes mean the same thing to every downstream stage.
+    # Blank the columns whose BM is unreliable, in frames and masks alike
     bad_cols = None
     if config.filter_bad_columns:
         bad_cols = filter_bad_ascans_per_bms(registered_masks)
@@ -296,11 +307,7 @@ def register(
     device: str = "cuda",
     verbose: bool = True,
 ) -> FusedResult:
-    """Register one already-trimmed volume without segmenting it.
-
-    Without ``ref_idx`` the reference is the probe frame at the median of the
-    axial trajectory, pivoted on the central probe frame (no masks, no area).
-    """
+    """Register one already-trimmed volume without segmenting it."""
     import time
 
     timings: dict = {}
@@ -347,7 +354,7 @@ def register(
     dx = torch.empty(T, dtype=torch.float32)
     dy = torch.empty(T, W, dtype=torch.float32)
     registered_frames = np.empty((T, H, W), dtype=np.uint8)
-    for s in tqdm(range(0, T, batch), desc="registering frames", disable=not verbose):
+    for s in tqdm(range(0, T, batch), desc="registering frames", disable=not verbose, leave=False):
         e = min(s + batch, T)
         feats = _encode(seg_model, d_frames[s:e], amp_dtype)
         fixed = [f.expand(e - s, -1, -1, -1) for f in ref_feats]

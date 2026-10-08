@@ -10,12 +10,10 @@ from ocularrigidity.registration.deep_learning.models.losses import warp
 
 # --------------------------------------------------------------------------- #
 # Small building blocks
-# --------------------------------------------------------------------------- #
 def conv_norm_act(
     in_ch: int, out_ch: int, k=3, s=1, p=1, d=1, groups_gn: int = 8
 ) -> nn.Sequential:
-    """Conv -> GroupNorm -> GELU. GroupNorm (not BatchNorm) because
-    registration is often trained with small batch sizes."""
+    """Conv -> GroupNorm -> GELU."""
     return nn.Sequential(
         nn.Conv2d(in_ch, out_ch, k, s, p, dilation=d, bias=False),
         nn.GroupNorm(groups_gn, out_ch),
@@ -24,8 +22,7 @@ def conv_norm_act(
 
 
 class ResidualConv1d(nn.Module):
-    """Dilated 1D residual block, run along the W axis to share evidence
-    between neighbouring columns."""
+    """Dilated 1D residual block, run along the W axis to share evidence between neighbouring columns."""
 
     def __init__(self, ch: int, dilation: int = 1, groups_gn: int = 8):
         super().__init__()
@@ -44,27 +41,11 @@ class ResidualConv1d(nn.Module):
 
 # --------------------------------------------------------------------------- #
 # Correlation volume: the displacement evidence, made explicit
-# --------------------------------------------------------------------------- #
 _MAX_CORR_DY_RADIUS = 16
 
 
 class CorrelationVolume(nn.Module):
-    """Normalised dot products between ``fixed`` and ``moving`` over a small
-    window of candidate shifts, one channel per candidate.
-
-    ``[fixed, moving, fixed - moving]`` asks the network to *infer* a
-    displacement from a signed difference — a linearisation that only holds
-    while the shift is well under one feature cell. A correlation volume hands
-    it the matching cost directly, which is what makes PWC-Net/RAFT-style
-    networks trainable without a regression target. It is also what the
-    classical estimator computes (``lateral/correlation.py`` is a phase
-    correlation, ``axial/median_registration.py`` a per-column one) — here the
-    peak is picked by a learned, context-aware head instead of an ``argmax``.
-
-    Radii are in cells of *this* scale, so the same radius covers 32 image
-    pixels at stride 32 and 4 at stride 4: range where the estimate is coarse,
-    precision where it is refined.
-    """
+    """Normalised dot products between ``fixed`` and ``moving`` over a small window of candidate shifts, one channel per candidate."""
 
     def __init__(
         self, in_ch: int, dim: int = 32, dy_radius: int = 6, dx_radius: int = 2
@@ -95,8 +76,6 @@ class CorrelationVolume(nn.Module):
     def forward(self, fixed: torch.Tensor, moving: torch.Tensor) -> torch.Tensor:
         h, w = fixed.shape[-2:]
         ry, rx = self.dy_radius, self.dx_radius
-        # L2-normalised per position: a cosine cost, so the volume does not
-        # simply track how bright the region is.
         f = F.normalize(self.proj(fixed), dim=1)
         m = F.normalize(self.proj(moving), dim=1)
         m = F.pad(m, (rx, rx, ry, ry))
@@ -105,16 +84,8 @@ class CorrelationVolume(nn.Module):
 
 # --------------------------------------------------------------------------- #
 # Scale fusion:  [fixed, moving, fixed-moving] (+ correlation) -> single trunk
-# --------------------------------------------------------------------------- #
 class ScalePyramidFusion(nn.Module):
-    """SegFormer-style all-conv decode, specialised for registration.
-
-    Per scale it stacks [fixed, moving, fixed - moving] (the signed diff is
-    the linearised displacement readout), optionally adds a correlation volume
-    (the matching cost, which does not rely on that linearisation), projects to
-    a common embed dim, upsamples every scale to the finest resolution,
-    concatenates and fuses.
-    """
+    """SegFormer-style all-conv decode, specialised for registration."""
 
     def __init__(
         self,
@@ -131,12 +102,6 @@ class ScalePyramidFusion(nn.Module):
         )
         self.use_correlation = use_correlation
         if use_correlation:
-            # Without a cascade every scale must resolve the *absolute*
-            # displacement, so a fixed radius in cells means the finest scale
-            # sees the smallest window in pixels — exactly backwards. A stride-4
-            # map with radius 6 saturates at 24 px while the bulk axial offsets
-            # in this data reach 80. Widen the radius as the stride shrinks, to
-            # a cap that keeps the volume affordable at full resolution.
             n = len(in_channels)
             radii = [
                 min(corr_dy_radius * 2 ** (n - 1 - i), _MAX_CORR_DY_RADIUS)
@@ -171,17 +136,14 @@ class ScalePyramidFusion(nn.Module):
 
 # --------------------------------------------------------------------------- #
 # dx head: one global scalar
-# --------------------------------------------------------------------------- #
 class DxHead(nn.Module):
-    """Convs (on fine features, so the ~2% shift is resolvable) -> global
-    average pool -> MLP -> scalar. GAP averages many local estimates of the
-    single global quantity, reducing variance."""
+    """Convs (on fine features, so the ~2% shift is resolvable) -> global average pool -> MLP -> scalar."""
 
     def __init__(self, embed: int = 128):
         super().__init__()
         self.body = nn.Sequential(
             conv_norm_act(embed, embed, s=2),  # 384x256 -> 192x128
-            conv_norm_act(embed, embed, s=2),  # 192x128 ->  96x 64
+            conv_norm_act(embed, embed, s=2),
         )
         self.pool = nn.AdaptiveAvgPool2d(1)
         self.mlp = nn.Sequential(
@@ -198,28 +160,8 @@ class DxHead(nn.Module):
 
 # --------------------------------------------------------------------------- #
 # dy head: length-W per-column vector
-# --------------------------------------------------------------------------- #
 class DyHead(nn.Module):
-    """Collapse H (stride only in H, W preserved) so each column yields one
-    feature vector; run a dilated 1D context stack along W; project to a
-    single channel; upsample to full width.
-
-    H is collapsed by a few stride-in-H convs (which encode the vertical
-    shift into channels) followed by an adaptive pool over the residual H.
-
-    The output is split into a bulk term and a per-column residual::
-
-        dy(x) = bulk + residual(x)
-
-    which is how the motion is actually generated: the eye moves axially as a
-    whole (tens of pixels across an acquisition) and the BM then deforms by a
-    few pixels on top. Folding both into one per-column output makes the
-    conditioning terrible — under direct optimisation the field has to travel
-    the whole bulk offset through a 1x1 conv whose step size is set by the
-    learning rate, so the large, easy part of the answer is also the slowest to
-    arrive. Separating them lets each be scaled to its own range
-    (``dy_scale`` vs ``residual_scale`` in the trainer).
-    """
+    """Collapse H (stride only in H, W preserved) so each column yields one feature vector"""
 
     def __init__(
         self,
@@ -253,32 +195,14 @@ class DyHead(nn.Module):
         bulk = self.bulk(x.mean(dim=2)).squeeze(-1)  # (B,)
         r = self.out(x)  # (B, 1, W4)
         r = F.interpolate(r, size=self.out_width, mode="linear", align_corners=False)
-        # Mean-free by construction, so the two terms cannot fight over the DC.
         r = r.squeeze(1)  # (B, W)
         return bulk, r - r.mean(dim=1, keepdim=True)
 
 
 # --------------------------------------------------------------------------- #
 # Cascade stage: one coarse-to-fine refinement step
-# --------------------------------------------------------------------------- #
 class CascadeStage(nn.Module):
-    """Predict the *residual* displacement at one scale, given the moving
-    features already warped by the estimate carried down from coarser scales.
-
-    This is the structural fix for a correlation volume that saturates. A flat
-    pyramid asks every scale to resolve the absolute displacement, so the finest
-    map — the one with the best localisation — has the narrowest window in
-    pixels and clips exactly the large offsets it is least able to guess. Warping
-    first means each stage only ever sees a small residual, so a radius of a few
-    cells is enough everywhere and the window is always centred on the current
-    best estimate.
-
-    Outputs are in *cells of this scale*; the caller multiplies by the stride.
-    That is the natural normalisation — every stage predicts a number of order
-    one regardless of where it sits in the pyramid — and it is what lets the
-    coarsest stage cover an 80 px bulk offset in a single step of ~2.5 units
-    instead of crawling there through a head scaled in raw pixels.
-    """
+    """Predict the *residual* displacement at one scale, given the moving features already warped by the estimate carried down from coarser scales."""
 
     def __init__(
         self,
@@ -292,8 +216,6 @@ class CascadeStage(nn.Module):
         self.corr = CorrelationVolume(in_ch, corr_dim, dy_radius, dx_radius)
         self.proj = nn.Conv2d(2 * in_ch, embed, kernel_size=1)
         self.mix = conv_norm_act(embed + self.corr.out_channels, embed, k=3)
-        # Collapse H (stride in H only, W preserved) so each column ends up with
-        # one feature vector; the vertical shift is encoded into channels first.
         self.h_reduce = nn.Sequential(
             conv_norm_act(embed, embed, k=3, s=(2, 1), p=1),
             conv_norm_act(embed, embed, k=3, s=(2, 1), p=1),
@@ -321,37 +243,8 @@ class CascadeStage(nn.Module):
 
 # --------------------------------------------------------------------------- #
 # Full model
-# --------------------------------------------------------------------------- #
 class RegistrationRegressor(nn.Module, PyTorchModelHubMixin):
-    """Predict ``(dx, dy)`` in **pixels** from a pair of frozen encoder pyramids.
-
-    Two modes:
-
-    ``cascade=True`` (default)
-        Coarse-to-fine refinement. Start from the identity at stride 32, warp
-        the moving features by the running estimate, let a :class:`CascadeStage`
-        read the residual off a correlation volume centred on it, accumulate,
-        repeat at the next finer scale. Each stage works in its own cells, so
-        the same architecture covers a 200 px bulk offset and a sub-pixel
-        correction without either being badly conditioned.
-
-    ``cascade=False``
-        The original single-shot fusion: all scales projected to a common
-        embedding, upsampled to the finest, concatenated, and read by one pair
-        of heads. Kept for comparison; its correlation volumes have to resolve
-        absolute displacement, which is what the cascade exists to avoid.
-
-    Args:
-        in_channels: per-scale channel counts of the MiT pyramid, fine->coarse.
-                     MiT-B1..B5: (64, 128, 320, 512); MiT-B0: (32, 64, 160, 256).
-        embed:       common working width.
-        img_shape:   ``(H, W)`` of the full-resolution frame. Needed to convert
-                     between feature cells and pixels, and to size ``dy``.
-        scales:      ``(dx, dy_bulk, dy_residual)`` output scales in pixels, used
-                     only when ``cascade=False`` (the cascade derives its dy
-                     scales from the strides).
-        dx_step:     per-stage lateral step in pixels, for the cascade.
-    """
+    """Predict ``(dx, dy)`` in **pixels** from a pair of frozen encoder pyramids."""
 
     def __init__(
         self,
@@ -405,7 +298,7 @@ class RegistrationRegressor(nn.Module, PyTorchModelHubMixin):
     def compile_correlation(
         self, dynamic: bool = True, **kwargs
     ) -> "RegistrationRegressor":
-        """Compile every correlation volume in the model. See CorrelationVolume."""
+        """Compile every correlation volume in the model."""
         for mod in self.modules():
             if isinstance(mod, CorrelationVolume):
                 mod.compile_(dynamic=dynamic, **kwargs)
@@ -419,28 +312,7 @@ class RegistrationRegressor(nn.Module, PyTorchModelHubMixin):
         detach_dy: bool = False,
         bulk_only: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """``(dx (B,), dy (B, W))``, both in pixels of the frame the features
-        came from.
-
-        ``img_shape`` overrides ``self.img_shape`` for this call. The cascade
-        reads its per-stage stride as ``H / f.shape[-2]``, so that number has
-        to describe the frames actually encoded -- pass the crop's shape when
-        training on crops, and the full frame's at inference. Everything else
-        is convolutional or adaptively pooled, so the same weights serve both;
-        getting this wrong does not raise, it silently mis-scales every stride.
-
-        ``detach_dy`` cuts the gradient that reaches ``dy`` through the warp.
-        Each stage warps the moving features by the running estimate before the
-        next one reads ``ddx`` off them, so ``dx`` depends on ``dy`` and a
-        *dx-only* objective can lower its error by moving ``dy`` -- with no dy
-        term present to object.
-
-        ``bulk_only`` drops the per-column residual and keeps the rigid axial
-        shift, so ``dy`` is constant across columns. In the cascade the finer
-        stages then read features warped by the bulk alone, so their ``ddx``
-        and bulk are estimated against the frame as it will actually be warped.
-        No retraining: the residual is a separate, mean-free head output.
-        """
+        """``(dx (B,), dy (B, W))``, both in pixels of the frame the features came from."""
         H, W = img_shape if img_shape is not None else self.img_shape
         if not self.cascade:
             trunk = self.fusion(fixed_feats, moving_feats)

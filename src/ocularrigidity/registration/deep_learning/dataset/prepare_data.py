@@ -1,18 +1,4 @@
-"""Dump (frame, transform) pairs for the registration regressor.
-
-Direct optimisation (``train_registration.py``) needs only the *images*: the
-objective compares a warped moving frame against the fixed one, so any two
-frames of a volume are a training sample. That changes what is worth writing:
-
-* ``--n-frames`` is now the lever that matters. N frames per volume give
-  N(N-1) ordered pairs, so 40 frames is ~1500 pairs from one acquisition
-  against the 10 the supervised setup could use.
-* Features are **off by default** (``--features`` to restore). They were 88 GB
-  for 165 frames, and the training script re-encodes on the GPU in less time
-  than reading them back costs.
-* Transforms are still written, but they are now a *diagnostic* — the classical
-  estimate the model is compared against, not the target it is fitted to.
-"""
+"""Dump (frame, transform) pairs for the registration regressor."""
 
 import argparse
 from pathlib import Path
@@ -24,7 +10,7 @@ import torch
 from tqdm.auto import tqdm
 
 from ocularrigidity.data.compression import mp4_to_cube
-from ocularrigidity.scripts.cohort_analysis.segment_n_cycles import get_model
+from ocularrigidity.segmentation.utils import get_model
 
 ROOT_TRANSFORMS = Path(
     "/media/clement/HD/Santiago/OcularRigidity/outputs_new_model/CardiacPipeline_V1/registered_masks/"
@@ -54,8 +40,7 @@ def prepare_pairs_videos(
         (output_dir / sub).mkdir(parents=True, exist_ok=True)
 
     name = video.replace("/", "_")
-    # The registration dropped these frames, so transform.npz is indexed on the
-    # trimmed volume; trim identically or every transform is off by 20 frames.
+    # The registration dropped these frames, so transform.npz is indexed on the trimmed volume
     frames = frames[20:-10]
 
     # The reference frame is the one the classical registration left untouched.
@@ -124,8 +109,6 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
-    # Cleanest volumes first: the diagnostic transform is only worth comparing
-    # against where the classical registration itself was not flagged.
     flags = pd.read_csv(ROOT_FLAGS, index_col=0).sort_values(
         by="bm_jitter_max", ascending=True
     )

@@ -1,42 +1,4 @@
-"""One tidy row per rigidity visit, joined from every source.
-
-:func:`build_cohort` is the single entry point the notebooks, the report and the
-Streamlit explorer share. It returns a *wide* frame — one row per PLEX macular
-video (i.e. per eye per visit), every variable a column — assembled from five
-sources that each have their own natural grain:
-
-* **cardiac pipeline** — ΔCT, minCT, RelativeGrowth, K, the intra-cycle rates.
-  Keyed on the video's relative path.
-* **Biomechanics.db / Measurements** — IOP / OPA / AxialLength / HR plus the
-  longitudinal clinical measures (MD, PSD, GCL Volume, …). Scalars arrive
-  through :func:`load_measurements` on their own grain (``MEASURE_SPECS``); the
-  measures are collapsed to one value per (patient, eye, month) before pivoting.
-* **Biomechanics.db / Diagnosis** — ``Diagnosis`` / ``Type``, as-of joined with
-  an explicit tolerance: the register and the rigidity visits are rarely
-  recorded on the same day, so an exact date match keeps almost nothing.
-* **ClinicalValues.db** — a second copy of the ONH sectors plus VFI, ethnicity.
-  Heyex is ground truth for the sectors (a direct parse of the report PDFs), so
-  this source only ever *fills* visits Heyex does not cover, never overrides.
-* **Heyex ONH reports** (``heyex_data.pkl``) — BMO-MRW and sector RNFL from the
-  radial+circles PDFs, as-of joined on (patient, eye) within
-  ``onh_tolerance_days``. Keyed by Heyex file number, which reaches
-  ``PatientId`` through ``Patients``.
-
-Two joins have traps worth stating, because getting either wrong silently
-changes the cohort:
-
-* the clinical measures are aggregated to one value per visit **before** the
-  merge. Merging the long table directly duplicates a visit once per matched
-  clinical row, which re-weights every correlation downstream;
-* the ONH sectors are matched as-of, on the eye, within a stated tolerance
-  rather than on the calendar month, and the realised gap is kept in
-  ``onh_gap_days`` so the tolerance is auditable rather than hidden.
-
-:func:`cohort_to_long` melts the measure columns back into the
-``MeasureName_y`` / ``MeasureValue_y`` shape that
-:mod:`ocularrigidity.stats.temporal` reads, so the wide table feeds the
-longitudinal designs unchanged.
-"""
+"""One tidy row per rigidity visit, joined from every source."""
 
 from __future__ import annotations
 
@@ -67,9 +29,6 @@ from ocularrigidity.data.measurements.igri import add_igri_base
 from ocularrigidity.data.measurements.pulsation_results import load_pulsation_results
 from ocularrigidity.data.measurements.studies import Study
 
-#: The Heyex ONH sectors, in report order: neuroretinal rim width at the Bruch's
-#: membrane opening, then peripapillary RNFL thickness. G is the global value,
-#: the others are the six Garway-Heath sectors.
 ONH_SECTORS = [
     "G BMO MRW",
     "T BMO MRW",
@@ -87,13 +46,11 @@ ONH_SECTORS = [
     "NI RNFL Thickness",
 ]
 
-#: The two ONH families. ``G`` is the global average, so it is kept as a value
-#: but excluded from the "which sector moves fastest" search below: being the
-#: mean of the others it can only win when they all move together.
+# : The two ONH families.
 BMO_MRW_SECTORS = [c for c in ONH_SECTORS if c.endswith("BMO MRW")]
 RNFL_SECTORS = [c for c in ONH_SECTORS if c.endswith("RNFL Thickness")]
 
-#: ``(output column, candidate sectors)`` for the steepest-change search.
+# : ``(output column, candidate sectors)`` for the steepest-change search.
 _STEEPEST_FAMILIES = {
     "steepest_change_BMO_MRW": [c for c in BMO_MRW_SECTORS if not c.startswith("G ")],
     "steepest_change_RNFL_Thickness": [
@@ -101,24 +58,20 @@ _STEEPEST_FAMILIES = {
     ],
 }
 
-#: The per-eye progression columns :func:`_add_steepest_change` derives.
+# : The per-eye progression columns :func:`_add_steepest_change` derives.
 STEEPEST_CHANGE_COLUMNS = list(_STEEPEST_FAMILIES)
 
-#: ``(family, candidate sectors)`` for the across-sector extrema. ``G`` is
-#: excluded for the same reason as above: being the mean of the six it can only
-#: be the min or the max when they all agree.
+# : ``(family, candidate sectors)`` for the across-sector extrema.
 _EXTREMA_FAMILIES = {
     "BMO_MRW": [c for c in BMO_MRW_SECTORS if not c.startswith("G ")],
 }
 
-#: The per-visit across-sector columns :func:`_add_sector_extrema` derives.
+# : The per-visit across-sector columns :func:`_add_sector_extrema` derives.
 SECTOR_EXTREMA_COLUMNS = [
     f"{stat}_{family}" for family in _EXTREMA_FAMILIES for stat in ("min", "max")
 ]
 
-#: What the cardiac pipeline measures. ΔCT / minCT in mm, rates in µm/s,
-#: K in 1/µL. ``*_Mask`` are the mask-based counterparts of the displacement-based
-#: ΔCT, kept side by side because they are two estimators of the same quantity.
+# : What the cardiac pipeline measures.
 PULSATION_METRICS = [
     "deltaCT",
     "deltaCT_Mask",
@@ -132,15 +85,8 @@ PULSATION_METRICS = [
     "rate_asymmetry",
 ]
 
-#: Per-eye / per-visit quantities that condition the metrics rather than being
-#: the object of study. ``predicted_HR`` is the pipeline's own cardiac frequency
-#: (60 × ``cardiac_freq``), next to the clinically recorded ``HR``.
 COVARIATES = ["IOP", "OPA", "AxialLength", "HR", "predicted_HR", "Age"]
 
-#: Offered first in the measure pickers: the two global ONH values and the
-#: classic clinical endpoints. The six Garway-Heath sectors stay available behind
-#: them, but they are ~47% one common factor — testing all fourteen buys
-#: multiplicity, not independent evidence.
 DEFAULT_MEASURES = [
     "igri_base",
     "G BMO MRW",
@@ -154,10 +100,7 @@ DEFAULT_MEASURES = [
     "Visual Acuity",
 ]
 
-#: Identity of a row. ``case_id`` is the video's relative path under the pipeline
-#: outputs (``<file>/<date>/Rigidity/<eye>``) — the key the per-case viewers, the
-#: QC list and the cached measures all use. The frame's index, ``visit_id``, is
-#: the ``Measurements.Id`` of that video.
+# : Identity of a row.
 IDENTITY = [
     "case_id",
     "caseId",
@@ -171,8 +114,7 @@ IDENTITY = [
     "Type",
 ]
 
-#: Measures named by ``load_measurements`` that would arrive twice — once as a
-#: covariate column, once as a clinical measure. The covariate wins.
+# : Measures named by ``load_measurements`` that would arrive twice
 _DUPLICATED_BY_COVARIATE = {
     "Pascal OPA",
     "Axial Length",
@@ -180,8 +122,6 @@ _DUPLICATED_BY_COVARIATE = {
     "HR",
 }
 
-#: Book-keeping columns: numeric, but they describe the *join*, not the eye, so
-#: they must never reach a measure picker as candidate endpoints.
 _AUDIT_COLUMNS = {
     "onh_gap_days",
     "onh_slope_n_exams",
@@ -189,10 +129,10 @@ _AUDIT_COLUMNS = {
     "diagnosis_gap_days",
 }
 
-#: Identity columns of the wide ``ClinicalValues`` table; the rest are measures.
+# : Identity columns of the wide ``ClinicalValues`` table
 _CLINICAL_VALUES_IDS = ["Id", "Cohort", "PatientId", "File", "Eye", "Date"]
 
-#: The same quantity, spelled differently in the two clinical databases.
+# : The same quantity, spelled differently in the two clinical databases.
 _CLINICAL_VALUES_RENAME = {"G RNFL Thickness": "Global RNFL Thickness"}
 
 
@@ -209,39 +149,7 @@ def build_cohort(
     measurements_path: str | Path = MEASUREMENTS_PATH,
     overwrite: bool = False,
 ) -> pd.DataFrame:
-    """One row per rigidity visit, every source merged onto it.
-
-    Parameters
-    ----------
-    root :
-        Cardiac-pipeline output root, holding ``measures/`` and ``deltaY.pkl``.
-        Forwarded to :func:`load_pulsation_results`, which caches.
-    study :
-        Restrict to one arm (e.g. ``Study.PROSPECTIVE``). ``None`` keeps every
-        video.
-    iop_instrument :
-        Which instrument fills the ``IOP`` covariate; that measure is then
-        dropped from the clinical block so it does not appear twice.
-    onh_tolerance_days :
-        Half-width of the as-of window for the Heyex ONH exam. The realised gap
-        is kept in ``onh_gap_days``.
-    diagnosis_tolerance_days :
-        Same, for the diagnosis register (``diagnosis_gap_days``).
-    exclude_qc :
-        Drop the cases rejected on visual QC in the gif viewer.
-    heyex_path, clinical_values_path :
-        Pass ``None`` to skip that source.
-    overwrite :
-        Re-measure the pulsation results instead of reading their cache.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Indexed by ``visit_id``, with the video path in ``case_id``.
-        ``df.attrs["column_groups"]`` maps
-        ``identity / pulsation / covariates / onh / clinical`` to the columns of
-        each block; :func:`column_groups` recomputes it from any derived frame.
-    """
+    """One row per rigidity visit, every source merged onto it."""
     root = Path(root)
     cases, _cycles = load_pulsation_results(root, overwrite=overwrite)
     cases = filter_misregistration(cases, Path(root) / "misregistration_flags.csv")
@@ -296,11 +204,7 @@ def build_cohort(
 
 
 def column_groups(df: pd.DataFrame) -> dict[str, list[str]]:
-    """The column blocks of a cohort frame, recomputed if ``attrs`` was lost.
-
-    Pandas drops ``attrs`` through most operations, so anything that filters or
-    copies a cohort table would otherwise lose the grouping the pickers rely on.
-    """
+    """The column blocks of a cohort frame, recomputed if ``attrs`` was lost."""
     stored = df.attrs.get("column_groups")
     if stored:
         return {k: [c for c in v if c in df.columns] for k, v in stored.items()}
@@ -321,11 +225,7 @@ def column_groups(df: pd.DataFrame) -> dict[str, list[str]]:
 
 
 def measure_columns(df: pd.DataFrame) -> list[str]:
-    """Everything a rigidity metric can be confronted with: ONH + clinical.
-
-    :data:`DEFAULT_MEASURES` come first, so a picker's default selection is the
-    handful worth testing rather than the first fourteen alphabetically.
-    """
+    """Everything a rigidity metric can be confronted with: ONH + clinical."""
     groups = column_groups(df)
     present = [
         c
@@ -363,12 +263,7 @@ def load_excluded_cases(path: str | Path = QC_ERRORS_PATH) -> set[str]:
 
 
 def _study_membership(visits: pd.DataFrame, path: str | Path = STUDY_PATH) -> pd.Series:
-    """Every study an eye is enrolled in, joined by ``" / "``.
-
-    An eye can be in several arms at once, so this is a label rather than a key:
-    de-duplicating it down to one study is what silently dropped a third of the
-    prospective eyes from ``load_measurements(which_study=...)`` before.
-    """
+    """Every study an eye is enrolled in, joined by ``" / "``."""
     with sqlite3.connect(path) as con:
         studies = pd.read_sql_query("SELECT PatientId, Eye, Study FROM Studies", con)
     studies["Eye"] = studies["Eye"].astype(str).str.strip()
@@ -431,17 +326,7 @@ def _add_onh(
     clinical_values_path: str | Path | None,
     tolerance_days: int,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """ONH sectors from the Heyex reports, back-filled from ClinicalValues.
-
-    Heyex is the ground truth. ClinicalValues is consulted only for the visits
-    whose as-of Heyex match produced nothing at all — a row is never a mix of
-    the two sources, even when the Heyex exam is the further away of the two.
-
-    Also derives, per eye, the sector that is *changing* fastest — see
-    :func:`_add_steepest_change`. Those slopes are fit over every ONH exam the
-    sources hold for the eye, not only the ones that matched a rigidity visit:
-    an exam that sits between two visits still says how the disc is moving.
-    """
+    """ONH sectors from the Heyex reports, back-filled from ClinicalValues."""
     out = visits.copy()
     present: list[str] = []
     exams: list[pd.DataFrame] = []
@@ -484,7 +369,7 @@ def _add_onh(
                 _date=pd.to_datetime(extra["YearMonth"] + "-01", errors="coerce")
             )[["PatientId", "Eye", "_date"] + sectors]
         )
-        if not present:  # no Heyex source: everything comes from here
+        if not present:
             out = out.merge(
                 extra, on=["PatientId", "Eye", "YearMonth"], how="left"
             ).set_index(visits.index)
@@ -525,15 +410,7 @@ def _add_onh(
 
 
 def _add_igri(visits: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    """Add the I-GRI base score -- see :mod:`ocularrigidity.data.measurements.igri`.
-
-    Last of the stages, because it reads what the earlier ones produced: the
-    visual field from the clinical join, the RNFL sectors from the ONH join and
-    the IOP covariate. Its coverage report is kept in
-    ``df.attrs["igri_report"]`` rather than being printed, since it says how many
-    visits could be scored and how many values were clipped onto the paper's
-    ranges -- both of which change what the column means.
-    """
+    """Add the I-GRI base score"""
     out, report = add_igri_base(visits)
     out.attrs = dict(visits.attrs)
     out.attrs["igri_report"] = report
@@ -544,29 +421,7 @@ def _add_igri(visits: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 def _add_sector_extrema(
     visits: pd.DataFrame, present: Sequence[str]
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Per visit, the thinnest and the thickest sector of each ONH family.
-
-    Glaucomatous rim loss is sectoral before it is global, so the ``G`` average
-    dilutes it: an eye that has lost 40 µm in one sector and nothing elsewhere
-    reads as a ~7 µm change on ``G BMO MRW``. ``min_*`` is that focal view, and
-    ``max_*`` is the intact sector it should be read against -- the pair says how
-    asymmetric the disc is, which neither the average nor the minimum says alone.
-
-    Unlike ``steepest_change_*`` these are per-*visit* values in µm taken across
-    sectors at a single exam; nothing is fitted over time. They are also not the
-    database's ``Steepest BMO MRW``, which picks the sector deviating most from
-    the Heyex normative reference rather than the smallest raw value -- the two
-    agree on only ~13% of the ClinicalValues rows.
-
-    A visit is scored only when the whole family is present. Taking the minimum
-    over whichever sectors happen to be non-NaN would make the value depend on
-    the row's coverage rather than on the eye, and a minimum over four sectors
-    sits systematically above one over six. That costs 4 of ~3700 source exams
-    here, so insisting on completeness is close to free.
-
-    ``…_sector`` names the winner (``TI``, ``NS``, …), mirroring
-    ``steepest_change_*_sector``; ties go to the first sector in report order.
-    """
+    """Per visit, the thinnest and the thickest sector of each ONH family."""
     out = visits.copy()
     added: list[str] = []
     for family, candidates in _EXTREMA_FAMILIES.items():
@@ -597,34 +452,7 @@ def _add_sector_extrema(
 def _add_steepest_change(
     visits: pd.DataFrame, exams: list[pd.DataFrame]
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Per eye, the ONH sector that is thinning fastest, and how fast (µm/year).
-
-    For every eye, each sector gets a per-year OLS slope over that eye's ONH
-    exams; the sector with the **most negative** slope wins, because the
-    question is progression — a sector that thickens is not a disc that is
-    getting worse, so it must never be picked just for having moved a lot.
-    ``…_sector`` names the winner (``TI``, ``NS``, …); this mirrors the
-    ``Steepest … Quadrant`` convention of ClinicalValues, except that the value
-    reported here is the *rate*, not the sector's value at the visit.
-
-    The global (``G``) average is excluded from the search: being the mean of
-    the sectors it can only win when they all move together, which is the case
-    the per-sector search exists to avoid.
-
-    Read the sign with care: taking the minimum of six noisy slopes is a
-    selection, so it is biased downwards. On this cohort the median eye has a
-    global MRW slope of -1.8 µm/year but a steepest-sector slope of -5.0, and
-    97% of eyes have a negative steepest sector against 79% on the global value.
-    A negative ``steepest_change`` is therefore *not* by itself evidence that the
-    eye progressed; comparisons of the value between eyes remain meaningful,
-    which is what it is here for.
-
-    The result is a per-*eye* constant repeated on every visit of that eye, so it
-    describes the eye's trajectory, not the visit. ``onh_slope_n_exams`` and
-    ``onh_slope_span_years`` are carried next to it: a slope fit over two exams
-    two months apart is arithmetic, not progression, and these are what let a
-    caller filter it out.
-    """
+    """Per eye, the ONH sector that is thinning fastest, and how fast (µm/year)."""
     added = (
         [c for c in _STEEPEST_FAMILIES]
         + [f"{c}_sector" for c in _STEEPEST_FAMILIES]
@@ -635,14 +463,7 @@ def _add_steepest_change(
             visits[c] = np.nan
         return visits, added
 
-    # One row per (eye, exam month). The sources overlap on ~450 of the ~515
-    # ClinicalValues exams, and they disagree slightly (r ≈ 0.96–0.99), so the
-    # de-duplication has to be at the *month* grain, not the day: ClinicalValues
-    # is dated to the month while Heyex carries the true exam date, and matching
-    # on the day would let the same exam enter the fit twice under two slightly
-    # different values. Heyex is the ground truth — it is the direct parse of the
-    # report PDFs — so it is concatenated first and wins every collision;
-    # ClinicalValues only contributes the months Heyex does not cover.
+    # One row per (eye, exam month).
     all_exams = pd.concat(exams, ignore_index=True).dropna(subset=["_date"])
     all_exams["Eye"] = all_exams["Eye"].astype(str).str.strip()
     all_exams["_ym"] = all_exams["_date"].dt.strftime("%Y-%m")
@@ -680,7 +501,7 @@ def _add_steepest_change(
     out = out.merge(per_eye, on=["PatientId", "Eye"], how="left").set_index(
         visits.index
     )
-    for c in added:  # a family with no usable slope anywhere still needs its column
+    for c in added:
         if c not in out.columns:
             out[c] = np.nan
     return out, added
@@ -704,12 +525,7 @@ def _add_clinical(
     clinical_values_path: str | Path | None,
     iop_instrument: str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Longitudinal clinical measures, one column per measure.
-
-    Collapsed to one value per (patient, eye, month, measure) *before* the merge:
-    the month-anchored join matches several clinical rows to one visit, and a
-    direct merge would duplicate that visit once per match.
-    """
+    """Longitudinal clinical measures, one column per measure."""
     with sqlite3.connect(measurements_path) as con:
         measures = pd.read_sql_query(
             "SELECT PatientId, Date, Eye, MeasureName, MeasureValue FROM Measurements",
@@ -727,11 +543,6 @@ def _add_clinical(
         extra = extra[~pd.MultiIndex.from_frame(extra[keys]).isin(known)]
         long = pd.concat([long, extra], ignore_index=True)
 
-    # A measure that already exists as a column of the visit table (Age, the IOP
-    # instrument feeding the covariate, the ONH sectors) is dropped rather than
-    # merged: the table's own version is computed at the visit's exact date,
-    # while these are month-anchored, and keeping both would only produce an
-    # ``Age_x`` / ``Age_y`` pair nobody can pick between.
     drop = (
         _DUPLICATED_BY_COVARIATE
         | {iop_instrument}
@@ -761,8 +572,6 @@ def _add_clinical(
         wide, on=["PatientId", "Eye", "YearMonth"], how="left"
     ).set_index(visits.index)
     assert len(out) == len(visits), "the clinical join must not change the visit count"
-    # A measure the two databases hold but that never lands on a visit of this
-    # cohort is an empty column in every picker downstream.
     cols = [c for c in cols if out[c].notna().any()]
     return out, cols
 
@@ -799,11 +608,7 @@ def _asof_merge(
     gap_col: str,
     match_date_col: str,
 ) -> pd.DataFrame:
-    """Nearest-in-time merge on (PatientId, Eye), keeping the realised gap.
-
-    ``merge_asof`` resets the index and needs both sides sorted by the date, so
-    the visit index is carried through explicitly and restored afterwards.
-    """
+    """Nearest-in-time merge on (PatientId, Eye), keeping the realised gap."""
     left = visits.copy()
     left["_id"] = left.index
     left["_date"] = pd.to_datetime(left["Date"], errors="coerce")
@@ -829,7 +634,7 @@ def _asof_merge(
 
 
 def coverage(df: pd.DataFrame, columns: Iterable[str] | None = None) -> pd.DataFrame:
-    """How many visits / eyes / patients carry each column. The join audit."""
+    """How many visits / eyes / patients carry each column."""
     columns = list(columns) if columns is not None else measure_columns(df)
     eyes = df[["PatientId", "Eye"]].astype(str).agg("/".join, axis=1)
     rows = []
@@ -893,7 +698,7 @@ def get_cross_sectional_dx(
     }
 
     def tidy_cross_sectional(dx):
-        """Excel diagnoses, keyed on (File, Eye) with a usable date. OU -> OD + OS."""
+        """Excel diagnoses, keyed on (File, Eye) with a usable date."""
         out = dx.copy()
         out["File"] = out["PatientId"].astype(str).str.strip()
         out["Eye"] = out["Eye"].astype(str).str.strip().str.upper()

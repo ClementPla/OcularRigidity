@@ -14,13 +14,7 @@ def profile_correlation_dx(
     drop_edges: int = 75,
     subpixel: bool = True,
 ) -> torch.Tensor:
-    """
-    curve: T x W, ref_curve: W
-    Returns dx: T, the sub-pixel lateral shift that best aligns
-    curve[t] to ref_curve via 1D cross-correlation and parabolic interpolation.
-    When ``subpixel`` is False the parabolic fit is skipped and the integer-pixel
-    cross-correlation peak is returned directly.
-    """
+    """curve: T x W, ref_curve: W Returns dx: T, the sub-pixel lateral shift that best aligns curve[t] to ref_curve via 1D cross-correlation and parabolic interpolation."""
     T, W = curve.shape
     if max_shift is None:
         max_shift = W // 4
@@ -92,9 +86,6 @@ def frame_correlation_dx(
     return_confidence: bool = False,
     subpixel: bool = True,
 ) -> torch.Tensor:
-    # Colour in, luminance out: the phase correlation, the FFT windows and the
-    # peak search below are all 2-D, and a lateral shift is a property of the
-    # scene rather than of the channel it is measured in.
     frames = to_gray(frames)
     T, H, W = frames.shape
 
@@ -103,8 +94,6 @@ def frame_correlation_dx(
     crop_w = int(W * crop_factor)
     crop_x_start = (W - crop_w) // 2
 
-    # Columns are the last axis, so this crops W for a (T, H, W) stack and for a
-    # single (H, W) reference alike.
     frames = frames[..., crop_x_start : crop_x_start + crop_w]
     if ref is not None:
         ref = to_gray(torch.as_tensor(ref)[None])[0]
@@ -157,11 +146,6 @@ def frame_correlation_dx(
         corr = torch.fft.irfft2(cps, s=(h, w))
         corr = torch.fft.fftshift(corr, dim=(-2, -1))  # zero shift at center
 
-        # Localize the 2D correlation peak (within the vertical search band and
-        # the lateral window), then take the x-line through it. Summing over y
-        # would dilute a compact phase-correlation peak with many noisy rows
-        # (~2-4x worse under speckle); the peak row keeps full SNR and absorbs any
-        # residual vertical shift for free.
         nb = end - start
         region = corr[:, y_lo:y_hi, :].clone()
         region[:, :, ~in_window] = -float("inf")
@@ -169,10 +153,6 @@ def frame_correlation_dx(
         y_star = y_star + y_lo  # (b,) row of the 2D peak
         raw_corr_x = corr[torch.arange(nb, device=device), y_star, :]  # (b, w)
 
-        # Light 1D smoothing suppresses isolated speckle spikes, but it broadens
-        # the sharp phase-correlation peak and biases its apex. So it is used ONLY
-        # for a robust *coarse* integer pick; the sub-pixel parabola is then fitted
-        # on the RAW profile after re-finding the true maximum next to that pick.
         corr_x = F.avg_pool1d(raw_corr_x.unsqueeze(1), 5, stride=1, padding=2).squeeze(
             1
         )
@@ -210,10 +190,6 @@ def frame_correlation_dx(
         dx[start:end] = (center - peak_sub) * (crop_w / w)
         if start == 0 and DEBUG:
             index = 10
-            # Bokeh rather than plotly/ipympl: it embeds via BokehJS (no ipywidgets
-            # model, so no "model not found" in VSCode), renders on canvas (fast),
-            # and gives linked pan/zoom. Run once in the notebook if nothing shows:
-            #     from bokeh.io import output_notebook; output_notebook()
             from bokeh.io import output_notebook, show
             from bokeh.layouts import gridplot
             from bokeh.models import LinearColorMapper, Span
@@ -228,8 +204,7 @@ def frame_correlation_dx(
                 return np.clip((a - lo) / (hi - lo + 1e-8), 0.0, 1.0)
 
             def _rgba(r_ch, g_ch, b_ch):
-                """Three HxW [0,1] channels -> HxW uint32 RGBA for image_rgba.
-                Row 0 is flipped to the top (Bokeh's y origin is at the bottom)."""
+                """Three HxW [0,1] channels -> HxW uint32 RGBA for image_rgba."""
                 a = np.dstack(
                     [
                         np.clip(r_ch, 0, 1) * 255,
@@ -258,11 +233,6 @@ def frame_correlation_dx(
                 p.axis.visible = p.grid.visible = False
                 return p
 
-            # Reference as fed to the correlation (downsampled, mean-subtracted)
-            # and the same reference after the band-pass, to show which image
-            # structures the correlation actually uses. The `band` mask lives in
-            # the frequency domain, so we apply it via FFT -> mask -> iFFT. The
-            # Hann window is omitted here for legibility (it only apodises edges).
             r_ds = F.interpolate(ref[None, None].float(), size=(h, w), mode="area")[
                 0, 0
             ]
@@ -301,8 +271,8 @@ def frame_correlation_dx(
             p_corr.toolbar.logo = None
             p_corr.axis.visible = p_corr.grid.visible = False
 
-            # Profile panel: raw vs smoothed profile and the parabola actually
-            # fitted (on the raw samples). Only the ±max_shift window is meaningful.
+            # Profile panel: raw vs smoothed profile and the parabola
+            # actually fitted (on the raw samples).
             lo_x = center - max_shift_down - 2
             hi_x = center + max_shift_down + 2
             sl = slice(max(0, lo_x), min(w, hi_x + 1))
@@ -367,11 +337,7 @@ def frame_correlation_dx(
                 )
             )
 
-    # Pixel-precise request: snap to whole ORIGINAL-resolution pixels. The peak is
-    # already integer on the downsampled grid, but the back-projection
-    # (× crop_w / w) turns it into a fraction; rounding here makes the returned
-    # shift an integer number of pixels in the original image (not the
-    # downsampled one). With ``subpixel`` the fractional peak offset is kept.
+    # Pixel-precise request: snap to whole ORIGINAL-resolution pixels.
     if not subpixel:
         dx = dx.round()
 

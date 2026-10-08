@@ -1,4 +1,3 @@
-from typing import Optional, Tuple
 
 import torch
 import numpy as np
@@ -8,13 +7,7 @@ from ocularrigidity.segmentation.trainer.pl_module import ChoroidSegmentationMod
 from ocularrigidity.segmentation.postprocess.blob import (
     keep_largest_connected_component,
 )
-from ocularrigidity.segmentation.postprocess.graphcut_gpu import (
-    graphcut_masks_from_probs_batch_torch,
-)
-import numpy as np
-import torch
 import torch.nn.functional as F
-from tqdm import tqdm
 
 
 @torch.inference_mode()
@@ -25,8 +18,6 @@ def infer(
     resize_to: tuple[int, int] | None = None,
     batch_size: int = 8,
     return_logit: bool = False,
-    use_graphcut: bool = True,
-    graphcut_kwargs: dict | None = None,
     device: str = "cuda",
     use_amp: bool = True,
     amp_dtype: torch.dtype = torch.float16,
@@ -43,14 +34,12 @@ def infer(
         data = data.unsqueeze(1)
 
     n, _, org_h, org_w = data.shape
-    gc_kwargs = graphcut_kwargs or {}
 
     # Pin memory so data transfers to GPU are truly asynchronous
     if pin_memory and not data.is_pinned() and device == "cuda":
         data = data.pin_memory()
 
-    # Pre-allocate the whole-volume output (avoids inner-loop CPU syncs when it
-    # lives on the device; see ``accumulate_on_cpu`` for when it should not)
+    # Pre-allocate the whole-volume output (avoids inner-loop CPU syncs when it lives on the device
     buffer_device = "cpu" if accumulate_on_cpu else device
     predictions_buf = torch.empty(
         (n, org_h, org_w),
@@ -86,9 +75,6 @@ def infer(
         if pad_h > 0 or pad_w > 0:
             chunk = F.pad(chunk, (0, pad_w, 0, pad_h), mode="reflect")
 
-        # Fill the tail batch out to batch_size with copies of its last frame,
-        # so the module only ever sees one input shape. The copies are sliced
-        # back off below and never reach the output.
         n_real = end - start
         batch_padding = batch_size - n_real if pad_last_batch else 0
         if batch_padding > 0:
@@ -109,17 +95,11 @@ def infer(
             )
 
         # 3. Store the batch. Assigning into a host buffer is a cross-device
-        # copy_, so this is the same line either way.
         if return_logit:
             predictions_buf[start:end] = out.squeeze(1)
-        elif use_graphcut:
-            probs = torch.sigmoid(out.float() * 0.5).squeeze(1)
-            masks = graphcut_masks_from_probs_batch_torch(probs, **gc_kwargs)
-            predictions_buf[start:end] = masks
         else:
             predictions_buf[start:end] = out.squeeze(1) > 0.0
 
-    # No-op when the buffer is already in host memory.
     predictions = predictions_buf.cpu().numpy()
 
     if return_logit:

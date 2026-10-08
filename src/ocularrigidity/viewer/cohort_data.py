@@ -1,25 +1,4 @@
-"""Data layer for the Streamlit cohort browser.
-
-Pure (no Streamlit) helpers that turn a cohort experiments folder — the
-outputs of ``scripts/pulsation/infer.py`` and
-``scripts/cohort_analysis/extract_deltaA.py`` — into per-case tables of the
-pulsatile metrics (ΔA, ΔCT, min CT) and the Friedenwald rigidity K, merged with
-the clinical measurements.
-
-Layout consumed::
-
-    <root>/measures/<case>/deltaA_per_cycle.pkl   (ΔA + boundary displacements)
-    <root>/measures/<case>/segmented_cycles.npz   (choroid masks)
-
-``<case>`` is ``<patient>/<date>/Rigidity/<eye>`` and matches the cleaned
-``MeasureValue`` path in :func:`load_measurements`, which is how the clinical
-IOP / OPA / AxialLength / HR are joined.
-
-ΔCT is *measured* by tracking the choroid-sclera interface
-(:func:`measure_delta_ct_from_disp`) rather than read from the ``deltaY.pkl``
-harmonic fit, which also yields the absolute thickness ``minCT`` and the
-unit-free ``RelativeGrowth = ΔCT / minCT``.
-"""
+"""Data layer for the Streamlit cohort browser."""
 
 from __future__ import annotations
 
@@ -46,12 +25,10 @@ from ocularrigidity.friedenwald import (
     deltaA_to_deltaCT_mm,
     friedenwald_K,
 )
-from ocularrigidity.pipeline_config import DELTA_A
+from ocularrigidity.pipeline_config import N_CYCLES
 from ocularrigidity.segmentation.closing_structures import trim_choroid
 from ocularrigidity.thickness.delta import measure_delta_ct_from_disp
 
-# Columns trimmed off each side of the mask before measuring ΔCT (the edges of
-# the B-scan are unreliable). Matches the notebooks.
 DELTA_CT_TRIM = 100
 
 # Numeric metric columns offered to the regression / longitudinal explorers.
@@ -75,9 +52,7 @@ METRIC_COLUMNS = [
 # Metrics that make sense as the "probed" quantity in a longitudinal analysis.
 PROBE_COLUMNS = ["K", "RelativeGrowth", "deltaCT", "minCT", "deltaA", "K_area"]
 
-# Clinical measures tracked over time: offered first in the pickers and selected
-# by default. The rest of what the two clinical databases hold (sector RNFL, the
-# per-quadrant BMO-MRW, VFI, blood pressure…) stays available behind them.
+# Clinical measures tracked over time: offered first in the pickers and selected by default.
 CLINICAL_MEASURES = [
     "Global RNFL Thickness",
     "Visual Acuity",
@@ -96,11 +71,7 @@ def has_measures(root: str | Path) -> bool:
 
 
 def load_excluded_cases(path: str | Path = QC_ERRORS_PATH) -> set[str]:
-    """Case ids QC-rejected in the gif viewer (``errors.json``).
-
-    Entries are gif file names (``<patient>_<date>_Rigidity_<eye>.gif``); they
-    map back to the ``<patient>/<date>/Rigidity/<eye>`` case id.
-    """
+    """Case ids QC-rejected in the gif viewer (``errors.json``)."""
     path = Path(path)
     if not path.exists():
         return set()
@@ -135,24 +106,10 @@ def deltaCT_cache_path(root: str | Path, trim: int) -> Path:
 def load_deltaCT_per_cycle(
     root: str | Path,
     trim: int = DELTA_CT_TRIM,
-    n_cycles: int = DELTA_A.n_cycles,
+    n_cycles: int = N_CYCLES,
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Per-cycle *measured* ΔCT table.
-
-    For every case, the boundary displacements stored by ``extract_deltaA.py``
-    are replayed against the reference-frame choroid mask of each cycle to get
-    the peak-to-peak thickness change (see
-    :func:`ocularrigidity.thickness.delta.measure_delta_ct_from_disp`).
-
-    Returns ``case_id, cycle, deltaCT (µm), minCT (µm), RelativeGrowth`` — the
-    last being ``ΔCT / minCT``, i.e. the pulsatile thickening as a fraction of
-    the choroid itself. Cases whose cycle fails to measure are simply absent.
-
-    This walks every mask on disk, so it is slow (minutes for a full cohort);
-    the result is cached to a parquet next to the experiment root and reused
-    unless ``use_cache`` is False.
-    """
+    """Per-cycle *measured* ΔCT table."""
     root = Path(root)
     cache = deltaCT_cache_path(root, trim)
     if use_cache and cache.exists():
@@ -173,8 +130,6 @@ def load_deltaCT_per_cycle(
         masks = trim_choroid(load_mask(mask_file), trim)
         frames_per_cycle = masks.shape[0] // n_cycles
         for i in range(n_cycles):
-            # measure_delta_ct_from_disp only reads the reference frame's mask,
-            # so hand it that single frame rather than the whole cycle.
             ref_mask = masks[i * frames_per_cycle : i * frames_per_cycle + 1]
             try:
                 res = measure_delta_ct_from_disp(
@@ -221,21 +176,7 @@ def build_case_table(
     excluded_cases: Iterable[str] | None = None,
     trim: int = DELTA_CT_TRIM,
 ) -> pd.DataFrame:
-    """One row per case with the pulsatile metrics, clinical values and K.
-
-    Per-cycle ΔA / ΔCT / minCT are collapsed to the median across cycles.
-    Two rigidity coefficients are computed:
-
-    * ``K`` — from the *measured* ΔCT, with the shell sitting on top of the
-      measured choroid (inner radius ``R + minCT``). This is the notebook's K.
-    * ``K_area`` — from ΔA (px²) via the same spherical-shell volume but the
-      bare vitreous-chamber radius, so it stays defined for the cases whose ΔCT
-      could not be measured.
-
-    Units: ΔA and areas in px², ΔCT / ΔCT_estimated / minCT in µm, K in 1/µL.
-    ``study`` restricts the cohort (e.g. ``Study.PROSPECTIVE``);
-    ``excluded_cases`` drops QC-rejected case ids.
-    """
+    """One row per case with the pulsatile metrics, clinical values and K."""
     root = Path(root)
 
     da = load_deltaA_per_cycle(root)
@@ -261,8 +202,7 @@ def build_case_table(
     if excluded_cases:
         df = df[~df["case_id"].isin(set(excluded_cases))]
 
-    # Clinical join (IOP / OPA / AxialLength / HR) on the video path. The study
-    # filter lives in load_measurements, so an inner join applies it here.
+    # Clinical join (IOP / OPA / AxialLength / HR) on the video path.
     meas = load_measurements(
         include_OPA=True,
         include_IOP=True,
@@ -289,15 +229,13 @@ def build_case_table(
         how="inner" if study is not None else "left",
     ).drop(columns=["MeasureValue"])
 
-    # Identity: prefer the DB's own columns — the *path* spells a repeated
-    # acquisition of the same eye "OD1", which would not join back onto any
-    # clinical table. Fall back to the path for cases absent from the DB.
+    # Identity: prefer the DB's own columns
     parts = df["case_id"].str.split("/")
     df["PatientId"] = df["PatientId"].fillna(parts.str[0])
     df["Date"] = df["Date"].fillna(parts.str[1])
     df["Eye"] = df["Eye"].fillna(parts.str[-1])
 
-    # Friedenwald K, both ways. friedenwald_K adds dV_uL + K; rename to keep both.
+    # Friedenwald K, both ways.
     df["minCT_mm"] = df["minCT"] / 1000.0
     ka = friedenwald_K(df, from_area=True)
     df["dV_uL_area"], df["K_area"] = ka["dV_uL"], ka["K"]
@@ -327,10 +265,7 @@ def build_case_table(
     return df[ordered].sort_values("case_id").reset_index(drop=True)
 
 
-# Identity columns of the wide ``ClinicalValues`` table; everything else in it is
-# a candidate measure. ``File`` is the MRN that names the video folder, while
-# ``PatientId`` is the internal id the Biomechanics tables (and hence the case
-# table) key on — that is the one to join with.
+# Identity columns of the wide ``ClinicalValues`` table
 _CLINICAL_VALUES_IDS = ["Id", "Cohort", "PatientId", "File", "Eye", "Date"]
 
 # The same quantity, spelled differently in the two databases.
@@ -342,21 +277,7 @@ _MEASURE_KEYS = ["PatientId", "Eye", "YearMonth", "MeasureName_y"]
 def load_clinical_values_long(
     db_path: str | Path = CLINICAL_VALUES_PATH,
 ) -> pd.DataFrame:
-    """The wide ``ClinicalValues`` table, melted to one row per (visit × measure).
-
-    Returns ``PatientId, Eye, YearMonth, MeasureName_y, MeasureValue_y`` — the
-    same long shape the Biomechanics ``Measurements`` table already has, so the
-    two sources can simply be stacked.
-
-    Every non-identity column that holds at least one number is taken as a
-    measure; that keeps the sector RNFL / BMO-MRW / steepest values and drops the
-    purely categorical ones (``Sex``, ``Ethnicity``, the ``… Quadrant`` labels),
-    which no downstream regression could consume anyway.
-
-    The table repeats some visits verbatim, so values are collapsed to one per
-    (patient, eye, month, measure) — the month being the unit every downstream
-    analysis works in.
-    """
+    """The wide ``ClinicalValues`` table, melted to one row per (visit × measure)."""
     with sqlite3.connect(db_path) as con:
         wide = pd.read_sql_query("SELECT * FROM ClinicalValues", con)
 
@@ -389,22 +310,7 @@ def load_clinical_long(
     db_path: str | Path = MEASUREMENTS_PATH,
     clinical_values_path: str | Path | None = CLINICAL_VALUES_PATH,
 ) -> pd.DataFrame:
-    """Join the diagnosis and the longitudinal clinical measures onto the cases.
-
-    Each Rigidity visit is tagged with its same-visit ``Diagnosis`` / ``Type``
-    and with every clinical measure recorded in the *same calendar month*
-    (``YearMonth``) for that eye — clinical exams rarely fall on the exact day
-    of the OCT video.
-
-    Measures come from two databases: the Biomechanics ``Measurements`` table and
-    the wide ``ClinicalValues`` table (``clinical_values_path``, pass ``None`` to
-    skip it). Where both carry the same measure for the same visit, Biomechanics
-    wins, so the extra source only ever *adds* measures — never double-counts one.
-
-    The measure name / value land in ``MeasureName_y`` / ``MeasureValue_y``,
-    which is what the :mod:`ocularrigidity.stats.temporal` helpers read by
-    default. One row per (visit × measure).
-    """
+    """Join the diagnosis and the longitudinal clinical measures onto the cases."""
     with sqlite3.connect(db_path) as con:
         diagnosis = pd.read_sql_query("SELECT * FROM Diagnosis", con)
         measures = pd.read_sql_query("SELECT * FROM Measurements", con)
@@ -413,8 +319,6 @@ def load_clinical_long(
     df["YearMonth"] = df["Date"].str[:7]
     measures["YearMonth"] = measures["Date"].str[:7]
 
-    # ``PatientId`` comes back from SQLite as an int for the all-digit ids, but
-    # the case table reads it off the case path (and some ids are not numeric).
     for t in (diagnosis, measures):
         t["PatientId"] = t["PatientId"].astype(str)
     df["PatientId"] = df["PatientId"].astype(str)
@@ -447,9 +351,6 @@ def available_measures(clinical_long: pd.DataFrame) -> list[str]:
 
 def regression_stats(df: pd.DataFrame, x: str, y: str) -> dict:
     """Pearson / Spearman / OLS line for ``y`` vs ``x`` on the finite rows."""
-    # dict.fromkeys, not [x, y]: the explorer lets the same column be picked for
-    # both axes, and selecting one label twice returns a 2-column frame, which
-    # linregress then chokes on.
     d = df[list(dict.fromkeys([x, y]))].apply(pd.to_numeric, errors="coerce").dropna()
     if len(d) < 3:
         return {"n": len(d)}

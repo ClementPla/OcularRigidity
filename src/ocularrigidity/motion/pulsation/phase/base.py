@@ -1,22 +1,4 @@
-"""Phase estimation: from an aggregated trace to a cardiac phase per frame.
-
-An :class:`AbstractPhaseEstimator` owns two decisions:
-
-1. *How* to reduce the candidate traces — delegated to an
-   :class:`AbstractTraceAggregator` (aggregate-before, the default), or, if
-   ``per_trace=True``, phase is computed on every trace and the resulting phases
-   are combined circularly (aggregate-after).
-2. How to read phase out of a trace — the one abstract method,
-   :meth:`AbstractPhaseEstimator.phase_from_trace`.
-
-Everything else (embedding on the uniform grid, resampling onto the original
-frame timestamps, deriving the rate from the phase when no ``RateEstimate`` was
-supplied) is shared here.
-
-**Adding an estimator:** subclass :class:`AbstractPhaseEstimator`, implement
-``phase_from_trace``, and set ``requires_rate`` if you need a carrier frequency.
-See ``demodulation.py``, ``peak_locking.py``, ``hilbert.py``.
-"""
+"""Phase estimation: from an aggregated trace to a cardiac phase per frame."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -62,13 +44,9 @@ class PhaseTrack:
 
 
 class AbstractPhaseEstimator(ABC):
-    """Turns candidate traces into a per-frame cardiac phase.
+    """Turns candidate traces into a per-frame cardiac phase."""
 
-    Subclasses implement :meth:`phase_from_trace` and set ``requires_rate`` if
-    they need a carrier frequency to work at all.
-    """
-
-    #: Whether a RateEstimate is mandatory (IQ demodulation) or merely helpful.
+    # : Whether a RateEstimate is mandatory (IQ demodulation) or merely helpful.
     requires_rate: ClassVar[bool] = False
 
     def __init__(
@@ -88,12 +66,7 @@ class AbstractPhaseEstimator(ABC):
         traces: Traces,
         rate: Optional[RateEstimate],
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Return ``(phase_uniform, good_uniform)`` for one full-grid trace.
-
-        ``trace`` is on the full uniform grid with NaN outside the kept samples;
-        ``phase_uniform`` is in radians and need only be meaningful where the
-        returned ``good_uniform`` is True.
-        """
+        """Return ``(phase_uniform, good_uniform)`` for one full-grid trace."""
 
     # -- template -------------------------------------------------------
     def estimate(
@@ -127,12 +100,7 @@ class AbstractPhaseEstimator(ABC):
         goods: list[np.ndarray],
         weights: Optional[np.ndarray] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Circular (vector) mean of per-trace phases — the aggregate-after hook.
-
-        Phases live on a circle, so they are averaged as unit vectors; a plain
-        arithmetic mean would break across the 0/2π wrap. A sample is good if
-        any contributing trace was good there.
-        """
+        """Circular (vector) mean of per-trace phases"""
         P = np.stack(phases)  # (K, T)
         G = np.stack(goods)  # (K, T)
         w = np.ones(len(phases)) if weights is None else np.asarray(weights, float)
@@ -152,12 +120,7 @@ class AbstractPhaseEstimator(ABC):
         traces: Traces,
         rate: Optional[RateEstimate] = None,
     ) -> PhaseTrack:
-        """Package a uniform-grid phase as a :class:`PhaseTrack`.
-
-        Public because a subclass whose aggregation does not fit the
-        ``estimate`` template is expected to override ``estimate`` outright and
-        call this to get the per-frame resampling and rate derivation for free.
-        """
+        """Package a uniform-grid phase as a :class:`PhaseTrack`."""
         t = traces.uniform_time
         ts = traces.timestamps_seconds
         freq = rate.freq if rate is not None else self.derive_freq(phase_u, good_u, t)
@@ -174,8 +137,6 @@ class AbstractPhaseEstimator(ABC):
                 uniform_time=t,
             )
 
-        # Resample on the unit circle, so interpolation does not cut across the
-        # 0/2π wrap and invent a mid-cycle phase.
         z = np.exp(1j * phase_u[gi])
         zr = np.interp(ts, t[gi], z.real)
         zi = np.interp(ts, t[gi], z.imag)
@@ -195,11 +156,7 @@ class AbstractPhaseEstimator(ABC):
     def derive_freq(
         phase_u: np.ndarray, good_u: np.ndarray, uniform_time: np.ndarray
     ) -> float:
-        """Rate implied by the phase itself: median dφ/dt over good runs.
-
-        This is what makes the rate stage optional — an estimator that locks
-        onto the beat without being told the frequency still reports one.
-        """
+        """Rate implied by the phase itself: median dφ/dt over good runs."""
         in_run = good_u.astype(int)
         starts = np.where(np.diff(np.r_[0, in_run]) == 1)[0]
         ends = np.where(np.diff(np.r_[in_run, 0]) == -1)[0] + 1

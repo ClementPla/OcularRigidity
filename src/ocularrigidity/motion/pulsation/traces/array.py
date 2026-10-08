@@ -1,11 +1,4 @@
-"""A per-frame ``(T, W)`` array you already have, as a trace source.
-
-For signals the pipeline does not compute itself — boundary displacement
-``dY``, an intensity profile, anything measured elsewhere. Resampling onto the
-uniform grid, gap marking and the cardiac bandpass come from
-:class:`AbstractUniformTraceSource`, so the array only has to be per-frame and
-NaN-marked where it has holes.
-"""
+"""A per-frame ``(T, W)`` array you already have, as a trace source."""
 
 from typing import Optional
 
@@ -19,11 +12,7 @@ from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 
 
 class ArrayTraceSource(AbstractUniformTraceSource):
-    """Wrap an existing ``(T, W)`` array, one trace per column.
-
-    ``signal`` must have one row per frame on the aligner's timeline. Holes are
-    marked NaN; a row that is entirely NaN counts as a bad frame.
-    """
+    """Wrap an existing ``(T, W)`` array, one trace per column."""
 
     def __init__(
         self,

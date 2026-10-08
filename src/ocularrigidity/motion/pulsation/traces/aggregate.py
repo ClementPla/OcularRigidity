@@ -1,22 +1,4 @@
-"""Collapse a source's traces to a single trace, as a trace-source *wrapper*.
-
-:class:`~ocularrigidity.motion.pulsation.phase.aggregation.AbstractTraceAggregator`
-does the same reduction, but at the *phase* stage — after the rate estimator has
-already scored every trace and picked a ``best_index``. Reducing here instead
-puts the collapsed trace in front of the rate estimator too, so the frequency is
-read off the ensemble rather than off whichever single trace scored best::
-
-    raw      = MaskThicknessTraceSource(reg, aligner)          # K = W
-    filtered = BandPassFilterTraceSource(raw)                  # K = W
-    single   = AggregateTraceSource(filtered)                  # K = 1
-
-That matters when there is no decomposition stage: ``SelectBestComponent`` over
-several hundred raw A-scan traces bets the whole estimate on one column, and the
-column with the sharpest in-band peak is not reliably the most cardiac one.
-
-With ``K == 1`` the downstream aggregator choice stops mattering —
-``SelectBestComponent`` trivially picks index 0.
-"""
+"""Collapse a source's traces to a single trace, as a trace-source *wrapper*."""
 
 from dataclasses import dataclass, replace
 from typing import Literal, Optional
@@ -31,23 +13,7 @@ AggregateMethod = Literal["mean", "median", "trimmed_mean", "max", "min", "range
 
 @dataclass
 class AggregateConfig:
-    """How the ``(T_kept, K)`` traces are collapsed to ``(T_kept, 1)``.
-
-    ``mean`` is the default and the best SNR gain when traces agree; ``median``
-    and ``trimmed_mean`` (which drops ``trim`` from each tail) resist a handful
-    of columns with lost segmentation. ``range`` is ``max - min``, i.e. how much
-    the traces disagree at each instant rather than what they share.
-
-    ``max``, ``min`` and ``range`` are *nonlinear*: they rectify, so a symmetric
-    oscillation can show up at twice its true frequency. They are diagnostics,
-    not a default — prefer ``mean``/``median`` for anything feeding the rate
-    estimator, and check the periodogram if you use them.
-
-    ``standardize`` centres each trace and scales it to unit variance first, so
-    no trace dominates by amplitude alone. Leave it on: raw A-scan thickness
-    varies several-fold across a scan, and every method here is sensitive to
-    that (the extremes most of all).
-    """
+    """How the ``(T_kept, K)`` traces are collapsed to ``(T_kept, 1)``."""
 
     method: AggregateMethod = "mean"
     standardize: bool = True
@@ -86,14 +52,7 @@ def _reduce(values: np.ndarray, cfg: AggregateConfig) -> np.ndarray:
 
 
 class AggregateTraceSource(AbstractTraceSource):
-    """Wraps a source and returns its traces collapsed into one.
-
-    Consumes and produces the same :class:`Traces` contract, so it composes with
-    the other sources; put it after the bandpass and before the rate stage.
-
-    ``mixing`` and ``source_map`` are dropped: both index the *base* source's
-    trace axis, which no longer exists once the traces are collapsed.
-    """
+    """Wraps a source and returns its traces collapsed into one."""
 
     def __init__(
         self,

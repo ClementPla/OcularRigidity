@@ -1,24 +1,4 @@
-"""Motion correction across the B-scans of a raster volume.
-
-In a raster (e.g. 6x6 mm angio) volume every B-scan is a new position, so the
-video tools — which align repeats of one position to a median — do not apply.
-What does hold: the retina and choroid change smoothly from one B-scan to the
-next (~12 um apart), while eye motion does not. An axial jump of tens of pixels
-between neighbours is motion, not anatomy.
-
-Measured on a PLEX Elite 6x6 angio, the motion is axial: the BM jumps by up to
-~80 px across a few B-scans (saccades, head motion), while the lateral shift
-between neighbours is 0 +/- 1 px (the retinal-vessel shadows stay continuous).
-So this module corrects the axial position and tilt of each B-scan and flags
-the frames that are corrupted rather than displaced.
-
-The split between anatomy and motion is a modelling choice: the BM's offset
-and tilt along the slow axis are fitted with a robust low-order polynomial (the
-eye's curvature; degree 2 by default), and the residual is taken as motion.
-Slow drift over the ~6 s acquisition is indistinguishable from curvature with a
-single raster, so it stays in the "anatomy" — only an orthogonal scan could
-separate the two.
-"""
+"""Motion correction across the B-scans of a raster volume."""
 
 from __future__ import annotations
 
@@ -39,10 +19,10 @@ __all__ = [
 
 @dataclass
 class AxialMotion:
-    shift: np.ndarray  # (T, W) px; corrected[t, y, x] = volume[t, y + shift[t, x], x]
+    shift: np.ndarray
     offset: np.ndarray  # (T,) motion of each B-scan's BM at the centre column
     tilt: np.ndarray  # (T,) motion of each B-scan's BM slope (px per A-scan)
-    bm_offset: np.ndarray  # (T,) measured BM depth at the centre column
+    bm_offset: np.ndarray
     anatomy_offset: np.ndarray  # (T,) the smooth fit kept as anatomy
     valid: np.ndarray  # (T,) bool, B-scans used for the fit (not corrupted)
 
@@ -52,7 +32,7 @@ class AxialMotion:
 
 
 def _robust_polyfit(t, y, w0, degree, n_iter=10, c=4.685):
-    """Tukey-biweight IRLS polynomial fit; returns the fitted curve at ``t``."""
+    """Tukey-biweight IRLS polynomial fit"""
     w = w0.astype(float).copy()
     fit = np.zeros_like(y)
     for _ in range(n_iter):
@@ -84,13 +64,7 @@ def _line_fit(bm: np.ndarray, xc: float) -> tuple[np.ndarray, np.ndarray]:
 def detect_bad_bscans(
     flattened: np.ndarray, slab: tuple[int, int] = (10, 120), n_mad: float = 6.0
 ) -> np.ndarray:
-    """Flag B-scans whose content does not continue their neighbours'.
-
-    ``flattened`` is ``(T, Z, W)`` flattened on the BM (row 0 = BM). The mean
-    over ``slab`` rows is the retinal-vessel shadow pattern, which is continuous
-    across a good raster; a corrupted frame (blink, fly-back, saccade mid-scan)
-    correlates with neither neighbour. Returns ``(T,)`` bool, True = bad.
-    """
+    """Flag B-scans whose content does not continue their neighbours'."""
     p = np.log1p(flattened[:, slab[0] : slab[1]].astype(np.float32)).mean(1)
     p = p - gaussian_filter1d(p, 15, axis=1)
     p = (p - p.mean(1, keepdims=True)) / (p.std(1, keepdims=True) + 1e-6)
@@ -107,12 +81,7 @@ def estimate_axial_motion(
     bad: np.ndarray | None = None,
     correct_tilt: bool = True,
 ) -> AxialMotion:
-    """Axial motion of each B-scan from the BM boundary ``(T, W)`` (NaN allowed).
-
-    ``degree`` is the polynomial kept as anatomy along the slow axis (2 = the
-    eye's curvature). ``bad`` B-scans are excluded from the fit and their
-    motion is interpolated from their neighbours'.
-    """
+    """Axial motion of each B-scan from the BM boundary ``(T, W)`` (NaN allowed)."""
     T, W = bm.shape
     xc = (W - 1) / 2
     a, b = _line_fit(bm, xc)
@@ -150,11 +119,7 @@ def apply_axial_shift(
     device: str = "cuda",
     batch: int = 32,
 ) -> np.ndarray:
-    """``out[t, y, x] = volume[t, y + shift[t, x], x]``, per A-scan.
-
-    ``order=1`` interpolates linearly (images), ``order=0`` takes the nearest
-    sample (masks). Samples outside the volume are 0. Keeps the input dtype.
-    """
+    """``out[t, y, x] = volume[t, y + shift[t, x], x]``, per A-scan."""
     T, H, W = volume.shape
     out = np.empty_like(volume)
     y = torch.arange(H, device=device, dtype=torch.float32)[None, :, None]
@@ -190,12 +155,7 @@ def correct_volume_motion(
     flag_bad: bool = True,
     device: str = "cuda",
 ):
-    """Estimate the axial motion from ``bm`` and remove it from every volume.
-
-    Returns ``(motion, corrected_volumes, corrected_masks)``. The same shift is
-    applied to all volumes (amplitude and flow of one acquisition share it);
-    ``masks`` are shifted with nearest-neighbour sampling.
-    """
+    """Estimate the axial motion from ``bm`` and remove it from every volume."""
     bad = None
     if flag_bad and volumes:
         bmf = np.where(np.isnan(bm), np.nanmedian(bm), bm)

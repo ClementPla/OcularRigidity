@@ -34,14 +34,12 @@ def _load(path: Path):
 
 
 def _video_of(stem: str) -> str:
-    """Recover {video} from a '{video}_{idx}' stem by dropping the trailing
-    frame-index token. Correct even if {video} itself ends in '_<int>'."""
+    """Recover {video} from a '{video}_{idx}' stem by dropping the trailing frame-index token."""
     return stem.rsplit("_", 1)[0]
 
 
 def _read_image(path: Path) -> torch.Tensor:
-    """Single-channel PNG -> [1, H, W] float32, with the encoder's normalisation
-    ((x/255 - 0.5) / 0.5) — the same one ``prepare_data.py`` used."""
+    """Single-channel PNG -> [1, H, W] float32, with the encoder's normalisation ((x/255 - 0.5) / 0.5)"""
     img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if img is None:
         raise FileNotFoundError(path)
@@ -51,10 +49,7 @@ def _read_image(path: Path) -> torch.Tensor:
 
 
 def _list_frames(root: Path) -> Dict[str, List[Tuple[Path, Optional[Path]]]]:
-    """``video -> [(image_path, transform_path | None), ...]``, index 0 is the
-    reference frame (whose transform is the identity by construction --
-    ``prepare_data`` picks it as the frame with ``dx == 0``). Shared by every
-    frame-sampling dataset so they agree on frame order and indexing."""
+    """``video -> [(image_path, transform_path | None), ...]``, index 0 is the reference frame (whose transform is the identity by construction"""
     frames: Dict[str, List[Tuple[Path, Optional[Path]]]] = defaultdict(list)
     d_tf = root / "transforms"
     for p in sorted((root / "images" / "fixed").glob("*.png")):
@@ -75,21 +70,12 @@ def _crop_dy(dy: torch.Tensor, win, crop) -> torch.Tensor:
 
 
 def _key(vid: str, idx: int, win) -> str:
-    """FeatureCache key. The crop window is part of the identity: the same
-    frame under a different window is a different pyramid, and serving a stale
-    one would be silent and wrong."""
+    """FeatureCache key."""
     return f"{vid}#{idx}" if win is None else f"{vid}#{idx}@{win[0]}_{win[1]}"
 
 
 def _retina_row(paths: Sequence[Path], n: int = 3) -> int:
-    """Row to centre a crop on: the brightest band of the B-scan.
-
-    A *fixed* window is not an option. Measured over the cohort the choroid
-    centre sits anywhere from row ~250 to ~1080 depending on the acquisition,
-    so one shared window holds the full mask for only about half the frames.
-    Per video it is much tighter -- the worst video needed 720 rows to cover
-    every frame -- which is what makes a 768-row crop safe once it is centred.
-    """
+    """Row to centre a crop on: the brightest band of the B-scan."""
     rows = []
     for q in list(paths)[:n]:
         img = cv2.imread(str(q), cv2.IMREAD_GRAYSCALE)
@@ -103,8 +89,7 @@ def _retina_row(paths: Sequence[Path], n: int = 3) -> int:
 
 
 def _video_centres(frames, crop):
-    """``video -> retina row``, plus the full frame shape. Computed once: it
-    reads a few frames per video, which is far too slow to redo every epoch."""
+    """``video -> retina row``, plus the full frame shape."""
     if crop is None:
         return None, None
     centres = {}
@@ -118,19 +103,7 @@ def _video_centres(frames, crop):
 
 
 def _draw_windows(centres, full, crop, seed: int, jitter: int = 64):
-    """``video -> (row0, col0)``, re-drawable per epoch.
-
-    One window per video rather than per sample, because the FeatureCache is
-    keyed by frame: a frame's pyramid is only reusable while its crop holds
-    still, so a fresh window per pair would turn every hit into a miss. Redrawn
-    each epoch instead, which gives the crop variety of random cropping at no
-    cost to the cache -- over a run each video is seen through as many windows
-    as there are epochs.
-
-    Rows are jittered around the video's retina rather than drawn uniformly:
-    the choroid sits anywhere from row ~250 to ~1080 across the cohort, so a
-    uniform row offset would spend much of its time on empty vitreous.
-    """
+    """``video -> (row0, col0)``, re-drawable per epoch."""
     if crop is None:
         return None
     H, W = full
@@ -147,7 +120,7 @@ def _draw_windows(centres, full, crop, seed: int, jitter: int = 64):
 
 
 def _apply_crop(img: torch.Tensor, win, crop):
-    """Crop ``(1, H, W)`` to ``crop`` at origin ``win``; identity if no crop."""
+    """Crop ``(1, H, W)`` to ``crop`` at origin ``win``"""
     if crop is None or win is None:
         return img
     ch, cw = crop
@@ -157,20 +130,8 @@ def _apply_crop(img: torch.Tensor, win, crop):
 
 # --------------------------------------------------------------------------- #
 # Data
-# --------------------------------------------------------------------------- #
 class FramePairDataset(Dataset):
-    """Ordered (fixed, moving) frame pairs drawn from within a single volume.
-
-    With no target to match, the reference frame loses its special status: any
-    frame can play fixed. ``pair_mode="within"`` therefore samples ordered pairs
-    from all of a video's dumped frames, which turns N frames into N(N-1) samples
-    instead of N-1. ``pair_mode="reference"`` keeps the old pairing (every frame
-    against the volume's reference), which is what the diagnostic ground truth
-    was computed for.
-
-    Pairs are drawn once, from a seeded RNG, so an epoch is reproducible and the
-    validation set is fixed.
-    """
+    """Ordered (fixed, moving) frame pairs drawn from within a single volume."""
 
     def __init__(
         self,
@@ -195,8 +156,7 @@ class FramePairDataset(Dataset):
         self._seed = seed
         self._centres, self._full = _video_centres(self.frames, crop)
         self.windows = _draw_windows(self._centres, self._full, crop, seed)
-        # Dumped transforms are always full-frame width; a crop must be taken
-        # from them *after* the difference, never baked into their length.
+        # Dumped transforms are always full-frame width
         _probe = cv2.imread(str(next(iter(self.frames.values()))[0][0]), cv2.IMREAD_GRAYSCALE)
         self.full_w = int(_probe.shape[1])
         for vid, fl in sorted(self.frames.items()):
@@ -233,8 +193,7 @@ class FramePairDataset(Dataset):
         return img
 
     def _transform(self, tf: Optional[Path], width: int):
-        """(dx, dy) of a frame w.r.t. its volume's reference; identity for the
-        reference itself and for a frame whose transform was not dumped."""
+        """(dx, dy) of a frame w.r.t."""
         if tf is None:
             return torch.zeros(()), torch.zeros(width)
         t = _load(tf)
@@ -244,22 +203,13 @@ class FramePairDataset(Dataset):
         vid, i, j = self.samples[k]
         fl = self.frames[vid]
         win = self.windows[vid] if self.windows else None
-        # The same window for both frames: cropping them at different offsets
-        # would inject a dy of exactly that difference into the pair.
         fixed = _apply_crop(self._image(fl[i][0]), win, self.crop)
         moving = _apply_crop(self._image(fl[j][0]), win, self.crop)
         W = self.full_w
-        # Both transforms are relative to the same reference, so the pair's
-        # transform is their difference (exact for dx; for dy exact up to the
-        # column re-indexing induced by dx, which is a few pixels).
         dx_i, dy_i = self._transform(fl[i][1], W)
         dx_j, dy_j = self._transform(fl[j][1], W)
-        # The diagnostic is only meaningful if *both* frames' transforms are
-        # known. Index 0 is the reference, whose transform is the identity; any
-        # other frame without a dumped transform makes the pair unscorable.
+        # The diagnostic is only meaningful if *both* frames' transforms are known.
         has_gt = (i == 0 or fl[i][1] is not None) and (j == 0 or fl[j][1] is not None)
-        # The frame identities travel with the pair so run_epoch can cache the
-        # encoder pyramid per frame instead of per pair — see FeatureCache.
         return (
             fixed,
             moving,
@@ -272,17 +222,7 @@ class FramePairDataset(Dataset):
 
 
 class FrameTripletDataset(Dataset):
-    """Closed triplets ``(i, j, k)`` of frames from one video, for the cycle-
-    consistency term: a lateral shift is a pure translation, so it composes
-    exactly across any three frames of the same eye --
-    ``dx(i,k) == dx(i,j) + dx(j,k)`` -- regardless of what the model predicts
-    for any single pair. Checking that composition needs no ground truth, only
-    three ordinary forward passes on frames the pair loader already visits.
-
-    One item yields the three *pairs* a closed triplet needs -- ``(i,j)``,
-    ``(j,k)``, ``(i,k)`` -- stacked so a caller can push them through the
-    model exactly like a pair batch and then read off ``dx.view(-1, 3)``.
-    """
+    """Closed triplets ``(i, j, k)`` of frames from one video, for the cycle- consistency term: a lateral shift is a pure translation, so it composes exactly across any three frames of the same eye"""
 
     def __init__(
         self,
@@ -339,8 +279,7 @@ class FrameTripletDataset(Dataset):
         win = self.windows[vid] if self.windows else None
         c = lambda n: _apply_crop(self._image(fl[n][0]), win, self.crop)
         fi, fj, fk = c(i), c(j), c(k)
-        # Row order (i,j), (j,k), (i,k) -- collate_triplets keeps it, so a
-        # batch of Bt items reshapes to (Bt, 3) in exactly this column order.
+        # Row order (i,j), (j,k), (i,k)
         fixed = torch.stack([fi, fj, fi], dim=0)
         moving = torch.stack([fj, fk, fk], dim=0)
         keys_f = [_key(vid, i, win), _key(vid, j, win), _key(vid, i, win)]
@@ -349,9 +288,7 @@ class FrameTripletDataset(Dataset):
 
 
 def collate_triplets(batch):
-    """Bt items of 3 stacked pairs each -> one (3*Bt,...) batch, triplet-major
-    (item 0's 3 rows, then item 1's, ...) so ``dx.view(Bt, 3)`` recovers
-    ``(dx_ij, dx_jk, dx_ik)`` per triplet after the model runs on the batch."""
+    """Bt items of 3 stacked pairs each -> one (3*Bt,...) batch, triplet-major (item 0's 3 rows, then item 1's, ...) so ``dx.view(Bt, 3)`` recovers ``(dx_ij, dx_jk, dx_ik)`` per triplet after the model runs on the batch."""
     fixed = torch.cat([b[0] for b in batch], dim=0)
     moving = torch.cat([b[1] for b in batch], dim=0)
     keys_f = [key for b in batch for key in b[2]]
@@ -360,20 +297,7 @@ def collate_triplets(batch):
 
 
 def _shift_and_mask(img: torch.Tensor, delta: int, margin: int) -> torch.Tensor:
-    """Shift ``img`` content right by ``delta`` whole columns and blank
-    ``margin`` columns at both edges.
-
-    Whole columns, so the shift is an exact index copy -- no interpolation, and
-    therefore none of the sub-pixel resampling bias that makes the photometric
-    terms prefer integer offsets.
-
-    The blanking is what keeps the task honest. Shifting alone leaves a
-    ``|delta|``-wide empty strip on one side, whose width and side give
-    ``delta`` away; a model could read the strip instead of registering
-    anything. Masking a fixed ``margin >= max|delta|`` on *both* edges of
-    *every* variant makes their border geometry identical, so the strip
-    carries no information and only the content offset differs.
-    """
+    """Shift ``img`` content right by ``delta`` whole columns and blank ``margin`` columns at both edges."""
     out = torch.zeros_like(img)
     if delta > 0:
         out[..., delta:] = img[..., :-delta]
@@ -388,19 +312,7 @@ def _shift_and_mask(img: torch.Tensor, delta: int, margin: int) -> torch.Tensor:
 
 
 class FrameShiftDataset(Dataset):
-    """(fixed, moving) pairs plus a copy of ``moving`` shifted by a known
-    integer ``delta``, for the shift-equivariance term.
-
-    The only exactly-known quantity available for ``dx``: we apply the shift
-    ourselves, so ``dx_ref - dx_shifted == delta`` holds whatever the true
-    underlying displacement is, and the classical estimator is not involved at
-    any point. See :func:`shift_equivariance_loss`.
-
-    ``fixed`` is returned raw and keyed, so it comes from the FeatureCache like
-    any other frame. The two ``moving`` variants are transformed images, which
-    no per-frame cache can serve, so they are encoded fresh every step -- that
-    is what this term costs.
-    """
+    """(fixed, moving) pairs plus a copy of ``moving`` shifted by a known integer ``delta``, for the shift-equivariance term."""
 
     def __init__(
         self,
@@ -481,21 +393,7 @@ def split_videos(root: Path, val_frac: float, seed: int) -> Tuple[Set[str], Set[
 
 
 class VideoChunkBatchSampler(Sampler):
-    """Batches drawn from a small working set of videos at a time.
-
-    Encoding is 57% of a training step (a MiT forward over 1536x1024 frames),
-    and with ``pair_mode="within"`` the same ~40 frames per video are re-encoded
-    for every pair they appear in — about 240 passes per video where 40 would
-    do. Caching the pyramid per frame fixes that, but only if consecutive
-    batches keep hitting the same frames.
-
-    The obvious way to get that locality — one video per batch — would make
-    every gradient step see a single volume, which is a real change to the
-    optimisation and not one we want. So instead a *working set* of
-    ``videos_in_flight`` volumes is held at once and batches are drawn at random
-    from the union of their pairs: batches stay heterogeneous, while the cache
-    only ever needs to hold a few volumes' frames.
-    """
+    """Batches drawn from a small working set of videos at a time."""
 
     def __init__(
         self,
@@ -505,8 +403,6 @@ class VideoChunkBatchSampler(Sampler):
         shuffle: bool = True,
         seed: int = 0,
     ):
-        # Only the leading video id is read, so this works unchanged on
-        # FramePairDataset's (vid, i, j) and FrameTripletDataset's (vid, i, j, k).
         self.groups: Dict[str, List[int]] = defaultdict(list)
         for idx, sample in enumerate(samples):
             self.groups[sample[0]].append(idx)
@@ -542,13 +438,7 @@ class VideoChunkBatchSampler(Sampler):
 
 
 class FeatureCache:
-    """LRU of frozen-encoder pyramids, keyed by frame.
-
-    Stored as float16 (~24 MB a frame against 49 in float32) and cast back on
-    use: these features are consumed by a cosine similarity and a correlation
-    volume, both of which normalise, so the storage precision is far finer than
-    anything the objective resolves.
-    """
+    """LRU of frozen-encoder pyramids, keyed by frame."""
 
     def __init__(self, encoder, capacity: int = 192, amp_dtype=None):
         self.encoder = encoder
@@ -569,7 +459,7 @@ class FeatureCache:
     def get(self, images: torch.Tensor, keys: Sequence[str]) -> List[torch.Tensor]:
         """Pyramid for each image, encoding only the frames not already held."""
         missing = [i for i, k in enumerate(keys) if k not in self._cache]
-        # A frame can repeat inside one batch; encode it once.
+        # A frame can repeat inside one batch
         uniq: Dict[str, int] = {}
         for i in missing:
             uniq.setdefault(keys[i], i)
@@ -578,9 +468,6 @@ class FeatureCache:
             feats = self._encode(images[idx])
             for n, k in enumerate(uniq):
                 self._cache[k] = [f[n : n + 1] for f in feats]
-            # Evict only after the whole batch is in, and never evict a frame
-            # this batch still has to read back: a capacity below 2*batch_size
-            # would otherwise drop entries between insertion and use.
             protected = set(keys)
             while len(self._cache) > self.capacity:
                 victim = next((k for k in self._cache if k not in protected), None)
@@ -598,12 +485,7 @@ class FeatureCache:
         return out
 
     def encode(self, images: torch.Tensor) -> List[torch.Tensor]:
-        """Encode ``images`` without touching the cache.
-
-        For synthetically transformed frames (see FrameShiftDataset): they are
-        not any frame's pyramid, so caching them by frame id would poison the
-        cache for the real thing.
-        """
+        """Encode ``images`` without touching the cache."""
         return [f.float() for f in self._encode(images)]
 
     @property
@@ -614,14 +496,11 @@ class FeatureCache:
 
 # --------------------------------------------------------------------------- #
 # Frozen networks
-# --------------------------------------------------------------------------- #
 def build_segmenter(device: str):
-    """The frozen choroid segmentation module: its encoder feeds the regressor,
-    and (with ``--w-bm``) its decoder provides the BM curve the loss aligns."""
-    from ocularrigidity.scripts.cohort_analysis.segment_n_cycles import get_model
+    """The frozen choroid segmentation module: its encoder feeds the regressor, and (with ``--w-bm``) its decoder provides the BM curve the loss aligns."""
+    from ocularrigidity.segmentation.utils import get_model
 
-    # get_model loads onto `device` directly -- see its docstring on why
-    # an already-loaded model must never be moved across GPUs.
+    # get_model loads onto `device` directly
     seg = get_model(device).eval()
     for p in seg.parameters():
         p.requires_grad_(False)
@@ -630,15 +509,8 @@ def build_segmenter(device: str):
 
 # --------------------------------------------------------------------------- #
 # Train / eval
-# --------------------------------------------------------------------------- #
 def _forever(loader):
-    """Endlessly re-iterate ``loader``, reshuffling as its sampler dictates.
-
-    Deliberately not ``itertools.cycle``: that saves a copy of every element it
-    yields so it can replay them, which for image batches is ~75 MB a batch and
-    tens of GB of pinned host RAM over one epoch, and it then replays the
-    *identical* tensors rather than drawing freshly shuffled triplets.
-    """
+    """Endlessly re-iterate ``loader``, reshuffling as its sampler dictates."""
     while True:
         yield from loader
 
@@ -658,16 +530,7 @@ def run_epoch(
     w_shift: float = 0.0,
     shift_beta: float = 8.0,
 ):
-    """One pass. ``optimizer=None`` evaluates; ``baseline=True`` scores the
-    classical (dx, dy) instead of the model's, under the identical objective.
-
-    ``triplet_loader`` (optional) yields closed frame triplets for the cycle-
-    consistency term (see ``cycle_consistency_loss``); it is cycled
-    independently of ``loader`` since the two have different lengths. Skipped
-    entirely under ``baseline``: the classical labels compose by construction
-    (``dx_gt(i,j) = dx_j - dx_i`` sums telescopically), so the term would be
-    tautologically zero there and measure nothing.
-    """
+    """One pass."""
     train = optimizer is not None
     model.train(train and not baseline)
     sums: Dict[str, float] = defaultdict(float)
@@ -695,14 +558,9 @@ def run_epoch(
         dy_gt = dy_gt.to(device)
         bs = fixed.shape[0]
 
-        # Frozen pyramids, encoded once per *frame* rather than once per pair:
-        # the same frames recur across the pairs of a video, and the encoder is
-        # the single most expensive part of a step.
         feats = cache.get(torch.cat([fixed, moving], 0), list(key_f) + list(key_m))
         fixed_feats = [f[:bs] for f in feats]
         moving_feats = [f[bs:] for f in feats]
-        # Taken from the batch, so crops and full frames both work: the cascade
-        # reads its strides off this and would silently mis-scale otherwise.
         shape = tuple(fixed.shape[-2:])
 
         with torch.set_grad_enabled(train and not baseline):
@@ -720,10 +578,6 @@ def run_epoch(
             )
 
             # --- dx auxiliaries. Neither uses the classical estimate: the
-            # cycle term checks the model against itself, the shift term
-            # against a displacement we applied ourselves. They are
-            # complementary -- shift fixes dx's gain but is blind to a constant
-            # offset, cycle removes the offset but is minimised by collapse.
             if not baseline and triplet_iter is not None:
                 t_fixed, t_moving, t_key_f, t_key_m = next(triplet_iter)
                 t_fixed = t_fixed.to(device, non_blocking=True)
@@ -750,8 +604,7 @@ def run_epoch(
                 s_shifted = s_shifted.to(device, non_blocking=True)
                 s_delta = s_delta.to(device)
                 s_bs = s_fixed.shape[0]
-                # fixed is a real frame -> cacheable; the two shifted variants
-                # are synthetic, so they are encoded fresh (see cache.encode).
+                # fixed is a real frame -> cacheable
                 s_fixed_feats = cache.get(s_fixed, list(s_key))
                 s_var_feats = cache.encode(torch.cat([s_ref, s_shifted], 0))
                 s_pair_fixed = [torch.cat([f, f], 0) for f in s_fixed_feats]
@@ -766,9 +619,6 @@ def run_epoch(
                 comp["shift"] = float(l_shift.detach())
 
             if not baseline and (triplet_iter is not None or shift_iter is not None):
-                # `core` is the part of the objective the classical baseline is
-                # also scored on: the aux dx terms are skipped in baseline mode,
-                # so `total` alone cannot be compared against that row.
                 comp["core"] = float(loss.detach()) - (
                     w_cycle * comp.get("cycle", 0.0)
                     + w_shift * comp.get("shift", 0.0)
@@ -798,9 +648,7 @@ def run_epoch(
     return out
 
 
-#: Everything that defines *which* objective is being optimised. An ablation
-#: varies these and nothing else, so they are also exactly the knobs that have
-#: to be pinned to a common setting for two arms to be comparable.
+# : Everything that defines *which* objective is being optimised.
 OBJECTIVE_KEYS = (
     "w_feature",
     "w_photometric",
@@ -816,12 +664,7 @@ OBJECTIVE_KEYS = (
 
 
 def _build_criterion(spec: Dict[str, float], n_scales: int, args, segmenter):
-    """A loss module for one objective spec.
-
-    The segmenter is only attached when the BM term is actually on: with
-    ``w_bm == 0`` the term is skipped, and passing ``None`` makes that
-    structural rather than a weight that happens to be zero.
-    """
+    """A loss module for one objective spec."""
     return UnsupervisedRegistrationLoss(
         n_scales=n_scales,
         w_feature=spec["w_feature"],
@@ -841,12 +684,7 @@ def _build_criterion(spec: Dict[str, float], n_scales: int, args, segmenter):
 
 
 def _init_wandb(args, train_obj, eval_obj, n_train_vid, n_val_vid, n_train, n_val):
-    """Start a W&B run, or return ``None`` when --wandb-project was not given.
-
-    The config carries both objectives explicitly, so a sweep's runs can be
-    grouped and diffed by which term was dropped without re-deriving it from
-    the flat weight list.
-    """
+    """Start a W&B run, or return ``None`` when --wandb-project was not given."""
     if not args.wandb_project:
         return None
     import wandb
@@ -1047,10 +885,6 @@ def main():
         "only a fraction of the applied displacement.",
     )
     ap.add_argument("--corr-dx-radius", type=int, default=10)
-    # Output scales, in pixels, for --no-cascade only: the heads there are
-    # linear, so these are a normalisation, not a bound, and they set how fast
-    # the answer can be reached (Adam moves a head's output by about `lr` per
-    # step). The cascade derives its own scales from the pyramid strides.
     ap.add_argument("--scale-dx", type=float, default=16.0)
     ap.add_argument("--scale-dy-bulk", type=float, default=128.0)
     ap.add_argument("--scale-dy-residual", type=float, default=8.0)
@@ -1157,9 +991,7 @@ def main():
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # What we optimise, and what we score. Identical unless --eval-objective
-    # says otherwise, in which case the latter is the common ruler every arm
-    # of an ablation is measured against.
+    # What we optimise, and what we score.
     train_obj = {k: float(getattr(args, k)) for k in OBJECTIVE_KEYS}
     eval_obj = dict(train_obj)
     if args.eval_objective:
@@ -1189,9 +1021,6 @@ def main():
     train_ds = FramePairDataset(args.root, train_vids, **ds_kw)
     val_ds = FramePairDataset(args.root, val_vids, **ds_kw)
 
-    # Each side is built only if *its own* objective uses the term: ablating a
-    # term out of training costs nothing to train, while the eval side keeps
-    # measuring it so the arm stays comparable.
     triplet_kw = dict(
         triplets_per_video=args.triplets_per_video,
         seed=args.seed,
@@ -1229,8 +1058,6 @@ def main():
 
     sample = train_ds[0]
     H, W = sample[0].shape[-2:]          # what the model is fed while training
-    # The checkpoint must record the *full* frame, not the crop: inference
-    # rebuilds the model from it and would otherwise mis-scale every stride.
     _probe = cv2.imread(str(next(iter(train_ds.frames.values()))[0][0]), cv2.IMREAD_GRAYSCALE)
     FULL_H, FULL_W = _probe.shape[:2]
     with torch.no_grad():
@@ -1273,9 +1100,6 @@ def main():
     common = dict(
         num_workers=args.num_workers,
         pin_memory=(device == "cuda"),
-        # With --crop the windows are redrawn each epoch in the parent, so
-        # workers have to be re-forked to see them; persistent workers would
-        # keep serving the first epoch's crops forever.
         persistent_workers=args.num_workers > 0 and crop is None,
     )
     train_sampler = VideoChunkBatchSampler(
@@ -1299,12 +1123,7 @@ def main():
     )
 
     def _aux_loader(ds, batch, *, shuffle, collate=None):
-        """One auxiliary loader, plus its sampler so the epoch can be advanced.
-
-        Returns ``(loader, sampler)``, both ``None`` when the term is off on
-        this side. Without advancing the sampler the aux stream would replay
-        one fixed order every epoch.
-        """
+        """One auxiliary loader, plus its sampler so the epoch can be advanced."""
         if ds is None or not len(ds):
             return None, None
         sampler = VideoChunkBatchSampler(
@@ -1351,9 +1170,6 @@ def main():
     ).to(device)
 
     criterion = _build_criterion(train_obj, len(in_channels), args, seg)
-    # A separate module rather than the same one re-weighted: it is always held
-    # at full progress, so validation is not measured under the coarse-to-fine
-    # ramp's objective-of-the-epoch and stays comparable with itself.
     eval_criterion = _build_criterion(eval_obj, len(in_channels), args, seg)
     eval_criterion.set_progress(1.0)
 
@@ -1377,7 +1193,7 @@ def main():
 
     if args.eval_correlation and val_loader is not None:
         # Scored exactly as an arm is: same val loader, same eval_criterion,
-        # same cycle/shift batches -- so val/total lands on the sweep's ruler.
+        # same cycle/shift batches
         corr_model = CorrelationBaseline(
             img_shape=(H, W), scales=args.eval_correlation_scales
         ).to(device)
@@ -1445,10 +1261,6 @@ def main():
         score = tr["total"]
         va = None
         if val_loader is not None:
-            # eval_criterion is permanently at full progress: with the
-            # coarse-to-fine ramp on, the training loss is measured under a
-            # different objective every epoch and cannot be compared with
-            # itself -- nor, under an ablation, with another arm.
             va = run_epoch(
                 model,
                 val_loader,

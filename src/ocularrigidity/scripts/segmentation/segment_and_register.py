@@ -1,35 +1,7 @@
-"""Segment and register every cohort video in one GPU pass per volume.
-
-One encoder pass feeds both the segmentation decoder and the trained
-:class:`RegistrationRegressor`, roughly halving the GPU time against running
-the two stages separately (see :mod:`ocularrigidity.registration.fused`).
-
-It writes the same artifacts, in the same places, as the standalone
-segmentation and registration stages, so nothing downstream changes:
-
-    masks/<video>/mask.npz                    raw (unregistered) segmentation
-    registered_frames/<video>/cube.mp4        registered frames
-    registered_masks/<video>/mask.npz         registered masks
-    registered_masks/<video>/transform.npz    dx, dy + the config they came from
-
-The write goes through :meth:`VideoRegistrator.prime_from_result`, so the cache
-is produced by exactly the code that reads it back, and the old registration
-path is never entered.
-
-Pipelined like the stages it replaces: decode runs in DataLoader workers ahead
-of the GPU, and the encode + mask compression run on a writer thread so the GPU
-starts the next volume immediately. ``--num-shards``/``--shard`` split the
-cohort over several GPUs, one process each.
-
-Resumable: a volume whose registration cache is valid *and* whose raw mask
-exists is skipped, and a volume that fails is logged and stepped over rather
-than aborting the cohort.
-"""
+"""Segment and register every cohort video in one GPU pass per volume."""
 
 import os
 
-# MUST be set at the very top before importing numpy, cv2, or torch
-# to prevent C++ OpenMP background thread locks.
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -47,15 +19,12 @@ import torch
 from torch.utils.data import DataLoader
 
 from ocularrigidity.consts import (
-    CHECKPOINT_PATH,
     ROOT_MASKS,
     ROOT_REGISTERED_CACHE,
+    SEGMENTATION_REVISION,
 )
 from ocularrigidity.data.measurements.dataframe import load_measurements
 from ocularrigidity.pipeline_config import REGISTRATION
-from ocularrigidity.registration.deep_learning.inference import (
-    load_registration_regressor,
-)
 from ocularrigidity.registration.fused import segment_and_register
 from ocularrigidity.registration.registration_engine import (
     VideoRegistrator,
@@ -68,24 +37,19 @@ from ocularrigidity.scripts.dataset import (
     load_source_frames,
     source_path,
 )
-from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
-from ocularrigidity.scripts.segmentation.inference_on_patients import (
-    finalize as finalize_raw_mask,
+from ocularrigidity.segmentation.utils import (
+    get_model,
+    get_registration_model,
+    write_raw_mask,
 )
 
-# A raw cube is ~4.7 GB, so the queue is one item deep: the volume being
-# processed already holds several arrays that size.
 NUM_DECODE_WORKERS = 2
 PREFETCH_FACTOR = 1
 
 
 def write_outputs(result, video: str, config) -> None:
-    """Raw mask + registration cache. Runs on the writer thread.
-
-    The registration goes out through a registrator primed with it, so the
-    files are written by the same code that reads them back.
-    """
-    finalize_raw_mask(result.raw_masks, ROOT_MASKS / video / "mask.npz")
+    """Raw mask + registration cache."""
+    write_raw_mask(result.raw_masks, ROOT_MASKS / video / "mask.npz")
 
     registrator = VideoRegistrator(
         video=Path(video),
@@ -111,7 +75,7 @@ def build_tasks(config, overwrite: bool, logger: logging.Logger) -> list[str]:
         done = (ROOT_MASKS / video / "mask.npz").exists() and cache_is_valid(
             ROOT_REGISTERED_CACHE, Path(video), config
         )
-        if done and not overwrite and Path(video) not in PROCESS_ANYWAY:
+        if done and not overwrite:
             skipped += 1
             continue
         tasks.append(video)
@@ -168,8 +132,6 @@ def main():
     )
 
     tasks = build_tasks(config, args.overwrite, logger)
-    # Shard *after* the skip check, so a shard is not handed everything left to
-    # do whenever the remaining volumes cluster on one side of the split.
     tasks = tasks[args.shard :: args.num_shards]
     if args.limit is not None:
         tasks = tasks[: args.limit]
@@ -180,14 +142,11 @@ def main():
 
     torch.backends.cudnn.benchmark = True
 
-    from ocularrigidity.scripts.cohort_analysis.segment_n_cycles import get_model
-
     seg_model = get_model()
-    logger.info(f"Segmentation checkpoint: {CHECKPOINT_PATH}")
-    reg_model, reg_meta = load_registration_regressor(config.registrator_checkpoint)
+    reg_model = get_registration_model(config.registrator_revision).to("cuda")
     logger.info(
-        f"Registration checkpoint: {config.registrator_checkpoint} "
-        f"(epoch {reg_meta.get('epoch')}, val {reg_meta.get('val_loss')})"
+        f"Models from the Hub: segmentation {SEGMENTATION_REVISION}, "
+        f"registration {config.registrator_revision}"
     )
 
     loader = DataLoader(
@@ -202,10 +161,7 @@ def main():
     n_ok, n_fail = 0, 0
     pending = None  # in-flight write, one volume behind the GPU
 
-    # One writer thread: it holds a whole volume's arrays until the encode is
-    # done, and a deeper queue would just hold several.
     with ThreadPoolExecutor(max_workers=1) as writer:
-
         def drain(job):
             nonlocal n_ok, n_fail
             if job is None:
@@ -220,8 +176,7 @@ def main():
 
         t_mark = time.perf_counter()
         for i, (video, frames, load_error) in enumerate(loader, start=1):
-            # Time blocked on the loader. Near zero means the decode workers are
-            # keeping up and the GPU is the wall.
+            # Time blocked on the loader.
             t_wait = time.perf_counter() - t_mark
 
             if load_error is not None:
@@ -242,18 +197,14 @@ def main():
                     f"  Traceback:\n{traceback.format_exc()}"
                 )
                 n_fail += 1
-                # Drop the 4.7 GB cube now rather than at the next rebind, but
-                # by rebinding rather than `del`: the name is read again below
-                # on the success path.
                 frames = None
                 gc.collect()
                 torch.cuda.empty_cache()
                 t_mark = time.perf_counter()
                 continue
 
-            # Collect the previous write before queueing this one, so at most
-            # one volume is in flight. A non-zero wait here means the encodes
-            # have become the wall rather than the GPU.
+            # Collect the previous write before queueing this one, so at
+            # most one volume is in flight.
             t_writer = time.perf_counter()
             drain(pending)
             t_writer = time.perf_counter() - t_writer

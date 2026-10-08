@@ -1,44 +1,17 @@
-"""The orchestrator: trace source → (optional) rate estimator → phase estimator.
-
-``PulseExtractor`` owns no signal processing of its own. It wires three
-collaborators together, caches their results and exposes the small surface the
-rest of the codebase consumes (``cardiac_bpm``, ``phase_per_frame``,
-``good_per_frame``, …):
-
-    PulseExtractor(
-        trace_source   = DecomposedTraceSource(MaskThicknessTraceSource(reg, aligner)),
-        rate_estimator = LombScargleRateEstimator(),
-        phase_estimator= IQDemodPhaseEstimator(aggregator=SelectBestComponent()),
-    )
-
-Swap any one of the three without touching the others. ``rate_estimator=None``
-is a valid configuration for phase estimators that recover the rate themselves.
-"""
+"""The orchestrator: trace source → (optional) rate estimator → phase estimator."""
 
 import numpy as np
 
 from ocularrigidity.motion.pulsation.phase import (
     AbstractPhaseEstimator,
-    AbstractTraceAggregator,
-    IQDemodPhaseEstimator,
     PhaseTrack,
-    SelectBestComponent,
 )
 from ocularrigidity.motion.pulsation.rate import (
     AbstractRateEstimator,
-    LombScargleConfig,
-    LombScargleRateEstimator,
     RateEstimate,
 )
-from ocularrigidity.motion.pulsation.band import CardiacBand
 from ocularrigidity.motion.pulsation.traces import (
     AbstractTraceSource,
-    BandPassFilterTraceConfig,
-    BandPassFilterTraceSource,
-    DecomposedTraceSource,
-    DecompositionConfig,
-    MaskThicknessTraceSource,
-    MaskTraceConfig,
     Traces,
 )
 
@@ -56,8 +29,7 @@ class PulseExtractor:
         self.phase_estimator = phase_estimator
         self.rate_estimator = rate_estimator
 
-        # Both are only needed by consumers (folding, viewers); default to
-        # whatever the trace source was built on.
+        # Both are only needed by consumers (folding, viewers)
         self.registered_video = registered_video or self._find(
             trace_source, "registered_video"
         )
@@ -82,7 +54,6 @@ class PulseExtractor:
 
     # ------------------------------------------------------------------
     # Stages
-    # ------------------------------------------------------------------
     @property
     def traces(self) -> Traces:
         return self.trace_source.traces
@@ -105,7 +76,7 @@ class PulseExtractor:
         return self._phase
 
     def reset(self, *, traces: bool = False) -> None:
-        """Drop cached results. ``traces=True`` also re-runs the trace source."""
+        """Drop cached results."""
         self._rate = None
         self._phase = None
         if traces:
@@ -113,7 +84,6 @@ class PulseExtractor:
 
     # ------------------------------------------------------------------
     # Consumer-facing surface
-    # ------------------------------------------------------------------
     @property
     def cardiac_freq(self) -> float:
         if self._freq_override is not None:
@@ -123,7 +93,7 @@ class PulseExtractor:
 
     @cardiac_freq.setter
     def cardiac_freq(self, value: float) -> None:
-        """Manual override; invalidates the downstream phase."""
+        """Manual override"""
         self._freq_override = float(value)
         self._rate = None
         self._phase = None
@@ -214,57 +184,4 @@ class PulseExtractor:
     def registered_masks(self):
         return self.registered_video.registered_masks
 
-    # ------------------------------------------------------------------
-    # Default recipe
-    # ------------------------------------------------------------------
-    @classmethod
-    def from_masks(
-        cls,
-        registered_video,
-        aligner,
-        *,
-        trace_config: MaskTraceConfig | None = None,
-        filter_config: BandPassFilterTraceConfig | None = None,
-        decomposition: DecompositionConfig | None = None,
-        rate_config: LombScargleConfig | None = None,
-        phase_estimator: AbstractPhaseEstimator | None = None,
-        aggregator: AbstractTraceAggregator | None = None,
-        override_bpm: float | None = None,
-    ) -> "PulseExtractor":
-        """The historical pipeline: thickness → bandpass → ICA → Lomb-Scargle → phase.
-
-        ``decomposition=None`` skips the ICA/PCA step and works directly on the
-        per-A-scan thickness traces (in which case pair it with a ``MeanTrace``
-        aggregator, since there is no "best component" to select).
-        ``filter_config=None`` skips the bandpass, feeding raw thickness on.
-        """
-        trace_config = trace_config or MaskTraceConfig()
-        source: AbstractTraceSource = MaskThicknessTraceSource(
-            registered_video, aligner, trace_config
-        )
-        if filter_config is not None:
-            source = BandPassFilterTraceSource(source, filter_config)
-        if decomposition is not None:
-            source = DecomposedTraceSource(source, decomposition)
-
-        # The band lives on the filter config now, not on the trace config.
-        band = filter_config.band if filter_config is not None else CardiacBand()
-        rate_config = rate_config or LombScargleConfig(band=band)
-        rate_estimator = LombScargleRateEstimator(
-            rate_config, override_bpm=override_bpm
-        )
-
-        if phase_estimator is None:
-            phase_estimator = IQDemodPhaseEstimator(
-                aggregator=aggregator or SelectBestComponent()
-            )
-        elif aggregator is not None:
-            phase_estimator.aggregator = aggregator
-
-        return cls(
-            trace_source=source,
-            phase_estimator=phase_estimator,
-            rate_estimator=rate_estimator,
-            registered_video=registered_video,
-            aligner=aligner,
-        )
+    

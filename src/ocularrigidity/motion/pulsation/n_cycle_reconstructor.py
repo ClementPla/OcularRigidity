@@ -1,10 +1,4 @@
-"""N-cycle reconstruction: fold registered frames into averaged cardiac cycles.
-
-Deliberately decoupled from rate/phase estimation. It consumes any
-``PulseExtractor`` for phase, cardiac frequency
-and registered frames, and owns its own folding results — it does not write
-back onto the extractor.
-"""
+"""N-cycle reconstruction: fold registered frames into averaged cardiac cycles."""
 
 from dataclasses import dataclass
 from typing import Literal, Optional
@@ -26,8 +20,6 @@ class NCycleConfig:
     n_bins: Optional[int] = None
     target_frames_per_bin: int = 25
     fold_method: str = "mean"
-    # Vestigial: a ``PulseExtractor`` already is one phase method, so this only
-    # selects a peak-locked surface on an extractor that happens to expose one.
     phase_method: Literal["iq", "peak_locked"] = "peak_locked"
     verbose: bool = True
 
@@ -48,12 +40,7 @@ class NCycleReconstructor:
         self.notes: list[str] = []
 
     def _default_phase(self):
-        """Phase to fold by.
-
-        A ``PulseExtractor`` already *is* one phase method, so its
-        ``phase_per_frame`` is the answer unless the extractor also exposes a
-        peak-locked surface and ``config.phase_method`` asks for it.
-        """
+        """Phase to fold by."""
         ex = self.extractor
         if self.config.phase_method == "peak_locked" and hasattr(
             ex, "phase_per_frame_peak_locked"
@@ -70,12 +57,7 @@ class NCycleReconstructor:
         n_bins: Optional[int] = None,
         n_cycle: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Fold ``registered_frames`` into ``n_cycle`` averaged cardiac cycles.
-
-        Defaults to the extractor's cached phase / good mask / cardiac_freq and
-        the config's folding parameters, so re-running with a different
-        ``n_bins`` does not retrigger the upstream pipeline.
-        """
+        """Fold ``registered_frames`` into ``n_cycle`` averaged cardiac cycles."""
         ex = self.extractor
         cfg = self.config
         verbose = cfg.verbose

@@ -29,14 +29,7 @@ def _phase_corr_vshift(
     subpixel: bool,
     eps: float,
 ) -> torch.Tensor:
-    """Deplacement vertical par colonne d'un lot pretraite ``x_pre`` (b, H, W).
-
-    ``Fm_conj`` est ``conj(rfft(win * median_pre, axe axial))`` (1, H//2+1, W).
-    ``win`` (H,) et ``band`` (H//2+1,) proviennent de ``_axial_window_band`` et
-    doivent etre les MEMES que ceux utilises pour ``Fm_conj``. Renvoie ``dy``
-    (b, W) : le decalage a appliquer (``sample_y = grid_y + dy``) pour aligner
-    chaque colonne sur la mediane.
-    """
+    """Deplacement vertical par colonne d'un lot pretraite ``x_pre`` (b, H, W)."""
     x = x_pre - x_pre.mean(dim=1, keepdim=True)  # retire la composante continue
     x = x * win.view(1, H, 1)  # fenetrage de Hann axial
     Fx = torch.fft.rfft(x, dim=1)  # (b, H//2+1, W)
@@ -79,24 +72,7 @@ def estimate_ascan_vshift_to_median(
     bandpass: tuple[float, float] = (0.02, 0.5),
     eps: float = 1e-8,
 ) -> torch.Tensor:
-    """Deplacement vertical par A-scan alignant ``frames_pre`` sur ``median_pre``.
-
-    le long de l'axe axial (H), colonne par colonne, avec fenetrage de Hann et
-    passe-bande (cf. ``_axial_window_band``).
-
-    Parameters
-    ----------
-    frames_pre : (T, H, W) ; median_pre : (H, W)
-    max_vshift : int
-        Deplacement vertical maximal (px) teste de chaque cote.
-    bandpass : (float, float)
-        Bornes basse/haute du passe-bande spectral (fraction de la freq. de Nyquist).
-
-    Returns
-    -------
-    torch.Tensor
-        ``dy`` (T, W) sur ``device`` : convention ``sample_y = grid_y + dy``.
-    """
+    """Deplacement vertical par A-scan alignant ``frames_pre`` sur ``median_pre``."""
     if isinstance(frames_pre, np.ndarray):
         frames_pre = torch.from_numpy(frames_pre)
     if isinstance(median_pre, np.ndarray):
@@ -136,36 +112,15 @@ def register_ascans_to_median(
     verbose: bool = True,
     return_median: bool = False,
 ):
-    """Recale chaque A-scan du volume sur la mediane (identification de la RPE).
-
-
-    Parameters
-    ----------
-    frames : (T, H, W) ou (T, H, W, 3)
-        Volume DEJA recale (sortie de ``register_masks_by_displacement``). En
-        couleur, le deplacement est mesure sur la luminance et applique a tous
-        les canaux ; la mise en page d'entree est rendue telle quelle.
-    masks : (T, H, W), optional
-        Masques a transporter avec les images (meme deplacement par colonne).
-    max_vshift : int
-        Deplacement vertical maximal (px) — parametre d'entree demande.
-
-    Returns
-    -------
-    (registered_frames, registered_masks, dy)
-        ``registered_frames`` MEME mise en page et MEME dtype que l'entree — CPU,
-        ``registered_masks`` (T, H, W) bool CPU (ou ``None``), ``dy`` (T, W) float32
-        CPU. Avec ``return_median``, renvoie en plus le template median (H, W) numpy.
-    """
+    """Recale chaque A-scan du volume sur la mediane (identification de la RPE)."""
     if masks is not None and isinstance(masks, np.ndarray):
         masks = torch.from_numpy(masks)
-    # Canaux en premier en interne (gris => C = 1) ; on rend la mise en page d'entree.
+    # Canaux en premier en interne (gris => C = 1)
     frames, layout = to_bchw(frames)
     T, C, H, W = frames.shape
     frame_dtype = frames.dtype  # on preserve le dtype d'entree en sortie
 
-    # 1) mediane temporelle (volume en memoire) -> reference. Le deplacement se
-    # mesure sur la luminance : c'est une propriete de la scene, pas d'un canal.
+    # 1) mediane temporelle (volume en memoire) -> reference.
     gray = to_gray(frames)  # (T, H, W)
     median = temporal_median(
         gray, ignore_zeros=ignore_zeros_median, device=device
@@ -220,7 +175,6 @@ def register_ascans_to_median(
             dy = dy.round()
 
         # 5) application du deplacement par colonne aux pixels bruts (+ masque).
-        # Le masque voyage comme canal 0 pour subir exactement le meme warp.
         if masks is not None:
             mk = masks[start:end].to(device).float().unsqueeze(1)
             data = torch.cat([mk, raw], dim=1)  # (t, 1 + C, H, W)

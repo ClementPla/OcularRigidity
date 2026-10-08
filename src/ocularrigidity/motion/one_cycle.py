@@ -87,24 +87,7 @@ def _quantile_kernel(frames, bin_offsets, frame_indices, n_bins, q):
 
 
 def fold_video_numba_quantile(frames, phase, good_mask, n_bins, q=0.99, verbose=False):
-    """Fold a video onto one cycle, taking a per-pixel quantile within each bin.
-
-    Same binning as :func:`fold_video_numba_median` (which is the ``q=0.5`` case)
-    but with an arbitrary quantile, so e.g. ``q=0.75`` biases towards the brighter
-    samples of each bin and keeps dark/noisy regions readable.
-
-    Args:
-        frames (np.ndarray): ``(T, H, W)`` stack.
-        phase (np.ndarray): ``(T,)`` cycle phase in ``[0, 1)``.
-        good_mask (np.ndarray): ``(T,)`` boolean mask of usable frames.
-        n_bins (int): number of phase bins.
-        q (float): quantile in ``[0, 1]``; 0.5 reproduces the median fold.
-        verbose (bool): print per-bin occupancy stats.
-
-    Returns:
-        tuple: ``(cycle, counts)`` with ``cycle`` of shape ``(n_bins, H, W)``
-        (``float32``) and ``counts`` the number of frames per bin.
-    """
+    """Fold a video onto one cycle, taking a per-pixel quantile within each bin."""
     if not 0.0 <= q <= 1.0:
         raise ValueError(f"q must be in [0, 1], got {q}")
 
@@ -136,7 +119,6 @@ def _numba_mean_kernel(frames, bin_idx, good_mask, n_bins):
     counts = np.zeros(n_bins, dtype=np.int32)
 
     # Pass 1: Accumulate sums
-    # We loop over T and let Numba handle the parallel distribution
     for t in range(T):
         if good_mask[t]:
             b = bin_idx[t]
@@ -182,25 +164,7 @@ def amplify_one_cycle(cycle, amplification_factor=3.0, n_components=3):
 
 
 def correct_shadow_cycle(cycle, n=4.0, a=1.0, clip_percentile=99.5):
-    """A-scan shadow compensation applied across a whole folded cycle.
-
-    Thin wrapper around :func:`ocularrigidity.registration.axial.shadow.correct_shadow`
-    that runs the OCT shadow removal on every B-scan of a folded cycle at once
-    and renormalizes the (arbitrarily scaled, long-tailed) output back to
-    ``uint8`` so the result can be viewed or encoded (e.g. ``cube_to_mp4_fastest``).
-
-    Args:
-        cycle (np.ndarray): ``(T, H, W)`` stack of B-scans; A-scans run along the
-            axial axis ``H``.
-        n, a (float): shadow-compensation exponent / denominator scale, forwarded
-            to ``correct_shadow`` (``n=4`` enhances the RPE, per the MATLAB pipeline).
-        clip_percentile (float): upper percentile used for the global 0-255
-            normalization. Global (not per-frame) so intensities stay comparable
-            across bins and no temporal flicker is introduced.
-
-    Returns:
-        np.ndarray: ``uint8`` stack, same shape as ``cycle``.
-    """
+    """A-scan shadow compensation applied across a whole folded cycle."""
     from ocularrigidity.registration.axial.shadow import correct_shadow
 
     corrected = correct_shadow(np.asarray(cycle, dtype=np.float32), n=n, a=a)
@@ -242,22 +206,14 @@ def estimate_cardiac_amplitude(
     amplitude_threshold_percentile=50,
     n_harmonics=1,
 ):
-    """Estimate the cardiac amplitude from the one-cycle thickness data.
-
-    Args:
-        one_cycle_thickness (np.ndarray): TxW array of thickness values for one cycle.
-        residual_threshold_percentile (int): Percentile for filtering fits with high residuals.
-        amplitude_threshold_percentile (int): Percentile for filtering fits with low amplitude.
-    """
+    """Estimate the cardiac amplitude from the one-cycle thickness data."""
     fits = [
         fit_cardiac_amplitude(one_cycle_thickness[:, w], n_harmonics=n_harmonics)
         for w in range(one_cycle_thickness.shape[1])
     ]
 
-    # Filter out the fits with high residuals (bad fit) and plot the rest (i.e below the 75th percentile of residuals).
     residuals = np.array([res.item() if res.size else np.nan for _, res in fits])
     threshold = np.percentile(residuals, residual_threshold_percentile)
-    # Filter out the fits with low amplitude (flat line) by keeping only those with amplitude above the 25th percentile.
     amplitudes = np.array([fit.max() - fit.min() for fit, res in fits])
     amplitude_threshold = np.percentile(amplitudes, amplitude_threshold_percentile)
     keep = (residuals <= threshold) & (amplitudes >= amplitude_threshold)

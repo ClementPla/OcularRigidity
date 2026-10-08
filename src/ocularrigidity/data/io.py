@@ -11,12 +11,7 @@ from tqdm.auto import tqdm
 
 
 def load_cube_mp4(path: str, collapse_rgb: bool = True) -> np.ndarray:
-    """
-    Decode an MP4 video to a (n_frames, H, W) uint8 grayscale numpy array.
-
-    Assumes the MP4 was encoded from a grayscale source (channels should be
-    identical or near-identical after codec round-trip).
-    """
+    """Decode an MP4 video to a (n_frames, H, W) uint8 grayscale numpy array."""
     video = iio.imread(path)  # shape (n, H, W, 3) or (n, H, W)
 
     if video.ndim == 4 and collapse_rgb:
@@ -123,8 +118,6 @@ def load_octa(root: Path, depth: int = DEPTH):
     return amp, phase, ts
 
 
-
-
 def load_cube(
     folder: str,
     H: int = 1024,
@@ -132,16 +125,7 @@ def load_cube(
     dtype=np.uint8,
     reorder: bool = True,
 ) -> np.ndarray:
-    """
-    Load a cube.bin file fully into memory as a (n_frames, H, W) array.
-
-    Accepts:
-      - local folder:  /path/to/folder
-      - SMB folder:    smb://server/share/path/to/folder
-
-    If `reorder` and `timestamp.txt` exists alongside `cube.bin`,
-    frames are sorted by timestamp.
-    """
+    """Load a cube.bin file fully into memory as a (n_frames, H, W) array."""
     folder = str(folder)
     folder = folder.rstrip("/")
     cube_path = f"{folder}/cube.bin"
@@ -155,7 +139,7 @@ def load_cube(
     data = np.frombuffer(buf, dtype=dtype, count=n_frames * H * W).reshape(
         n_frames, H, W
     )
-    # frombuffer returns a read-only view; copy so we own the memory
+    # frombuffer returns a read-only view
     data = data.copy()
 
     # Reorder if timestamps available
@@ -191,14 +175,7 @@ def load_mask(path) -> np.ndarray:
 
 
 def load_mask_frames(path, indices) -> np.ndarray:
-    """Decode only ``indices`` frames of a packed mask, as ``(len(indices), H, W)``.
-
-    zstd has to inflate the whole payload (a few ms -- these files are tens of
-    KB), but ``np.unpackbits`` and the bool conversion are what actually cost:
-    they expand every frame to a byte per pixel. Callers that need a handful of
-    reference frames out of a folded cycle stack pay ~30x for frames they throw
-    away, so unpack per frame instead. Equivalent to ``load_mask(path)[indices]``.
-    """
+    """Decode only ``indices`` frames of a packed mask, as ``(len(indices), H, W)``."""
     data = np.load(path)
     shape = tuple(int(v) for v in data["shape"])
     T, H, W = shape
@@ -216,3 +193,12 @@ def load_mask_frames(path, indices) -> np.ndarray:
         # view, not astype: unpackbits yields 0/1 uint8, same width as bool.
         out[k] = bits[lo - b0 * 8 : lo - b0 * 8 + n_px].reshape(H, W).view(bool)
     return out
+
+
+def save_mask_atomic(mask: np.ndarray, path) -> None:
+    """``save_mask`` through a temporary file, so a killed run never leaves a truncated mask."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp.npz")
+    save_mask(mask, tmp_path)
+    tmp_path.replace(path)

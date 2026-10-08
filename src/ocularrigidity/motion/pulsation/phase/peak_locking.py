@@ -25,14 +25,7 @@ class PeakLockConfig:
 
 
 class PeakLockedPhaseEstimator(AbstractPhaseEstimator):
-    """Phase ramps linearly from 0 at each detected systolic peak.
-
-    Unlike demodulation this makes no constant-rate assumption: every beat gets
-    its own 0→2π ramp, so beat-to-beat variability is preserved rather than
-    smoothed away. A ``RateEstimate`` is used only to size the peak-rejection
-    window; without one, the top of ``band`` is used (the most permissive
-    choice).
-    """
+    """Phase ramps linearly from 0 at each detected systolic peak."""
 
     def __init__(
         self,
@@ -61,8 +54,6 @@ class PeakLockedPhaseEstimator(AbstractPhaseEstimator):
         if not valid.any():
             return np.full(n, np.nan), np.zeros(n, dtype=bool)
 
-        # Systole should be the sharp excursion: if the trace is left-skewed the
-        # sharp feature points down, so flip it before peak finding.
         if skew(x[valid]) < 0:
             x = -x
 

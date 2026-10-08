@@ -1,45 +1,4 @@
-"""Ablation sweep over the registration regressor's architecture and objective.
-
-What each arm answers
----------------------
-``reference``
-    The configuration that produced ``checkpoints/reg_cascade_v9``, on the
-    shortened schedule. Everything else is read as a delta from this.
-
-``no_cascade`` / ``no_cascade_no_corr``
-    The benefit of the cascade, and -- inside the single-shot arm -- of the
-    correlation volume. The pairing is deliberate: ``use_correlation`` is only
-    wired into ``ScalePyramidFusion``, the ``cascade=False`` branch. A
-    ``CascadeStage`` *is* warp-correlate-refine, so there is no cascade-with-
-    correlation-removed to run; the two-arm ladder
-    ``reference -> no_cascade -> no_cascade_no_corr`` is what the model as
-    written can answer.
-
-``no_<term>``
-    One objective term dropped, everything else held. Nine terms, nine arms.
-
-Reading the results
--------------------
-Every arm trains its own objective but is *scored* on the reference one
-(``--eval-objective``), so ``val/total`` ranks arms on a fixed ruler. Without
-that, dropping a term removes its contribution from the loss and the ablated
-arm posts a lower number for free. The term-free metrics -- ``val/dx_mae``,
-``val/dy_mae`` (agreement with the classical estimator) and ``val/bm_px`` (the
-cohort QC metric, in pixels) -- are the ones to quote in a write-up.
-
-Each arm keeps its own ``best.pt``, selected on the reference objective, so the
-qualitative video check compares checkpoints chosen by a common criterion.
-
-Usage
------
-    # what would run, and the projected wall-clock
-    python -m ocularrigidity.scripts.registration.ablation --dry-run
-
-    # the weekend job, both GPUs
-    python -m ocularrigidity.scripts.registration.ablation --gpus 0 1
-
-Re-running skips arms that already finished, so an interrupted sweep resumes.
-"""
+"""Ablation sweep over the registration regressor's architecture and objective."""
 
 import argparse
 import json
@@ -57,10 +16,6 @@ import torch
 
 from ocularrigidity.registration.deep_learning.train_registration import OBJECTIVE_KEYS
 
-#: The reference configuration: reg_cascade_v9's flags, which is the run behind
-#: the current results, with the schedule shortened. Only ``epochs`` differs.
-#: The cosine schedule is sized from ``--epochs``, so 10 epochs is a complete
-#: shorter schedule rather than a 20-epoch run stopped early.
 REFERENCE: Dict[str, object] = {
     "epochs": 10,
     "batch-size": 4,
@@ -85,50 +40,32 @@ REFERENCE: Dict[str, object] = {
     "w-shift": 1.0,
 }
 
-#: The objective every arm is *scored* on, derived from REFERENCE so the two
-#: cannot drift apart.
 EVAL_OBJECTIVE = {
     k: float(REFERENCE[k.replace("_", "-")]) for k in OBJECTIVE_KEYS
 }
 
-#: Measured on an RTX A6000 at the reference settings (batch 4, full
-#: 1536x1024 frame, bm_scale 0.5): 3.8 s per training step, 1.9 s per
-#: validation step, ~37 GB of VRAM. Used only to project the sweep's
-#: wall-clock in --dry-run; re-measure if the model or the frame size changes.
 SEC_PER_TRAIN_STEP = 3.8
 SEC_PER_VAL_STEP = 1.9
 VRAM_GB_PER_ARM = 37
-#: Per-arm fixed cost, measured the same way: CUDA init, loading the frozen
-#: segmenter, scanning the dataset, probing the encoder's channel widths, and
-#: the one --eval-baseline pass. Paid once per arm, so it matters at twelve of
-#: them even though it is small next to an epoch.
 SEC_STARTUP_PER_ARM = 265
 
-#: How the dataset sizes turn into steps: every video contributes
-#: ``pairs_per_video`` pairs, batched by ``batch-size``.
 N_TRAIN_VIDEOS = 68
 N_VAL_VIDEOS = 12
 
-#: What the sweep actually runs with, as opposed to REFERENCE's record of what
-#: reg_cascade_v9 used. 120 pairs/video puts twelve arms at ~141 h on two
-#: cards, which does not fit a weekend; 40 puts them at ~47 h. Every arm is
-#: shortened by the same factor, so the comparison *between* arms -- which is
-#: the whole point -- is untouched. What it costs is comparability of the
-#: absolute numbers with v9: treat this sweep's `reference` arm, not v9, as the
-#: line the other arms are read against.
+# : What the sweep actually runs with, as opposed to REFERENCE's record of what :
+# reg_cascade_v9 used.
 SWEEP_PAIRS_PER_VIDEO = 40
 
 
 def hours_per_arm(pairs_per_video: int, batch: int, epochs: int) -> float:
-    """Projected wall-clock of one arm. Ablated arms are a little cheaper --
-    a dropped term is a skipped pass -- so this is an upper bound."""
+    """Projected wall-clock of one arm."""
     train_steps = N_TRAIN_VIDEOS * pairs_per_video / batch
     val_steps = N_VAL_VIDEOS * pairs_per_video / batch
     per_epoch = train_steps * SEC_PER_TRAIN_STEP + val_steps * SEC_PER_VAL_STEP
     return (SEC_STARTUP_PER_ARM + epochs * per_epoch) / 3600.0
 
 
-#: ``arm name -> flag overrides``. An empty dict is the reference itself.
+# : ``arm name -> flag overrides``.
 ARMS: Dict[str, Dict[str, object]] = {
     "reference": {},
     # --- architecture ---
@@ -148,8 +85,7 @@ ARMS: Dict[str, Dict[str, object]] = {
 
 
 def tags_for(arm: str) -> List[str]:
-    """W&B tags for one arm: its name, plus what kind of ablation it is, so a
-    sweep can be filtered down to just the objective or just the architecture."""
+    """W&B tags for one arm: its name, plus what kind of ablation it is, so a sweep can be filtered down to just the objective or just the architecture."""
     if arm == "reference":
         return ["reference"]
     kind = "architecture" if "cascade" in arm or "corr" in arm else "objective"
@@ -177,8 +113,6 @@ def build_command(
         # Score every arm on the reference objective, not its own.
         "--eval-objective",
         json.dumps(EVAL_OBJECTIVE),
-        # The classical transform under the same ruler: a fixed reference line
-        # on every plot, and it costs one extra val pass at startup.
         "--eval-baseline",
     ]
     for key, value in flags.items():
@@ -207,18 +141,13 @@ def build_command(
 
 
 def check_gpus(gpus: List[str], required_gb: int) -> List[str]:
-    """Free VRAM per requested gpu, as a list of human-readable problems.
-
-    Worth doing before a sweep that runs unattended: an arm that starts on a
-    card someone else is holding dies of OOM some way into its first epoch,
-    and the wave it was in has already moved on by the time anyone looks.
-    """
+    """Free VRAM per requested gpu, as a list of human-readable problems."""
     problems = []
     for gpu in gpus:
         try:
             idx = int(gpu)
             free_b, total_b = torch.cuda.mem_get_info(idx)
-        except Exception as exc:  # no such device, driver trouble
+        except Exception as exc:
             problems.append(f"gpu {gpu}: cannot be queried ({exc})")
             continue
         free_gb = free_b / 1024**3
@@ -233,9 +162,7 @@ def check_gpus(gpus: List[str], required_gb: int) -> List[str]:
 def run_arm(
     arm: str, cmd: List[str], gpu: str, out_dir: Path, log_dir: Path
 ) -> Dict[str, object]:
-    """Run one arm to completion on ``gpu``. Never raises: a failed arm is
-    recorded and the sweep carries on, since the others are still worth having.
-    """
+    """Run one arm to completion on ``gpu``."""
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{arm}.log"
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=gpu)
@@ -430,9 +357,6 @@ def main() -> None:
             print(shlex.join(build_command(arm, ARMS[arm], args)))
         return
 
-    # One worker per GPU, each pulling the next arm off a shared queue: arms
-    # differ in cost (the ablated ones skip a term), so a static split would
-    # leave a GPU idle.
     work: "queue.Queue[str]" = queue.Queue()
     for arm in pending:
         work.put(arm)

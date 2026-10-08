@@ -47,8 +47,6 @@ class ChoroidDataset(Dataset, ABC):
         axes[0].imshow(image, cmap="gray")
         axes[0].set_title("Image")
         if with_overlay:
-            # Draw polygon on the image, with full opacity for edges and 50% opacity for the inside
-            # We use matplotlib to draw the polygon, and we use the mask as a contour
             contours, _ = cv2.findContours(
                 mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )

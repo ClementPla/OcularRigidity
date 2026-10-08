@@ -40,14 +40,7 @@ class LombScargleConfig:
 
 
 class LombScargleRateEstimator(AbstractRateEstimator):
-    """Gap-aware periodogram scoring, with optional harmonic correction.
-
-    Lomb-Scargle rather than an FFT because the kept samples are irregular once
-    gaps are dropped, and zero-padding them would invent power at the wrong
-    frequencies. Each trace is scored by peak power × spectral concentration ×
-    significance, optionally reweighted by a Gaussian prior around
-    ``band.expected_bpm``.
-    """
+    """Gap-aware periodogram scoring, with optional harmonic correction."""
 
     def __init__(
         self,
@@ -100,7 +93,7 @@ class LombScargleRateEstimator(AbstractRateEstimator):
             f_exp = cfg.band.expected_bpm / 60.0
             sigma = cfg.band.prior_sigma_bpm / 60.0
             prior = np.exp(-0.5 * ((peak_freq - f_exp) / sigma) ** 2)
-            quality = quality * (0.1 + prior)  # 0.1 floor so we don't fully veto
+            quality = quality * (0.1 + prior)
 
         return {
             "freqs": freqs,

@@ -1,22 +1,4 @@
-"""
-Generation d'une video "one-cycle" a partir d'une video OCT DEJA recalee.
-
-Une video one-cycle est la reconstruction d'un (ou ``n_cycle``) battement(s)
-cardiaque(s) moyen(s) : chaque frame recalee recoit une phase cardiaque, les
-frames sont rangees par phase en ``n_bins`` casiers puis moyennees. Le SNR est
-fortement ameliore, ce qui permet de mesurer proprement la pulsation
-choroidienne (ΔY -> rigidite).
-
-Entree : le dossier ``registered/`` produit par
-``ocularrigidity.registration.export`` / ``Astronauts/register_files.py``
-(``registered_video.mp4`` + ``mask.npz`` + ``timestamp.txt``). Cette video etant
-DEJA recalee et rognee (skip/drop deja appliques), on la charge telle quelle
-(aucun re-recalage : on renseigne directement les frames/masques recales de
-``RegisteredVideo``, comme le fait son cache) et on la replie via
-``PulseExtractor`` + ``NCycleReconstructor``.
-
-Sortie : ``one_cycle.mp4`` (+ ``one_cycle_params.json``) dans le meme dossier.
-"""
+"""Generation d'une video "one-cycle" a partir d'une video OCT DEJA recalee."""
 
 from __future__ import annotations
 
@@ -60,11 +42,7 @@ DEFAULT_ONE_CYCLE_NAME = "one_cycle.mp4"
 def _prepared_registrator(
     video_path: Path, mask_path: Path, device: str, verbose: bool
 ) -> VideoRegistrator:
-    """RegisteredVideo dont les frames/masques recales sont pre-charges.
-
-    La video est deja recalee : on renseigne directement ``_registered_*`` (comme
-    ``RegisteredVideo._load_from_cache``) pour NE PAS re-recaler ni re-echantillonner.
-    """
+    """RegisteredVideo dont les frames/masques recales sont pre-charges."""
     frames = read_gray(str(video_path))  # (T, H, W) uint8
     masks = np.asarray(load_mask(mask_path), dtype=bool)  # (T, H, W) bool
     if frames.shape[0] != masks.shape[0]:
@@ -132,12 +110,7 @@ def export_one_cycle_video(
     output_fps: int = 30,
     extra_meta: dict | None = None,
 ) -> dict:
-    """Genere la video one-cycle a partir du dossier ``registered/``.
-
-    Returns un dict de statut : ``{"status": "ok", "video", "n_frames",
-    "cardiac_bpm", "confidence", ...}`` ou ``{"status": "skipped", "reason", ...}``.
-    Leve sur erreur dure (ex. tous les chunks rejetes faute de frames valides).
-    """
+    """Genere la video one-cycle a partir du dossier ``registered/``."""
     registered_dir = Path(registered_dir)
     # ``suffix`` selectionne la variante de video recalee en entree :
     # "" -> registered_video.mp4 (sans A-scan) ; "_ascan" -> registered_video_ascan.mp4.
@@ -168,16 +141,12 @@ def export_one_cycle_video(
     cslice = slice(col_slice[0], col_slice[1]) if col_slice is not None else None
     aligner = VideoTimelineAligner(reg, str(ts_path))
 
-    # Un seul ``band``, partage par le filtre passe-bande des traces et la
-    # recherche frequentielle : les desynchroniser est la seule erreur facile.
     band = CardiacBand(
         bpm_range=tuple(bpm_range),
         expected_bpm=expected_bpm,
         expected_bpm_band_frac=expected_bpm_band_frac,
     )
 
-    # Le choix de la phase est desormais le choix d'un composant, pas une
-    # chaine passee au repliement : un ``PulseExtractor`` *est* une methode.
     if phase_method_for_fold == "peak_locked":
         phase_estimator = PeakLockedPhaseEstimator(
             aggregator=SelectBestComponent(), band=band
@@ -232,8 +201,6 @@ def export_one_cycle_video(
     )
     cycles, _counts = reconstructor.compute()
 
-    # cycles est en float32 (moyenne/mediane) et peut contenir des NaN
-    # (chunks rejetes) : on nettoie avant l'encodage uint8.
     cube = np.clip(np.nan_to_num(np.asarray(cycles), nan=0.0), 0, 255).astype(np.uint8)
     write_gray_mp4(cube, out_path, output_fps)
 

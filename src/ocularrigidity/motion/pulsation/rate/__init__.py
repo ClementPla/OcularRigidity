@@ -1,9 +1,4 @@
-"""Stage 2 — rate estimators (optional).
-
-``base.py`` holds the contract (:class:`RateEstimate`,
-:class:`AbstractRateEstimator`); one module per method. Add a new estimator as a
-new module here and export it below.
-"""
+"""Stage 2"""
 
 from ocularrigidity.motion.pulsation.rate.base import (
     AbstractRateEstimator,

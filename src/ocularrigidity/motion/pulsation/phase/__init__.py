@@ -1,10 +1,4 @@
-"""Stage 3 — phase estimators, and the aggregators they reduce traces with.
-
-``base.py`` holds the contract (:class:`PhaseTrack`,
-:class:`AbstractPhaseEstimator`) and ``aggregation.py`` the orthogonal
-"how do K traces become one" axis. One module per phase method. Add a new
-estimator (or a new aggregator, in ``aggregation.py``) and export it below.
-"""
+"""Stage 3"""
 
 from ocularrigidity.motion.pulsation.phase.aggregation import (
     AbstractTraceAggregator,
@@ -15,6 +9,11 @@ from ocularrigidity.motion.pulsation.phase.aggregation import (
     SingleTrace,
     SpectralCombinationConfig,
     SpectralCombinationResult,
+)
+from ocularrigidity.motion.pulsation.phase.anchoring import (
+    ThicknessAnchorConfig,
+    ThicknessAnchoredPhaseEstimator,
+    thickness_minimum_phase,
 )
 from ocularrigidity.motion.pulsation.phase.base import (
     AbstractPhaseEstimator,
@@ -40,6 +39,9 @@ __all__ = [
     "AbstractPhaseEstimator",
     "IQDemodPhaseEstimator",
     "IQPhaseConfig",
+    "ThicknessAnchoredPhaseEstimator",
+    "ThicknessAnchorConfig",
+    "thickness_minimum_phase",
     "PeakLockedPhaseEstimator",
     "PeakLockConfig",
     "HilbertPhaseEstimator",

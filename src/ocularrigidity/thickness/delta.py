@@ -1,35 +1,4 @@
-"""Measured pulsatile choroidal-thickness change (ΔCT).
-
-Estimates the peak-to-peak change in choroidal thickness across one (folded)
-cardiac cycle by tracking the choroid boundary with optical flow and following
-the displacement of the moving choroid-sclera interface (CSI) along its own
-normal.
-
-Rationale
----------
-The frames are registered so that the RPE (upper choroid boundary) is
-stationary; the choroidal thickness therefore changes only through motion of
-the CSI (lower boundary). We track the whole boundary (optical flow + temporal
-smoothing, via :func:`extract_displacement_at_boundaries`), keep the anchors
-that sit on the CSI, project their *signed* displacement onto the local CSI
-normal, and average over the CSI to obtain a per-frame thickness change
-``ct(t)`` relative to the reference frame.
-
-``ΔCT = max_t ct(t) - min_t ct(t)`` (peak-to-peak). Using the *signed* per-frame
-mean rather than the mean of magnitudes makes ΔCT invariant to the choice of
-reference frame: shifting the reference only adds a constant to ``ct(t)``, which
-cancels in the peak-to-peak. (The mean-of-magnitudes estimator equals the true
-peak-to-peak only when the reference frame happens to sit at a pulsation
-extreme, and underestimates by up to 2x otherwise.)
-
-Units
------
-The projection is done in physical space: the axial and transversal pixel sizes
-differ by ~3x (:data:`AXIAL_PIXEL_SIZE_MM` vs :data:`TRANVERSAL_PIXEL_SIZE_MM`),
-so displacements and the CSI normal are converted to mm before projecting. ΔCT
-is returned in both mm and µm; the µm value is what
-:func:`ocularrigidity.friedenwald.friedenwald_K_from_deltaCT` consumes.
-"""
+"""Measured pulsatile choroidal-thickness change (ΔCT)."""
 
 from dataclasses import dataclass
 
@@ -37,11 +6,8 @@ import numpy as np
 from scipy.ndimage import uniform_filter1d
 
 from ocularrigidity.motion.displacement import extract_displacement_at_boundaries
-from ocularrigidity.pipeline_config import (
-    DELTA_A,
-    AXIAL_PIXEL_SIZE_MM,
-    TRANVERSAL_PIXEL_SIZE_MM,
-)
+from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM, TRANVERSAL_PIXEL_SIZE_MM
+from ocularrigidity.pipeline_config import DELTA_A
 from ocularrigidity.segmentation.postprocess.interfaces import (
     clean_boundaries,
     extract_boundaries_fast,
@@ -51,18 +17,7 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 
 @dataclass
 class DeltaCTResult:
-    """Result of a ΔCT measurement. Lengths in mm unless the name says µm.
-
-    ``ct_series_mm`` is the *signed* per-frame change relative to the reference
-    frame (zero at ``reference_frame_idx``); ``ct_abs_series_mm`` adds
-    ``baseline_ct_mm`` to give absolute thickness, and is smooth because it is
-    driven by the optical-flow change rather than the raw per-frame mask.
-
-    ``baseline_ct_mm`` is the mean RPE→CSI distance over the CSI anchor columns
-    measured perpendicular to the CSI, so it is tilt-corrected the same way the
-    change is projected. A large ``rpe_residual_um`` flags imperfect RPE
-    alignment: it is the peak residual RPE motion removed as common-mode.
-    """
+    """Result of a ΔCT measurement."""
 
     deltaCT_mm: float
     deltaCT_um: float
@@ -77,20 +32,7 @@ class DeltaCTResult:
 
 @dataclass
 class CycleRates:
-    """How fast the choroid thickens and thins within one cardiac cycle.
-
-    Attributes
-    ----------
-    thickening_um_s, thinning_um_s :
-        Peak rate of increase / decrease of the thickness (µm/s). Both are
-        reported as positive magnitudes.
-    asymmetry :
-        ``thickening / thinning``. 1.0 means the two limbs are equally fast; a
-        departure is the viscoelastic signature (the choroid filling faster
-        than it drains, or the reverse).
-    thickening_fraction :
-        Fraction of the cycle spent thickening. 0.5 for a symmetric waveform.
-    """
+    """How fast the choroid thickens and thins within one cardiac cycle."""
 
     thickening_um_s: float
     thinning_um_s: float
@@ -101,20 +43,7 @@ class CycleRates:
 def cycle_rates(
     ct_series_mm: np.ndarray, period_s: float, n_harm: int = 4
 ) -> CycleRates:
-    """Peak thickening / thinning rates over one *folded* cardiac cycle.
-
-    The folded cycle is periodic, so the derivative comes from a truncated
-    Fourier series -- exact for the retained harmonics. A central difference
-    over ~30 bins is both biased (0.43 error on a 3-harmonic test signal) and
-    amplifies noise ~2.7x more, which matters because ``ct_series_mm`` is a
-    sub-pixel signal.
-
-    ``period_s`` is the cardiac period, ``60 / HR``. ``n_harm`` caps the
-    harmonics kept; the cardiac waveform lives in the first few, and going
-    higher just differentiates noise. Returns all-NaN when the series is too
-    gappy or the period is unknown, rather than raising -- cohort loops call
-    this per cycle.
-    """
+    """Peak thickening / thinning rates over one *folded* cardiac cycle."""
     y = np.asarray(ct_series_mm, dtype=float) * 1000.0  # -> µm
     n = y.size
     nan = CycleRates(np.nan, np.nan, np.nan, np.nan)
@@ -167,23 +96,7 @@ def _csi_unit_normal_mm(
     smooth_sigma: float = 0.0,
     slope_window: int = 1,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Per-column unit CSI normal in *physical* (mm) space, as (nx, ny).
-
-    In pixel space the CSI is ``y = f(x)`` with slope ``f'``. Mapping to mm
-    (``X = x·tx``, ``Y = y·ax``) the physical tangent is ``(tx, ax·f')`` so the
-    normal is proportional to ``±(-ax·f', tx)``. We return the branch pointing
-    *into* the choroid, i.e. up-image toward the RPE (``ny < 0``, image y grows
-    downward): ``(ax·f', -tx)``. Callers that want a thickness *increase* to be
-    positive must therefore negate the along-normal projection -- see
-    :func:`measure_delta_ct_from_disp`.
-
-    ``slope_window`` (columns) is the extent of the local least-squares line fit
-    used for ``f'``; <3 keeps the legacy 2-point ``np.gradient``.
-    ``smooth_sigma`` (px) additionally column-wise de-noises the boundary before
-    differentiating; 0 disables it. Both exist because a wrong local normal
-    leaks tangential motion into the across-interface projection. NaN-aware
-    (edge/gap columns).
-    """
+    """Per-column unit CSI normal in *physical* (mm) space, as (nx, ny)."""
     if smooth_sigma > 0:
         csi_ref = smooth_boundary_2d(
             csi_ref[None, :], sigma_time=0.0, sigma_col=smooth_sigma
@@ -205,17 +118,7 @@ def mask_ct_series_mm(
     transversal_mm_per_px: float = TRANVERSAL_PIXEL_SIZE_MM,
     normal_slope_window: int = DELTA_A.csi_normal_slope_window,
 ) -> np.ndarray:
-    """Per-frame mean choroidal thickness (mm), measured on the masks alone.
-
-    Each A-scan's thickness is its vertical RPE->CSI gap scaled by ``cos(tilt)``
-    of the frame's own CSI, the tilt taken in physical space: with pixels ~3x
-    wider than tall, the pixel-space slope understates it. This is the same
-    perpendicular thickness as :attr:`DeltaCTResult.baseline_ct_mm`. The A-scans
-    are then averaged per frame, NaN-aware (trimmed or empty columns drop out).
-
-    The mask-based ΔCT of a cycle is the peak-to-peak of this series over its
-    frames: a direct, flow-free check of :func:`measure_delta_ct_from_disp`.
-    """
+    """Per-frame mean choroidal thickness (mm), measured on the masks alone."""
     rpe, csi = extract_boundaries_fast(np.asarray(masks, dtype=bool))
     rpe, csi = clean_boundaries(rpe, csi)
     cos_tilt = np.stack(
@@ -252,32 +155,7 @@ def measure_delta_ct(
     normal_smooth_sigma: float = DELTA_A.csi_normal_smooth_sigma,
     normal_slope_window: int = DELTA_A.csi_normal_slope_window,
 ) -> DeltaCTResult:
-    """Measure the peak-to-peak choroidal thickness change (ΔCT).
-
-    Parameters
-    ----------
-    frames : (T, H, W) uint8
-        Grayscale frames, RPE-registered (RPE stationary).
-    masks : (T, H, W)
-        Binary choroid masks (bool or 0/1).
-    reference_frame_idx :
-        Frame the displacements are measured against.
-    method, smooth_window, lk_window :
-        Passed to :func:`extract_displacement_at_boundaries` (optical flow +
-        temporal savgol smoothing). Defaults follow ``DELTA_A``.
-    subtract_rpe_motion :
-        If True, subtract the mean physical displacement of the RPE anchors from
-        every anchor (common-mode removal) before projecting, making ΔCT robust
-        to residual RPE misalignment.
-    axial_mm_per_px, transversal_mm_per_px :
-        OCT pixel scales used to convert to physical units.
-    normal_smooth_sigma :
-        Column-wise Gaussian sigma (px) used to de-noise the CSI boundary
-        before differentiating it for the interface normal. 0 disables it.
-    normal_slope_window :
-        Number of columns the local least-squares line fit for the CSI
-        orientation spans. <3 falls back to a 2-point ``np.gradient``.
-    """
+    """Measure the peak-to-peak choroidal thickness change (ΔCT)."""
     frames = np.asarray(frames)
     masks = np.asarray(masks)
     if frames.shape != masks.shape:
@@ -316,8 +194,6 @@ def measure_delta_ct_from_disp(
     normal_smooth_sigma: float = DELTA_A.csi_normal_smooth_sigma,
     normal_slope_window: int = DELTA_A.csi_normal_slope_window,
 ):
-    # Reference RPE (top) and CSI (bottom) boundaries, used to label anchors and
-    # give the CSI normal direction.
     rpe, csi = extract_boundaries_fast(masks.astype(bool))
     rpe, csi = clean_boundaries(rpe, csi)
     rpe_ref, csi_ref = rpe[reference_frame_idx], csi[reference_frame_idx]
@@ -357,9 +233,6 @@ def measure_delta_ct_from_disp(
         )
 
     # Signed across-interface displacement per anchor (mm), CSI anchors only.
-    # The normal points into the choroid, so a positive projection is a CSI that
-    # moved toward the RPE, i.e. a *thinner* choroid: negate to get the signed
-    # thickness change.
     proj = -(disp_mm[..., 0] * nx[None, :] + disp_mm[..., 1] * ny[None, :])  # (T, N)
     proj_csi = proj[:, is_csi]  # (T, Nc)
 
@@ -372,12 +245,6 @@ def measure_delta_ct_from_disp(
     delta_ct_mm = float(np.nanmax(ct_series) - np.nanmin(ct_series))
 
     # Absolute thickness: add the reference-frame baseline to the smooth change.
-    # The baseline is the RPE->CSI gap measured *perpendicular* to the CSI, not
-    # vertically: project the vertical gap onto the CSI normal, i.e. multiply by
-    # cos(tilt). That factor is exactly ``ny`` (the normalized, physical-space
-    # y-component of the CSI normal), so the baseline and the change are measured
-    # along the same direction -- important when the interfaces are steeply
-    # sloped, where the vertical gap overestimates the true thickness by 1/cos.
     csi_x = xi[is_csi]
     cos_tilt = np.abs(ny[is_csi])  # = cos(physical CSI tilt), per CSI anchor
     baseline_col_mm = (csi_ref[csi_x] - rpe_ref[csi_x]) * axial_mm_per_px * cos_tilt

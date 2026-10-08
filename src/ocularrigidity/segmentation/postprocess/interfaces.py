@@ -6,8 +6,6 @@ import torch
 import cv2
 
 
-# cache=True: without it numba re-compiles this on every process start, which is
-# seconds of silence before the first volume of every run and of every shard.
 @njit(parallel=True, cache=True)
 def extract_boundaries_fast(masks):
     T, H, W = masks.shape
@@ -27,7 +25,7 @@ def extract_boundaries_fast(masks):
             if first != -1:
                 bm[t, w] = float(first)
 
-                # Only scan if we found a top; scan backwards
+                # Only scan if we found a top
                 for h in range(H - 1, first - 1, -1):
                     if masks[t, h, w]:
                         csi[t, w] = float(h)
@@ -41,16 +39,7 @@ def extract_boundaries_gpu(
     to_numpy: bool = True,
     device: str = "cuda",
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    GPU-accelerated extraction of top (BM) and bottom (CSI) boundaries per column.
-
-    Args:
-        masks: (T, H, W) boolean numpy array.
-        batch_size: number of frames per GPU batch.
-
-    Returns:
-        (bm, csi), each (T, W) float32 with NaN for columns containing no True.
-    """
+    """GPU-accelerated extraction of top (BM) and bottom (CSI) boundaries per column."""
     T, H, W = masks.shape
     device = torch.device(device if torch.cuda.is_available() else "cpu")
     if isinstance(masks, torch.Tensor):
@@ -71,7 +60,6 @@ def extract_boundaries_gpu(
         bm[start:end] = torch.where(has_top, top_idx.float(), bm[start:end])
 
         # Bottom boundary: first True from the bottom == last True overall.
-        # argmax on the flipped tensor gives the index from the bottom; convert.
         bot_idx = H - 1 - torch.argmax(batch_int.flip(dims=[1]), dim=1)  # (B, W)
         has_bot = has_top  # same condition: column has any True
         csi[start:end] = torch.where(has_bot, bot_idx.float(), csi[start:end])
@@ -87,27 +75,11 @@ def reject_column_outliers(
     median_window: int = 11,
     max_residual: float = 15.0,
 ) -> np.ndarray:
-    """
-    Set per-column outliers in a (T, W) boundary to NaN.
-
-    A column is flagged when it deviates from a robust local median baseline
-    (computed along W) by more than `max_residual` pixels. This removes the
-    single-column spikes produced when the argmax-based extraction latches onto
-    a stray segmented pixel near an image edge.
-
-    Args:
-        boundary: (T, W) float array, NaN for missing columns.
-        median_window: width (in columns) of the median baseline filter.
-        max_residual: max allowed deviation (px) from the baseline.
-
-    Returns:
-        (T, W) float32 copy with outlier columns replaced by NaN.
-    """
+    """Set per-column outliers in a (T, W) boundary to NaN."""
     out = boundary.astype(np.float32, copy=True)
     valid = ~np.isnan(out)
     idx = np.arange(out.shape[1])
 
-    # Fill holes per row so the median baseline is gap-free, then flag deviations.
     filled = out.copy()
     for t in range(out.shape[0]):
         v = valid[t]
@@ -122,18 +94,7 @@ def reject_column_outliers(
 
 
 def impute_small_holes(boundary: np.ndarray, max_hole: int = 5) -> np.ndarray:
-    """
-    Linearly interpolate interior NaN gaps of width <= `max_hole` columns in a
-    (T, W) boundary. Larger gaps and leading/trailing gaps are left as NaN so
-    downstream extrapolation/smoothing can handle them.
-
-    Args:
-        boundary: (T, W) float array, NaN for missing columns.
-        max_hole: maximum gap width (in columns) eligible for imputation.
-
-    Returns:
-        (T, W) float32 copy with small interior holes filled.
-    """
+    """Linearly interpolate interior NaN gaps of width <= `max_hole` columns in a (T, W) boundary."""
     out = boundary.astype(np.float32, copy=True)
     T, W = out.shape
     idx = np.arange(W)
@@ -149,8 +110,7 @@ def impute_small_holes(boundary: np.ndarray, max_hole: int = 5) -> np.ndarray:
         starts = np.where(d == 1)[0]
         ends = np.where(d == -1)[0]
         for s, e in zip(starts, ends):
-            # Only fill bounded interior gaps; np.interp would otherwise
-            # extrapolate leading/trailing gaps as a flat line.
+            # Only fill bounded interior gaps
             if (e - s) <= max_hole and s > 0 and e < W:
                 row[s:e] = interp[s:e]
     return out
@@ -163,13 +123,7 @@ def clean_boundaries(
     median_window: int = 11,
     max_residual: float = 15.0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Robustify raw (T, W) boundaries: reject column outliers (spikes), then
-    impute the small holes that rejection leaves behind.
-
-    Returns:
-        (bm, csi) cleaned float32 arrays.
-    """
+    """Robustify raw (T, W) boundaries: reject column outliers (spikes), then impute the small holes that rejection leaves behind."""
     bm = reject_column_outliers(bm, median_window, max_residual)
     csi = reject_column_outliers(csi, median_window, max_residual)
     bm = impute_small_holes(bm, max_hole)
@@ -180,15 +134,11 @@ def clean_boundaries(
 def smooth_boundary_2d(
     boundary: np.ndarray, sigma_time: float = 3.0, sigma_col: float = 1.0
 ) -> np.ndarray:
-    """
-    Smooth a (T, W) boundary curve anisotropically.
-    Handles NaN via a weighted gaussian trick.
-    """
+    """Smooth a (T, W) boundary curve anisotropically."""
     valid = ~np.isnan(boundary)
     filled = np.where(valid, boundary, 0.0)
 
     # Smooth numerator and denominator separately, then divide.
-    # This is the standard NaN-aware gaussian: only valid pixels contribute.
     num = gaussian_filter(filled, sigma=(sigma_time, sigma_col), mode="nearest")
     denom = gaussian_filter(
         valid.astype(np.float32), sigma=(sigma_time, sigma_col), mode="nearest"
@@ -206,15 +156,7 @@ def smooth_boundary_2d_non_uniform(
     sigma_col: float = 1.0,
     resample_factor: int = 1,
 ) -> np.ndarray:
-    """
-    Smooth a (T, W) boundary curve with non-uniform timestamps.
-
-    Args:
-        boundary: (T, W) array.
-        timestamps: (T,) array of actual time values.
-        sigma_time: Standard deviation for Gaussian kernel in time units.
-        sigma_col: Standard deviation for Gaussian kernel in column indices.
-    """
+    """Smooth a (T, W) boundary curve with non-uniform timestamps."""
     T, W = boundary.shape
 
     # 1. Create a uniform time grid
@@ -268,15 +210,7 @@ def bandpass_boundary_2d_non_uniform(
     sigma_col: float = 1.0,
     resample_factor: int = 1,
 ) -> np.ndarray:
-    """
-    Band-pass a (T, W) boundary along the time axis using a
-    Difference-of-Gaussians, NaN-aware and non-uniform-timestamp-aware.
-
-    Passband (approx, -3 dB):
-        f_low  ~ sqrt(ln 2) / (2 pi * sigma_time_low)   ~  0.133 / sigma_time_low
-        f_high ~ sqrt(ln 2) / (2 pi * sigma_time_high)  ~  0.133 / sigma_time_high
-    in 1 / (units of `timestamps`).
-    """
+    """Band-pass a (T, W) boundary along the time axis using a Difference-of-Gaussians, NaN-aware and non-uniform-timestamp-aware."""
     assert sigma_time_low > sigma_time_high, (
         "sigma_time_low (slow cutoff) must be larger than sigma_time_high (fast cutoff)"
     )
@@ -309,8 +243,8 @@ def bandpass_boundary_2d_non_uniform(
         )
         return np.where(den > 1e-6, num / den, np.nan)
 
-    slow = _nan_aware_gauss(sigma_low_pix)  # only the slow drift survives
-    fast = _nan_aware_gauss(sigma_high_pix)  # slow drift + the mid band
+    slow = _nan_aware_gauss(sigma_low_pix)
+    fast = _nan_aware_gauss(sigma_high_pix)
 
     grid_bp = fast - slow  # DoG: isolate the mid band
 
@@ -321,13 +255,7 @@ def bandpass_boundary_2d_non_uniform(
 
 
 def get_masks_contours(masks):
-    """
-    Get the contours of the masks using OpenCV findContours.
-
-    masks: (T, H, W) bool or (H, W) bool
-    returns: the largest-area contour for a single frame, or a list of them
-             (one per frame) for a (T, H, W) stack.
-    """
+    """Get the contours of the masks using OpenCV findContours."""
     if masks.ndim == 2:
         contours, _ = cv2.findContours(
             masks.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -345,29 +273,14 @@ def get_masks_contours(masks):
 
 
 def rebuild_mask(upper: np.ndarray, lower: np.ndarray, H: int) -> np.ndarray:
-    """
-    Rebuild (T, H, W) bool mask from (T, W) boundary curves.
-
-    Written straight into one output array rather than as a chain of whole-array
-    expressions: at cohort size (T, H, W) is several GB, so each intermediate
-    ``(y >= upper)``, ``(y <= lower)`` and their ``&`` costs another allocation
-    and another full pass over that much memory.
-
-    NaN columns need no explicit handling. Every comparison against NaN is
-    False, so a NaN in either boundary already leaves its column empty; masking
-    against ``~isnan`` afterwards only re-derived a result that was there.
-    """
+    """Rebuild (T, H, W) bool mask from (T, W) boundary curves."""
     T, W = upper.shape
     mask = np.empty((T, H, W), dtype=bool)
 
-    # float64 so the comparison against float64 boundaries runs the native loop
-    # rather than casting through a buffer on every batch.
     y_grid = np.arange(H, dtype=np.float64)[None, :, None]  # (1, H, 1)
     bm_grid = upper[:, None, :]  # (T, 1, W)
     csi_grid = lower[:, None, :]
 
-    # Frame-chunked so the second comparison's temporary is tens of MB and stays
-    # in cache, instead of being one more array the size of the output.
     chunk = max(1, (64 << 20) // max(H * W, 1))
     with np.errstate(invalid="ignore"):  # NaN comparisons are intentional
         for start in range(0, T, chunk):
@@ -380,9 +293,7 @@ def rebuild_mask(upper: np.ndarray, lower: np.ndarray, H: int) -> np.ndarray:
 
 
 def rebuild_mask_torch(bm: torch.Tensor, csi: torch.Tensor, H: int) -> torch.Tensor:
-    """
-    Rebuild (T, H, W) bool mask from (T, W) boundary curves.
-    """
+    """Rebuild (T, H, W) bool mask from (T, W) boundary curves."""
     T, W = bm.shape
     device = bm.device
     y_grid = torch.arange(H, device=device)[None, :, None]  # (1, H, 1)

@@ -1,24 +1,3 @@
-"""Run the whole cohort pipeline for every video, in one process.
-
-This is the single-entrypoint counterpart of scripts/pipeline.sh. That script
-runs six separate passes over the cohort, and each pass starts by reading back
-what the previous one wrote. This one carries each video through all seven
-stages while it is still in RAM:
-
-    decode -> 1+2 segment&register -> 3 fold -> 4 segment cycles
-                                                \\-> 5 deltaY
-                                                 -> 6 deltaA -> 7 QC
-
-Segmentation and registration are one pass: a single encode per frame feeds
-both the segmentation decoder and the trained registration heads (see
-``ocularrigidity.registration.fused``). They remain two *stage names* because
-they produce two independently resumable artifacts.
-
-Every artifact the staged pipeline produces is still written (the viewers, the
-notebooks and the analysis scripts all read them), but here they are written
-*only* — never read back.
-"""
-
 import os
 
 # MUST be set at the very top before importing numpy, cv2, or torch
@@ -46,26 +25,26 @@ import torch
 from torch.utils.data import DataLoader
 
 from ocularrigidity.consts import (
-    CHECKPOINT_PATH,
     ROOT_CARDIAC_PIPELINE,
     ROOT_DATA_MNT,
     ROOT_MASKS,
     ROOT_REGISTERED_CACHE,
+    SEGMENTATION_BATCH_SIZE,
+    SEGMENTATION_REVISION,
 )
 from ocularrigidity.data.compression import read_gray
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.data.measurements.dataframe import load_measurements
-from ocularrigidity.motion.pipeline_results import CardiacPipelineResults
+from ocularrigidity.motion.pipeline_results import (
+    CardiacPipelineResults,
+    write_fold_outputs,
+)
 from ocularrigidity.motion.pulsation.pipeline import run_composed_pipeline
 from ocularrigidity.pipeline_config import (
-    DELTA_A,
     DELTA_Y,
+    N_CYCLES,
     PULSATION,
     REGISTRATION,
-    SEGMENTATION,
-)
-from ocularrigidity.registration.deep_learning.inference import (
-    load_registration_regressor,
 )
 from ocularrigidity.registration.fused import segment_and_register
 from ocularrigidity.registration.registration_engine import (
@@ -74,15 +53,16 @@ from ocularrigidity.registration.registration_engine import (
     read_cache_payload,
 )
 from ocularrigidity.scripts._logging import setup_logging
-from ocularrigidity.scripts.cohort_analysis.extract_deltaA import extract_displacement
-from ocularrigidity.scripts.cohort_analysis.flag_misregistration import (
-    compute_qc_metrics,
-    evaluate_flag,
+from ocularrigidity.motion.displacement import extract_displacement
+from ocularrigidity.registration.qc import compute_qc_metrics, evaluate_flag
+from ocularrigidity.segmentation.postprocess.temporal_smoothing import (
+    postprocess_cycles,
 )
-from ocularrigidity.scripts.cohort_analysis.segment_n_cycles import (
+from ocularrigidity.segmentation.utils import (
     get_model,
-    postprocess as postprocess_cycles,
+    get_registration_model,
     write_cycle_mask,
+    write_raw_mask,
 )
 from ocularrigidity.scripts.dataset import (
     PrefetchDataset,
@@ -90,24 +70,20 @@ from ocularrigidity.scripts.dataset import (
     load_source_frames,
     source_path,
 )
-from ocularrigidity.scripts.exceptions_videos import PROCESS_ANYWAY
-from ocularrigidity.scripts.pulsation.infer import measure_deltaY, write_fold_outputs
-from ocularrigidity.scripts.segmentation.inference_on_patients import (
-    finalize as finalize_raw_mask,
-)
 from ocularrigidity.segmentation.inference import infer
+from ocularrigidity.segmentation.postprocess.blob import (
+    keep_largest_connected_component,
+)
+from ocularrigidity.thickness.features import measure_deltaY
 
 # In pipeline order. Everything downstream of a stage that runs, runs too.
 STAGES = ("segment", "register", "fold", "cycles", "deltaY", "deltaA", "qc")
 
-# A raw volume is ~4.7 GB and a registered one ~9.4 GB, so the queue is one
-# item deep: the video being processed already holds several of those, and each
-# prefetched item is another volume the kernel cannot reclaim.
+
 NUM_DECODE_WORKERS = 4
 PREFETCH_FACTOR = 1
 
-# How often the two cohort-level tables (deltaY, QC) are flushed. They are only
-# a few MB, but rewriting them once per video is quadratic in cohort size.
+# How often the two cohort-level tables (deltaY, QC) are flushed.
 CHECKPOINT_EVERY = 10
 
 
@@ -117,10 +93,6 @@ CHECKPOINT_EVERY = 10
 @dataclass(frozen=True)
 class CohortPaths:
     """Every output location for this run.
-
-    No ``<method>_<phase>`` suffix: which decomposition and demodulation ran are
-    fields of the stage configs saved inside every ``measure.pkl``, which is
-    where a provenance question belongs — a directory name cannot record one.
     """
 
     @property
@@ -140,8 +112,6 @@ class CohortPaths:
         return ROOT_CARDIAC_PIPELINE / "misregistration_flags.csv"
 
     def source(self, video: str) -> Path:
-        # Delegated, so this and the standalone segreg stage cannot disagree
-        # about where a case's frames come from.
         return source_path(video)
 
     def raw_mask(self, video: str) -> Path:
@@ -180,16 +150,13 @@ def plan_video(
     force_from: Optional[str],
     done_deltaY: set,
     done_qc: set,
+    reuse_segreg: bool = False,
 ) -> tuple[str, ...]:
     """The stages this video still needs. Empty means there is nothing to do.
-
     Only file existence (plus the registration cache's config check) is
-    consulted here — nothing is decoded, so planning a 700-video cohort is
-    seconds rather than hours.
+    consulted here.
     """
-    if Path(video) in PROCESS_ANYWAY:
-        # QC-flagged cases are always redone, whatever is on disk.
-        return STAGES
+    first = STAGES.index("fold") if reuse_segreg else 0
 
     present = {
         "segment": paths.raw_mask(video).exists(),
@@ -201,8 +168,11 @@ def plan_video(
         "qc": video in done_qc,
     }
     forced = STAGES.index(force_from) if force_from else len(STAGES)
+    forced = max(forced, first)
 
     for i, stage in enumerate(STAGES):
+        if i < first:
+            continue
         if i >= forced or not present[stage]:
             return STAGES[i:]
     return ()
@@ -213,6 +183,7 @@ def build_tasks(
     force_from: Optional[str],
     limit: Optional[int],
     logger: logging.Logger,
+    reuse_segreg: bool = False,
 ) -> list[VideoTask]:
     df = load_measurements(include_HR=True)
 
@@ -227,7 +198,14 @@ def build_tasks(
     starts = Counter()
     for _, row in df.iterrows():
         video = Path(row["MeasureValue"]).as_posix().replace("\\", "/")
-        stages = plan_video(video, paths, force_from, done_deltaY, done_qc)
+        if reuse_segreg and not cache_is_valid(
+            ROOT_REGISTERED_CACHE, Path(video), REGISTRATION
+        ):
+            missing += 1
+            continue
+        stages = plan_video(
+            video, paths, force_from, done_deltaY, done_qc, reuse_segreg
+        )
         if not stages:
             skipped += 1
             continue
@@ -247,7 +225,7 @@ def build_tasks(
         )
 
     logger.info(
-        f"Total: {len(df)} | Up to date: {skipped} | No source video: {missing} "
+        f"Total: {len(df)} | Up to date: {skipped} | Missing input: {missing} "
         f"| To process: {len(tasks)}"
     )
     logger.info(
@@ -264,21 +242,12 @@ def build_tasks(
 def load_inputs(task: VideoTask) -> dict:
     """Load exactly what this video's first stage needs. Runs in a worker.
 
-    Each branch is the input of one entry point into the chain; a video that
-    starts at the top only ever reads its raw cube, and one resuming further
-    down reads the last artifact still on disk instead of recomputing it.
     """
     todo, paths, video = set(task.stages), task.paths, task.video
     inputs = {}
 
-    if todo & {"segment", "register"}:
-        # Tensors, so a 4.7 GB cube travels through shared memory rather than
-        # being pickled down the worker socket.
-        inputs["frames"] = load_source_frames(video)
-
-    # No raw-mask branch: the fused stage segments and registers off the same
-    # encode, so a video re-registering does not read a 4.7 GB mask back — it
-    # recomputes it for less than the decode would have cost.
+    if todo & {"segment", "register"}: # Only load the raw input if segment or register is needed
+        inputs["frames"] = load_source_frames(video, REGISTRATION)
 
     if "fold" in todo and "register" not in todo:
         payload = read_cache_payload(ROOT_REGISTERED_CACHE, Path(video), REGISTRATION)
@@ -314,7 +283,7 @@ def run_jobs(jobs: list[tuple[str, Callable[[], None]]]) -> None:
 def compute_and_write_deltaA(cycles: np.ndarray, masks: np.ndarray, out: Path) -> None:
     """Boundary displacement / area change. CPU only, so it rides with the writes."""
     deltaA, minA, displacement, reference = extract_displacement(
-        video=cycles, mask=masks, N_cycles=DELTA_A.n_cycles
+        video=cycles, mask=masks, N_cycles=N_CYCLES
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "wb") as f:
@@ -332,9 +301,6 @@ def compute_and_write_deltaA(cycles: np.ndarray, masks: np.ndarray, out: Path) -
 @dataclass
 class VideoOutcome:
     """What one video produced: writes to queue, table rows, and stage timings.
-
-    The queued jobs close over the arrays they write, so those stay alive
-    exactly as long as the write does and no longer.
     """
 
     jobs: list = field(default_factory=list)
@@ -347,9 +313,6 @@ def process_video(
     task: VideoTask, inputs: dict, model, reg_model, batch_size: int
 ) -> VideoOutcome:
     """Carry one video through its stages, handing every write back to the caller.
-
-    Only the GPU work and the steps a later stage needs immediately happen here;
-    anything that just has to reach the disk is returned as a job.
     """
     out = VideoOutcome()
     todo, paths, video = set(task.stages), task.paths, task.video
@@ -361,9 +324,6 @@ def process_video(
         return value
 
     # 1+2. Segment and register in one pass ----------------------------------
-    # One encode per frame feeds the segmentation decoder and the registration
-    # heads alike; running them as two stages would encode every frame twice,
-    # and the encoder is 78% of the cost.
     registrator = None
     if todo & {"segment", "register"}:
         result = timed(
@@ -375,7 +335,7 @@ def process_video(
         out.jobs.append(
             (
                 "mask.npz",
-                partial(finalize_raw_mask, result.raw_masks, paths.raw_mask(video)),
+                partial(write_raw_mask, result.raw_masks, paths.raw_mask(video)),
             )
         )
         registrator = VideoRegistrator(
@@ -386,9 +346,7 @@ def process_video(
             cache_dir=ROOT_REGISTERED_CACHE,
             verbose=False,
         )
-        # Installs the result as this registrator's own, leaving the cache
-        # writable — so the fold below sees exactly what it would have loaded,
-        # and the classical registration path is never entered.
+
         registrator.prime_from_result(
             result.registered_frames, result.registered_masks, result.transform
         )
@@ -432,7 +390,7 @@ def process_video(
                 verbose=False,
             ),
         )
-        cycles = result.cycles
+        cycles = np.ascontiguousarray(result.cycles, dtype=np.uint8)
         cardiac_freq, n_cycle = result.cardiac_freq, result.n_cycle
         out.jobs.append(
             (
@@ -452,6 +410,7 @@ def process_video(
         n_cycle = inputs.get("n_cycle")
 
     # 4. Segment the folded cycles -------------------------------------------
+    raw_cycle_masks = None
     if "cycles" in todo:
         raw_cycle_masks = timed(
             "cycles",
@@ -460,7 +419,6 @@ def process_video(
                 cycles,
                 batch_size=batch_size,
                 device="cuda:0",
-                use_graphcut=False,
                 post_process=False,
             ),
         )
@@ -476,24 +434,22 @@ def process_video(
     else:
         cycle_masks = inputs.get("cycle_masks")
 
-    # 5. deltaY: the cardiac amplitude fit, on its own graph-cut segmentation --
+    # 5. deltaY: the cardiac amplitude fit, on the unsmoothed cycle masks ------
     if "deltaY" in todo:
-        deltaY_masks = timed(
-            "deltaY",
-            lambda: infer(
+        if raw_cycle_masks is None:
+            raw_cycle_masks = infer(
                 model,
                 cycles,
-                batch_size=DELTA_Y.batch_size,
-                scale_factor=(1.0, 1.0),
-                return_logit=False,
-                use_graphcut=True,
-                use_amp=True,
-                verbose=False,
-                graphcut_kwargs=DELTA_Y.graphcut_kwargs,
-            ),
+                batch_size=batch_size,
+                device="cuda:0",
+                post_process=False,
+            )
+        deltaY_masks = timed(
+            "deltaY", lambda: keep_largest_connected_component(raw_cycle_masks)
         )
-        out.deltaY_rows = measure_deltaY(deltaY_masks, video, DELTA_Y.n_cycles)
+        out.deltaY_rows = measure_deltaY(deltaY_masks, video, N_CYCLES, DELTA_Y)
         del deltaY_masks
+    raw_cycle_masks = None
 
     # 6. deltaA: boundary displacement / area change (CPU, on the writer) -----
     if "deltaA" in todo:
@@ -583,6 +539,16 @@ def parse_args():
         "--limit", type=int, default=None, help="Process at most N videos (smoke run)."
     )
     p.add_argument(
+        "--reuse-segreg",
+        action="store_true",
+        help=(
+            "Never segment or register: start every video at the fold, from the "
+            "masks and registration cache OCULARRIGIDITY_MASKS / "
+            "OCULARRIGIDITY_REGISTERED_CACHE point at (typically another run's). "
+            "Videos without a valid cache there are skipped."
+        ),
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="Print what would run, per stage, and exit without touching a GPU.",
@@ -590,7 +556,7 @@ def parse_args():
     p.add_argument(
         "--batch-size",
         type=int,
-        default=SEGMENTATION.batch_size,
+        default=SEGMENTATION_BATCH_SIZE,
         help="Frames per GPU forward pass.",
     )
     return p.parse_args()
@@ -610,8 +576,18 @@ def main():
         f"| registration={REGISTRATION.method} "
         f"| force-from={force_from or 'none'} | batch_size={args.batch_size}"
     )
+    logger.info(
+        f"masks <- {ROOT_MASKS} | registration cache <- {ROOT_REGISTERED_CACHE} "
+        f"| reuse-segreg={args.reuse_segreg} "
+        f"| pulse model={PULSATION.sinc_revision or 'thickness traces'} "
+        f"| phase anchoring={'on' if PULSATION.anchor else 'off'}"
+    )
 
-    tasks = build_tasks(paths, force_from, args.limit, logger)
+    if args.reuse_segreg and force_from in ("segment", "register"):
+        raise SystemExit(
+            "--reuse-segreg cannot be combined with forcing segment/register"
+        )
+    tasks = build_tasks(paths, force_from, args.limit, logger, args.reuse_segreg)
     if args.dry_run:
         logger.info("--dry-run: stopping before any work.")
         return
@@ -621,13 +597,10 @@ def main():
 
     torch.backends.cudnn.benchmark = True
     model = get_model()
-    logger.info(f"Loaded checkpoint: {CHECKPOINT_PATH}")
-    reg_model, reg_meta = load_registration_regressor(
-        REGISTRATION.registrator_checkpoint
-    )
+    reg_model = get_registration_model(REGISTRATION.registrator_revision).to("cuda")
     logger.info(
-        f"Loaded registrator: {REGISTRATION.registrator_checkpoint} "
-        f"(epoch {reg_meta.get('epoch')}, val {reg_meta.get('val_loss')})"
+        f"Models from the Hub: segmentation {SEGMENTATION_REVISION}, "
+        f"registration {REGISTRATION.registrator_revision}"
     )
 
     loader = DataLoader(

@@ -58,33 +58,36 @@ def cache_meta_for(config: RegistrationConfig) -> dict:
         scale_factor=float(c.scale_factor),
         transversal_bandpass=str(c.transversal_bandpass),
         axial_bandpass=str(c.axial_bandpass),
-        # Which estimator produced the transform, and (for the learned one)
-        # from which weights. Two caches that differ only in this are not
-        # interchangeable, so the key has to carry it.
+        # Which estimator produced the transform, and (for the learned one) from which weights.
         method=c.method,
         registrator_checkpoint=(
-            str(c.registrator_checkpoint) if c.method == "learned" else ""
+            c.registrator_revision if c.method == "learned" else ""
         ),
         # Both change the transform itself, not just how long it takes to get.
         reference_selection=c.reference_selection,
         probe_frames=int(c.probe_frames),
-        # Which pixels went in: the compressed mp4 is lossy against the raw
-        # cube.bin (mean |difference| ~11.7 grey levels), so a registration
-        # computed from one is not the same artifact as one from the other.
         use_encoded_video=int(c.use_encoded_video),
         filter_bad_columns=int(c.filter_bad_columns),
+        keep_largest_cc=int(c.keep_largest_cc),
+        dy_align_bm=int(c.dy_align_bm),
+        dy_align_bm_sigma=float(c.dy_align_bm_sigma) if c.dy_align_bm else 0.0,
     )
+
+
+_VALUE_WHEN_ABSENT = {"dy_align_bm": 0, "dy_align_bm_sigma": 0.0}
+
+
+def _stored_value(data, key: str) -> str:
+    value = str(data[key] if key in data else _VALUE_WHEN_ABSENT[key])
+    if key == "registrator_checkpoint" and value.endswith(".pt"):
+        value = Path(value).parent.name.removeprefix("reg_")
+    return value
 
 
 def cache_is_valid(
     cache_dir: Path, video_id: Path, config: RegistrationConfig
 ) -> bool:
-    """Is there a cached registration for this video, matching ``config``?
-
-    Reads only the small transform.npz, so a batch script can ask this about a
-    whole cohort up front — which volumes to re-register is a planning decision,
-    and planning must not decode 4.7 GB per video to make it.
-    """
+    """Is there a cached registration for this video, matching ``config``?"""
     paths = cache_paths_for(cache_dir, video_id)
     if not all(p.exists() for p in paths.values()):
         return False
@@ -92,14 +95,10 @@ def cache_is_valid(
         data = np.load(paths["transform"])
     except Exception:
         return False
-    # Stale cache if it was produced with different registration params.
-    # Compare as strings so int and string keys (e.g. lateral_method) work.
-    # A key absent from an older cache is not compared, so caches written
-    # before newer keys (crop/scale/bandpass) were added stay valid.
     return all(
-        str(data[k]) == str(v)
+        _stored_value(data, k) == str(v)
         for k, v in cache_meta_for(config).items()
-        if k in data
+        if k in data or k in _VALUE_WHEN_ABSENT
     )
 
 
@@ -109,12 +108,7 @@ def read_cache_payload(
     config: RegistrationConfig,
     verbose: bool = False,
 ) -> Optional[dict]:
-    """Decode a cached registration, or return None if there is no valid one.
-
-    Pure file IO and CPU decode — no GPU, no torch autograd, nothing tied to
-    this process — so a batch caller can run it in a DataLoader worker ahead of
-    time and hand the result to :meth:`VideoRegistrator.prime_from_cache`.
-    """
+    """Decode a cached registration, or return None if there is no valid one."""
     paths = cache_paths_for(cache_dir, video_id)
     if not cache_is_valid(cache_dir, video_id, config):
         return None
@@ -154,14 +148,7 @@ class VideoRegistrator:
         verbose: bool = True,
         cq_cache: int = 18,
     ):
-        """``video`` is the video identifier/name, used for cache and mask paths.
-
-        Frames and masks are normally loaded from ``root_data``/``root_masks``
-        using that name. Alternatively, pass ``frames`` and/or ``masks`` as
-        numpy arrays to feed them directly, in which case the corresponding
-        ``root_*`` argument is not required. ``video`` should still be provided
-        as a name so caching and identification keep working.
-        """
+        """``video`` is the video identifier/name, used for cache and mask paths."""
         self.video = video
         self.root_masks = root_masks
         self.root_data = root_data
@@ -172,8 +159,7 @@ class VideoRegistrator:
 
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
 
-        # In-memory inputs supplied directly (bypass path loading). Stored
-        # untrimmed; the frame slice is applied lazily like the loaded arrays.
+        # In-memory inputs supplied directly (bypass path loading).
         self._provided_frames = frames
         self._provided_masks = masks
 
@@ -219,11 +205,7 @@ class VideoRegistrator:
 
     @property
     def _video_id(self) -> Path:
-        """Video identifier used to build cache/mask paths.
-
-        Mirrors the logic in ``raw_masks``: if ``video`` points to a file, its
-        parent directory is the id; otherwise ``video`` itself.
-        """
+        """Video identifier used to build cache/mask paths."""
         if self.root_data is not None and (self.root_data / self.video).is_file():
             return self.video.parent
         return self.video
@@ -239,9 +221,6 @@ class VideoRegistrator:
     def _adopt_cache_payload(self, payload: dict) -> None:
         """Install a decoded cache payload as this registrator's result."""
         frames, masks = payload["frames"], payload["masks"]
-        # A payload that travelled through a DataLoader arrives as tensors
-        # backed by shared memory; .numpy() views that buffer rather than
-        # copying another 4.7 GB, and keeps it alive for as long as we hold it.
         if isinstance(frames, torch.Tensor):
             frames = frames.numpy()
         if isinstance(masks, torch.Tensor):
@@ -260,16 +239,7 @@ class VideoRegistrator:
         transform: dict,
         raw_masks=None,
     ) -> None:
-        """Install a registration computed elsewhere, leaving the cache writable.
-
-        The counterpart of :meth:`prime_from_cache`: that one adopts a payload
-        that *came from* the cache and must not be written back, this one
-        adopts a freshly computed result that must. It is how the fused
-        single-pass stage (:mod:`ocularrigidity.registration.fused`) hands its
-        output over — the registrator then behaves as if it had registered the
-        video itself, so :meth:`flush_cache` and every downstream consumer are
-        unchanged and the old registration path is never entered.
-        """
+        """Install a registration computed elsewhere, leaving the cache writable."""
         self._adopt_cache_payload(
             {
                 "frames": registered_frames,
@@ -282,17 +252,12 @@ class VideoRegistrator:
         self._loaded_from_cache = False
 
     def prime_from_cache(self, payload: dict) -> None:
-        """Adopt a cache payload read by :func:`read_cache_payload` elsewhere.
-
-        Lets a batch caller move the cache decode (~25 s of CPU per volume) into
-        a DataLoader worker and still get a registrator that behaves as if it
-        had loaded the cache itself — including not writing it back.
-        """
+        """Adopt a cache payload read by :func:`read_cache_payload` elsewhere."""
         self._adopt_cache_payload(payload)
         self._loaded_from_cache = True
 
     def _load_from_cache(self) -> bool:
-        """Populate registration results from cache. Returns True on a valid hit."""
+        """Populate registration results from cache."""
         if self._overwrite_cache:
             return False
         payload = read_cache_payload(
@@ -364,8 +329,7 @@ class VideoRegistrator:
                 frames = load_cube(self.root_data / self.video)
             self._raw_frames = frames[self._frame_slice]
             if not self.config.use_encoded_video:
-                # load_cube returns (N, W, H); align to the masks' (H, W)
-                # orientation so registration sees a consistent frame/mask grid.
+                # load_cube returns (N, W, H)
                 mask_hw = self.raw_masks.shape[1:]
                 if self._raw_frames.shape[1:] == mask_hw[::-1]:
                     self._raw_frames = self._raw_frames.transpose(0, 2, 1)
@@ -381,7 +345,8 @@ class VideoRegistrator:
                 raise ValueError(
                     "No `masks` array and no `root_masks` to load masks from."
                 )
-            # If self.video points to a file, take its parent directory as the video id for mask loading
+            # If self.video points to a file, take its parent directory as
+            # the video id for mask loading
             if self.root_data is not None and (self.root_data / self.video).is_file():
                 video_id = self.video.parent
             else:
@@ -433,30 +398,18 @@ class VideoRegistrator:
 
     @property
     def registered_lines(self):
-        """Registered (BM, CSI) as (T, 2, W) — BM at index 0, CSI at index 1."""
+        """Registered (BM, CSI) as (T, 2, W)"""
         if self._registered_lines is None:
             self.compute_registration()
         return self._registered_lines
 
     def flush_cache(self) -> None:
-        """Persist the computed registration, if there is a cache to write to.
-
-        Split out of :meth:`compute_registration` so a batch caller can run it
-        on a background thread. The HEVC encode and the mask compression are
-        seconds of CPU and subprocess work per volume, and none of it needs the
-        GPU that the next volume is waiting for. A registration that came *from*
-        the cache is not written back.
-        """
+        """Persist the computed registration, if there is a cache to write to."""
         if self.cache_dir is not None and not self._loaded_from_cache:
             self._save_to_cache()
 
     def compute_registration(self, save_cache: bool = True):
-        """Register the video, reusing a cached result when one is valid.
-
-        ``save_cache=False`` computes without writing; the caller then owns the
-        write and must call :meth:`flush_cache` (typically on another thread).
-        """
-        # Reuse a previously cached registration when available.
+        """Register the video, reusing a cached result when one is valid."""
         if self.cache_dir is not None and self._load_from_cache():
             self._loaded_from_cache = True
             return

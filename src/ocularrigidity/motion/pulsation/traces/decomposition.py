@@ -1,11 +1,4 @@
-"""ICA/PCA as a trace-source *wrapper* rather than a separate leaf class.
-
-Because it consumes and produces the same ``Traces`` contract, any source can be
-decomposed without a parallel class hierarchy::
-
-    raw = MaskThicknessTraceSource(registrator, aligner)      # K = W
-    ica = DecomposedTraceSource(raw, DecompositionConfig())   # K = n_components
-"""
+"""ICA/PCA as a trace-source *wrapper* rather than a separate leaf class."""
 
 from dataclasses import dataclass
 from typing import Literal, Optional
@@ -35,13 +28,7 @@ class DecompositionConfig:
 
 
 class DecomposedTraceSource(AbstractUniformTraceSource):
-    """Wraps another source and returns its ICA/PCA components as the traces.
-
-    The mixing matrix and the sign convention live here because this is the only
-    place they mean anything: component sign is arbitrary out of FastICA, so each
-    component (and its mixing column) is flipped to correlate positively with the
-    mean of the underlying physical signal.
-    """
+    """Wraps another source and returns its ICA/PCA components as the traces."""
 
     def __init__(
         self,

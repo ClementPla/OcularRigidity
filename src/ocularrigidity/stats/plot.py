@@ -118,14 +118,6 @@ def regression_plot_with_stats(
         ax.plot(limits, limits, color="gray", linestyle="--", linewidth=1.2, zorder=0)
     else:
         # Fallback identity line spanning x-axis bounds
-        # ax.plot(
-        #     [df[col1].min(), df[col1].max()],
-        #     [df[col1].min(), df[col1].max()],
-        #     color="gray",
-        #     linestyle="--",
-        #     linewidth=1.2,
-        #     zorder=0,
-        # )
         pass
     ax.set_xlabel(xlabel, fontsize=11, labelpad=8)
     ax.set_ylabel(ylabel, fontsize=11, labelpad=8)

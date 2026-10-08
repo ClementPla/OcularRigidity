@@ -8,17 +8,7 @@ import albumentations as A
 
 
 class OIMHS(ChoroidDataset):
-    """Process the OIMHS database.
-    Each file contains two images side by side: the right one is the input image
-    The left one is the groundtruth.
-    We only extract the choroid, which is in yellow in the mask.
-    The folder is organized as follows:
-    - root_files
-        - patient_id/
-            - image1.png
-            - image2.png
-            - ...
-    """
+    """Process the OIMHS database."""
 
     def __init__(
         self,

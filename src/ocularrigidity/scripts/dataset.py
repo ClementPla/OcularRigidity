@@ -23,13 +23,7 @@ def source_path(video: str | Path) -> Path:
 
 
 def load_source_frames(video: str | Path, config=None) -> torch.Tensor:
-    """Decode one raw cube, trimmed as ``config`` asks. Runs in a worker.
-
-    Returns ``(T, H, W)`` uint8 as a tensor, so the ~4.4 GB travels through
-    shared memory rather than being pickled down the worker socket.
-    ``load_cube`` already returns the (T, 1536, 1024) orientation the models
-    expect and re-sorts the frames by ``timestamp.txt``.
-    """
+    """Decode one raw cube, trimmed as ``config`` asks."""
     frames = load_cube(source_path(video).parent)
     if config is not None:
         end = None if config.drop_last_n_frames == 0 else -config.drop_last_n_frames
@@ -38,20 +32,7 @@ def load_source_frames(video: str | Path, config=None) -> torch.Tensor:
 
 
 class PrefetchDataset(Dataset):
-    """Runs ``loader(task)`` in DataLoader worker processes, one task per item.
-
-    The generic form of :class:`VolumeDataset`: the batch scripts each decode
-    something different (a registration cache, a folded one_cycle.mkv), but they
-    all want the same two properties from it — the decode happening ahead of the
-    main process, and a failure costing one item rather than the whole run.
-
-    ``loader`` must be importable (a module-level function, or a ``partial`` of
-    one) and should return torch tensors for anything volume-sized, so the array
-    travels through shared memory instead of being pickled down a socket.
-
-    Yields ``(task, payload, error)``; ``error`` is a traceback string when the
-    load failed, and ``payload`` is whatever ``loader`` returned otherwise.
-    """
+    """Runs ``loader(task)`` in DataLoader worker processes, one task per item."""
 
     def __init__(self, tasks, loader):
         self.tasks = tasks
@@ -99,6 +80,4 @@ class VolumeDataset(Dataset):
 
             return measure_value, tensor, None
         except Exception:
-            # Raising here would tear down the whole DataLoader: a missing
-            # cube.bin must cost us one volume, not the rest of the cohort.
             return measure_value, None, traceback.format_exc()

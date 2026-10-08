@@ -1,26 +1,4 @@
-"""
-Export d'une video OCT recalee a partir des images brutes (.tif) d'une condition.
-
-Logique partagee par :
-  - le script de lot ``Astronauts/register_files.py`` ;
-  - le bouton "Enregistrer la video recalee" de l'app
-    ``testing_app/first_cc_registration.py``.
-
-Pour une condition (dossier ``RawImages`` contenant les .tif + l'export XML
-Spectralis), on empile les images dans l'ordre des horodatages, on segmente la
-choroide, on recale la video via ``RegisteredVideo`` (motion/registered_video.py)
-en reutilisant une ``RegistrationConfig``, puis on enregistre dans
-``<RawImages>/registered/`` :
-  - ``registered_video.mp4``  : la video recalee (frames uint8) ;
-  - ``mask.npz``              : les masques de choroide recales ;
-  - ``timestamp.txt``         : un horodatage (microsecondes) par frame ;
-  - ``transform.npz``         : la transformation appliquee (dx, dy) ;
-  - ``registration_params.json`` : tracabilite (config + skip/drop + meta).
-
-La video, les masques et les horodatages sont deja rognes du skip/drop de la
-config (le recalage prend la 1re frame conservee comme reference) ; lancer
-``pulsation.py`` avec ``skip_first_n_frames=0`` / ``drop_last_n_frames=0`` dessus.
-"""
+"""Export d'une video OCT recalee a partir des images brutes (.tif) d'une condition."""
 
 from __future__ import annotations
 
@@ -41,8 +19,6 @@ from ocularrigidity.segmentation.inference import infer
 from ocularrigidity.registration.registration_engine import VideoRegistrator
 from ocularrigidity.registration.config import RegistrationConfig
 
-# Importer registered_video -> compression.py force IMAGEIO_FFMPEG_EXE vers un
-# chemin Linux code en dur ; on le neutralise (on appelle ffmpeg directement).
 os.environ.pop("IMAGEIO_FFMPEG_EXE", None)
 
 DEFAULT_OUTPUT_SUBDIR = "registered"
@@ -50,7 +26,6 @@ DEFAULT_OUTPUT_SUBDIR = "registered"
 
 # --------------------------------------------------------------------------- #
 # Ecriture de la video (ffmpeg, libx264 logiciel -> pas de dependance GPU/nvenc)
-# --------------------------------------------------------------------------- #
 def resolve_ffmpeg() -> str:
     """Chemin de l'executable ffmpeg (PATH systeme, sinon imageio-ffmpeg)."""
     exe = shutil.which("ffmpeg")
@@ -77,11 +52,7 @@ def estimate_fps(ts_us: np.ndarray) -> float:
 def write_gray_mp4(
     cube: np.ndarray, out_path, fps: float, ffmpeg_exe: str | None = None, crf: int = 18
 ) -> None:
-    """Encode un cube (T, H, W) uint8 en mp4 gris (libx264, quasi sans perte).
-
-    La cadence reelle des frames etant irreguliere, ``fps`` n'est qu'une
-    metadonnee d'affichage : le timing exact vit dans ``timestamp.txt``.
-    """
+    """Encode un cube (T, H, W) uint8 en mp4 gris (libx264, quasi sans perte)."""
     if ffmpeg_exe is None:
         ffmpeg_exe = resolve_ffmpeg()
     cube = np.ascontiguousarray(cube, dtype=np.uint8)
@@ -121,7 +92,6 @@ def write_gray_mp4(
 
 # --------------------------------------------------------------------------- #
 # Lecture des images brutes (.tif) dans l'ordre des horodatages du XML
-# --------------------------------------------------------------------------- #
 def _load_gray_u8(path) -> np.ndarray:
     """Charge une image .tif en niveaux de gris (H x W, uint8)."""
     img = iio.imread(path)
@@ -131,11 +101,7 @@ def _load_gray_u8(path) -> np.ndarray:
 
 
 def load_ordered_oct_series(raw_dir) -> list:
-    """Series OCT exploitables, triees par horodatage croissant.
-
-    Garde les series ayant un B-scan OCT, un .tif present sur disque et un
-    ``AcquisitionTime`` (necessaire pour l'ordre et le timestamp.txt).
-    """
+    """Series OCT exploitables, triees par horodatage croissant."""
     raw_dir = Path(raw_dir)
     xml_files = sorted(raw_dir.glob("*.xml"))
     if not xml_files:
@@ -154,11 +120,7 @@ def load_ordered_oct_series(raw_dir) -> list:
 
 
 def build_cube_and_timestamps(raw_dir, series):
-    """Empile les .tif (ordre des horodatages) -> cube (T, H, W) uint8 + ts (us).
-
-    Le cube est rogne a des dimensions paires pour que l'encodage yuv420p
-    (libx264) soit valide ; masque et mp4 restent ainsi alignes.
-    """
+    """Empile les .tif (ordre des horodatages) -> cube (T, H, W) uint8 + ts (us)."""
     raw_dir = Path(raw_dir)
     cube = np.stack([_load_gray_u8(raw_dir / s.oct_file_name) for s in series], axis=0)
     ts_us = np.array(
@@ -171,14 +133,7 @@ def build_cube_and_timestamps(raw_dir, series):
 
 
 def fill_empty_columns(masks: np.ndarray) -> np.ndarray:
-    """Comble les colonnes sans masque par la colonne valide la plus proche.
-
-    Sur un B-scan Spectralis, quelques colonnes de bord n'ont pas de choroide :
-    leurs frontieres seraient NaN, et ``ref_bm.mean()`` (utilise par le flatten
-    dans register_masks_by_displacement) propagerait le NaN -> deplacement NUL
-    partout, donc AUCUN recalage vertical. On les comble pour que le recalage
-    opere vraiment (meme correctif que ``fill_empty_columns`` de l'app interactive).
-    """
+    """Comble les colonnes sans masque par la colonne valide la plus proche."""
     out = np.asarray(masks).copy()
     cols = np.arange(out.shape[2])
     for i in range(out.shape[0]):
@@ -199,7 +154,6 @@ def _to_numpy(x):
 
 # --------------------------------------------------------------------------- #
 # Pipeline complet pour une condition
-# --------------------------------------------------------------------------- #
 def export_registered_video(
     raw_dir,
     cfg: RegistrationConfig,
@@ -214,32 +168,7 @@ def export_registered_video(
     verbose: bool = True,
     extra_meta: dict | None = None,
 ) -> dict:
-    """Segmente, recale et enregistre la video recalee d'une condition.
-
-    Parameters
-    ----------
-    raw_dir : Path
-        Dossier ``RawImages`` (ou ``RawData``) contenant les .tif et le .xml.
-    cfg : RegistrationConfig
-        Parametres de recalage (flatten_rpe / correct_transversal / lateral_method /
-        subpixel + skip/drop + batch_size). Reutilisee de l'experience de l'app.
-    model
-        Modele de segmentation de la choroide (ChoroidSegmentationModule).
-    suffix : str, optional
-        Suffixe ajoute a TOUS les fichiers de sortie (``registered_video{suffix}.mp4``,
-        ``mask{suffix}.npz``, ``timestamp{suffix}.txt``, ``transform{suffix}.npz``,
-        ``registration_params{suffix}.json``). Vide = sortie standard ; ``"_ascan"``
-        pour la variante recalee A-scan par A-scan, sans ecraser la sortie de base.
-    extra_meta : dict, optional
-        Metadonnees ajoutees a ``registration_params.json`` (tracabilite).
-
-    Returns
-    -------
-    dict
-        ``{"status": "ok", "video", "out_dir", "n_frames", "fps"}`` en cas de
-        succes, ou ``{"status": "skipped", "reason", ...}`` (video deja presente,
-        pas d'images, trop peu de frames apres rognage). Leve sur erreur dure.
-    """
+    """Segmente, recale et enregistre la video recalee d'une condition."""
     raw_dir = Path(raw_dir)
     out_dir = raw_dir / out_subdir
     out_video = out_dir / f"registered_video{suffix}.mp4"
@@ -281,18 +210,14 @@ def export_registered_video(
         ),
         dtype=bool,
     )
-    # Indispensable : combler les colonnes vides, sinon ref_bm.mean() = NaN et le
-    # recalage vertical (surtout flatten) devient un no-op (cf. fill_empty_columns).
     masks = fill_empty_columns(masks)
 
-    # Recalage via RegisteredVideo : frames/masques deja rognes fournis en
-    # memoire (skip/drop=0 ici pour ne pas re-rogner, cache_dir=None).
     registrator = VideoRegistrator(
         video=Path(out_subdir),
         root_data=raw_dir,
         root_masks=raw_dir,
         # Frames/masks are supplied pre-trimmed below, so skip/drop must be 0
-        # here to avoid re-trimming; every other knob comes from ``cfg``.
+        # here to avoid re-trimming
         config=dataclasses.replace(
             cfg, skip_first_n_frames=0, drop_last_n_frames=0
         ),

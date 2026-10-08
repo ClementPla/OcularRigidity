@@ -1,10 +1,4 @@
-"""Lightning module that localizes the foveal point in an OCT B-scan.
-
-Reuses the same backbone family as ``ChoroidSegmentationModule`` (smp), but
-outputs a single-channel heatmap decoded to a sub-pixel coordinate via DSNT.
-Only the x-coordinate is consumed by the lateral registration, but the model is
-supervised on the full (x, y) point (the annotated foveal pit center).
-"""
+"""Lightning module that localizes the foveal point in an OCT B-scan."""
 
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
@@ -45,7 +39,7 @@ class FoveaKeypointModule(pl.LightningModule, PyTorchModelHubMixin):
         )
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Returns (coords, heatmap): coords (B, 1, 2) normalized; heatmap (B, 1, H, W)."""
+        """Returns (coords, heatmap): coords (B, 1, 2) normalized"""
         heatmap = flat_softmax(self.model(x))
         coords = dsnt(heatmap)
         return coords, heatmap
@@ -81,7 +75,7 @@ class FoveaKeypointModule(pl.LightningModule, PyTorchModelHubMixin):
 
     @torch.inference_mode()
     def predict_coords_px(self, x: torch.Tensor) -> torch.Tensor:
-        """Predict (x, y) in pixels of the *input* tensor. x: (B,1,H,W) -> (B,2)."""
+        """Predict (x, y) in pixels of the *input* tensor."""
         coords, heatmap = self(x)
         h, w = heatmap.shape[-2:]
         px = normalized_to_pixel(coords[:, 0, 0], w)

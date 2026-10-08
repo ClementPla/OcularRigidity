@@ -15,18 +15,7 @@ def spatio_temporal_filter(
     fs: float,
     validity_mask: Optional[np.ndarray] = None,
 ):
-    """
-    Applies a spatial low pass filter and and temporal pass-band filer
-
-    Args:
-        signal (np.ndarray): TxW array of values to filter. The signal is assumed to be interpolated over time, with a uniform sampling.
-        On invalid frames, validity_mask can be used to ignore those pixels in the filtering process.
-        spatial_sigma (float): Standard deviation of the Gaussian kernel for spatial filtering, in pixels.
-        temporal_low_freq (float): Low frequency cutoff for the temporal bandpass filter, relative to the sampling frequency fs
-        temporal_high_freq (float): High frequency cutoff for the temporal bandpass filter, relative to the sampling frequency fs
-        fs (float): Sampling frequency of the signal, in Hz
-        validity_mask (Optional[np.ndarray], optional): TxW boolean array indicating which pixels are valid (True) or invalid (False). If provided, the filter will ignore invalid pixels. Defaults to None.
-    """
+    """Applies a spatial low pass filter and and temporal pass-band filer"""
 
     validity = (
         validity_mask.astype(float)
@@ -34,9 +23,6 @@ def spatio_temporal_filter(
         else np.ones_like(signal)
     )
     if spatial_sigma <= 0:
-        # No spatial smoothing: keep each column as-is, only dropping the ones
-        # with too little valid data. Normalized convolution would rescale by
-        # the validity here, which is meaningless for a delta kernel.
         spatial = np.where(validity > 0.1, signal, np.nan)
     else:
         num = gaussian_filter1d(signal, sigma=spatial_sigma, axis=1, mode="nearest")

@@ -1,4 +1,4 @@
-"""Analytic-signal (Hilbert) phase — needs no carrier frequency."""
+"""Analytic-signal (Hilbert) phase"""
 
 from dataclasses import dataclass
 from typing import ClassVar, Literal, Optional
@@ -13,33 +13,20 @@ from ocularrigidity.motion.pulsation.phase.base import AbstractPhaseEstimator
 
 @dataclass
 class HilbertPhaseConfig:
-    # Fraction of a nominal cycle used to smooth the analytic phase. 0 disables.
     smoother_cycles: float = 0.0
 
 
 @dataclass
 class AmplitudeWeightedHilbertConfig:
-    # How the per-trace analytic phases become one phase. "integrated_frequency"
-    # rebuilds phase from the weighted-median instantaneous frequency (immune to
-    # genuine phase lags across the scan); "circular_mean" averages the phases
-    # directly (keeps beat shape, smears any lag).
+    # How the per-trace analytic phases become one phase.
     combine: Literal["integrated_frequency", "circular_mean"] = "integrated_frequency"
     # Median filter applied to the instantaneous frequency, in nominal cycles.
     freq_median_cycles: float = 1.0
-    # Fraction of the record trimmed at each end, where filtfilt and the
-    # analytic signal have edge transients.
     edge_frac: float = 0.05
 
 
 class HilbertPhaseEstimator(AbstractPhaseEstimator):
-    """Analytic-signal phase — no carrier frequency needed.
-
-    The traces are already bandpassed to the cardiac band by the trace source,
-    so the Hilbert transform's narrowband assumption holds and the instantaneous
-    phase is meaningful. Gaps are bridged by linear interpolation before the
-    transform (which is global and cannot tolerate NaNs) and masked out again
-    afterwards.
-    """
+    """Analytic-signal phase"""
 
     requires_rate: ClassVar[bool] = False
 
@@ -95,21 +82,7 @@ def _weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
 
 
 class AmplitudeWeightedHilbertPhaseEstimator(AbstractPhaseEstimator):
-    """Per-trace Hilbert, combined by envelope-weighted instantaneous frequency.
-
-    Each trace gets its own analytic signal; the instantaneous frequencies are
-    then merged across traces with a *time-varying* weight — each trace counts
-    in proportion to its envelope amplitude at that instant, so A-scans where
-    the pulsation is momentarily weak stop dragging the estimate around.
-
-    This deliberately overrides :meth:`estimate` rather than using the
-    aggregate-before / aggregate-after hooks: the weights vary along time as
-    well as across traces, and the merge happens in *frequency* space, neither
-    of which the ``AbstractTraceAggregator`` contract expresses. That is the
-    escape hatch — implement ``estimate`` and call ``build_track``.
-
-    ``inst_freq`` holds the merged frequency trace after the run, for plotting.
-    """
+    """Per-trace Hilbert, combined by envelope-weighted instantaneous frequency."""
 
     requires_rate: ClassVar[bool] = False
 
@@ -120,9 +93,9 @@ class AmplitudeWeightedHilbertPhaseEstimator(AbstractPhaseEstimator):
     ):
         super().__init__(aggregator, per_trace=True)
         self.config = config or AmplitudeWeightedHilbertConfig()
-        #: Envelope-weighted instantaneous frequency (Hz) on the uniform grid.
+        # : Envelope-weighted instantaneous frequency (Hz) on the uniform grid.
         self.inst_freq: Optional[np.ndarray] = None
-        #: Per-trace envelope amplitude, shape (T_uniform, K).
+        # : Per-trace envelope amplitude, shape (T_uniform, K).
         self.envelope: Optional[np.ndarray] = None
 
     def phase_from_trace(self, trace, traces, rate):
@@ -179,8 +152,7 @@ class AmplitudeWeightedHilbertPhaseEstimator(AbstractPhaseEstimator):
             good[-m:] = False
 
         if cfg.combine == "integrated_frequency":
-            # φ(t) = 2π ∫ f dt — consistent with f_inst by construction, and
-            # unaffected by real phase lags between A-scans.
+            # φ(t) = 2π ∫ f dt
             phase = (
                 2
                 * np.pi

@@ -1,7 +1,4 @@
-"""Per-case video viewer: click a row to load its one-cycle, segmentation and
-quiver. Optimised for speed — frames are downscaled hard and encoded with a fast
-libx264 preset, since this is for browsing, not publication figures.
-"""
+"""Per-case video viewer: click a row to load its one-cycle, segmentation and quiver."""
 
 import pickle
 from pathlib import Path
@@ -21,7 +18,7 @@ st.set_page_config(page_title="Viewer", layout="wide")
 QUALITY = 5
 PRESET = "ultrafast"
 FPS = 10
-CROP = 1024  # center-crop each frame to a CROP×CROP square before downscaling
+CROP = 1024
 
 
 def _mkv(root, case):
@@ -91,8 +88,6 @@ def render_quiver(root, case, factor, cycle, style: QuiverStyle):
     x0, y0, _ = R.square_crop_offset(raw.shape[1], raw.shape[2], CROP)
     cube = R.resize_cube(R.center_crop_square(raw, CROP), factor)
 
-    # The CSI options read the interfaces off the masks, which must therefore be
-    # cropped and downscaled exactly like the frames they are drawn on.
     masks = None
     if (
         style.only_orthogonal_to_border
@@ -138,7 +133,6 @@ sel = require_selection()
 root = sel.root
 st.title("Viewer")
 
-# Render controls (kept in the sidebar so the main area stays focused).
 st.sidebar.header("Render (speed-first)")
 factor = st.sidebar.select_slider("Downscale", options=[2, 3, 4, 6, 8], value=4)
 alpha = st.sidebar.slider("Overlay opacity", 0.0, 1.0, 0.4, 0.05)
@@ -146,8 +140,6 @@ alpha = st.sidebar.slider("Overlay opacity", 0.0, 1.0, 0.4, 0.05)
 st.sidebar.header("Quiver")
 q_cycle = st.sidebar.selectbox("Cycle", ["0", "1", "2", "All"], index=0)
 
-# Every QuiverStyle option, so the viewer and the gif renderer expose the same
-# knobs. Defaults stay speed-first (no CSI extraction unless asked).
 d = QuiverStyle()
 component = st.sidebar.radio(
     "Displacement component",
@@ -217,7 +209,6 @@ quiver = render_quiver(root, case, factor, q_cycle, style)
 
 
 def _play(path):
-    # loop + muted autoplay so the short clips run continuously without a click.
     st.video(path, loop=True, autoplay=True, muted=True, width=600)
 
 

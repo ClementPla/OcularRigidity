@@ -1,15 +1,4 @@
-"""Cardiac pulse extraction, composed from three swappable stages.
-
-    traces/  ->  rate/ (optional)  ->  phase/
-
-One subpackage per stage, each with a ``base.py`` holding the ABC and the type
-it passes on, then one module per concrete method with that method's config
-dataclass beside it — so adding a method means adding a single file.
-
-``band.py`` holds the physiological prior, shared by the trace bandpass and the
-rate estimators; ``extractor.py`` the orchestrator; ``n_cycle_reconstructor.py``
-the folding; ``pipeline.py`` the end-to-end wiring.
-"""
+"""Cardiac pulse extraction, composed from three swappable stages."""
 
 from ocularrigidity.motion.pulsation.band import CardiacBand
 from ocularrigidity.motion.pulsation.extractor import PulseExtractor

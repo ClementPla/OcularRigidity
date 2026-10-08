@@ -1,13 +1,4 @@
-"""Aggregators: collapse ``(T_kept, K)`` candidate traces into one signal.
-
-Kept as its own axis rather than folded into the phase estimators: otherwise
-every (phase method × aggregation) pair would need its own class. A phase
-estimator holds an aggregator and stays agnostic about how the traces were
-reduced.
-
-All aggregators return the aggregated trace **on the full uniform grid**, NaN
-where the sample was not kept, so phase code can reason about gaps directly.
-"""
+"""Aggregators: collapse ``(T_kept, K)`` candidate traces into one signal."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -36,8 +27,7 @@ class AbstractTraceAggregator(ABC):
 
 
 class SelectBestComponent(AbstractTraceAggregator):
-    """Keep only the trace the rate estimator judged most cardiac.
-    """
+    """Keep only the trace the rate estimator judged most cardiac."""
 
     def aggregate(self, traces: Traces, rate: Optional[RateEstimate]) -> np.ndarray:
         if rate is None or rate.best_index is None:
@@ -50,7 +40,7 @@ class SelectBestComponent(AbstractTraceAggregator):
 
 
 class SingleTrace(AbstractTraceAggregator):
-    """Keep one fixed trace, by index. Useful when K == 1 or for debugging."""
+    """Keep one fixed trace, by index."""
 
     def __init__(self, index: int = 0):
         self.index = index
@@ -60,7 +50,7 @@ class SingleTrace(AbstractTraceAggregator):
 
 
 class MeanTrace(AbstractTraceAggregator):
-    """Plain average across traces. Needs no rate estimate."""
+    """Plain average across traces."""
 
     def __init__(self, standardize: bool = True):
         self.standardize = standardize
@@ -71,12 +61,7 @@ class MeanTrace(AbstractTraceAggregator):
 
 
 class PowerWeightedMean(AbstractTraceAggregator):
-    """Average across traces, weighted by the rate estimator's quality scores.
-
-    A softer :class:`SelectBestComponent`: instead of betting everything on the
-    top-scoring trace, it keeps the runners-up in proportion to their score.
-    ``power`` sharpens (``> 1``) or flattens (``< 1``) the weighting.
-    """
+    """Average across traces, weighted by the rate estimator's quality scores."""
 
     def __init__(self, standardize: bool = True, power: float = 1.0):
         self.standardize = standardize

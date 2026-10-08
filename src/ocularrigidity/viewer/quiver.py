@@ -1,23 +1,4 @@
-"""Shared displacement-quiver rendering (no I/O, no Gradio / Streamlit deps).
-
-A quiver render is always the same three steps — get boundary anchors, get their
-displacement over time, draw arrows — and only the *middle* step differs between
-the two callers:
-
-* :func:`ocularrigidity.viewer.gif.render_mask_quiver` tracks the anchors itself
-  with Lucas–Kanade optical flow (:func:`track_anchors`), starting from the mask
-  boundary of a reference frame;
-* :func:`ocularrigidity.viewer.render.render_quiver` replays the displacements
-  already stored per cardiac cycle in ``deltaA_per_cycle.pkl``.
-
-Both then hand ``(ref_xy, disp)`` to :func:`draw_quiver`, so the drawing options
-— arrow scaling and colour, the magnitude floor, ``only_y`` / across-interface
-projection, the CSI summary arrow, side-by-side — live in one place
-(:class:`QuiverStyle`) and behave identically wherever they are exposed.
-
-Coordinates are ``(x, y)`` = (column, row) throughout, matching
-``extract_displacement_at_boundaries``.
-"""
+"""Shared displacement-quiver rendering (no I/O, no Gradio / Streamlit deps)."""
 
 from __future__ import annotations
 
@@ -37,22 +18,7 @@ _POLYORDER = 3
 
 
 class QuiverStyle(NamedTuple):
-    """How the arrows are drawn. A tuple, so it can key a Streamlit cache.
-
-    ``arrow_scale`` magnifies the displacement (pulsation is sub-pixel);
-    ``min_magnitude`` is in px *before* that scaling. ``cyclic`` wraps the
-    Savitzky-Golay temporal smoother around the loop, which is right for a
-    folded cardiac cycle.
-
-    ``only_y`` keeps the axial component only — the pulsation is mostly axial
-    and the lateral component is dominated by residual registration jitter.
-    ``only_orthogonal_to_border`` instead projects on the local mask normal,
-    blurred by ``border_normal_sigma`` (px) before differentiating.
-
-    ``show_csi_summary``, ``show_only_csi_anchors`` and
-    ``only_orthogonal_to_border`` all require the masks. The CSI summary arrow
-    is the mean across-interface displacement — the thickness-change signal.
-    """
+    """How the arrows are drawn."""
 
     stride: int = 8
     arrow_scale: float = 20.0
@@ -72,12 +38,7 @@ class QuiverStyle(NamedTuple):
 
 
 def smooth_disp(disp: np.ndarray, smooth_window: int, cyclic: bool) -> np.ndarray:
-    """Savitzky–Golay temporal smoothing of a (T, N, 2) displacement.
-
-    Lost tracks (NaN) are linearly interpolated along time first — anchors that
-    never came back are pinned to zero displacement — so a single dropped frame
-    cannot punch a hole through the filter.
-    """
+    """Savitzky–Golay temporal smoothing of a (T, N, 2) displacement."""
     disp = np.array(disp, dtype=np.float32, copy=True)
     T = disp.shape[0]
     if smooth_window <= _POLYORDER or T <= _POLYORDER + 1:
@@ -130,11 +91,7 @@ def track_anchors(
     lk_window: int = 21,
     lk_levels: int = 3,
 ) -> np.ndarray:
-    """Track ``ref_xy`` across ``frames`` with Lucas–Kanade -> (T, N, 2) displacement.
-
-    Every frame is tracked against the reference (not chained), so errors do not
-    accumulate. Lost tracks come back as NaN.
-    """
+    """Track ``ref_xy`` across ``frames`` with Lucas–Kanade -> (T, N, 2) displacement."""
     T = frames.shape[0]
     p0 = ref_xy.astype(np.float32).reshape(-1, 1, 2)
     lk_params = dict(
@@ -159,11 +116,7 @@ def track_anchors(
 def _csi_geometry(
     masks: np.ndarray, ref_xy: np.ndarray, reference: int, width: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Per-anchor CSI membership and the unit CSI normal at each anchor's column.
-
-    An anchor belongs to the choroid-sclera interface when it sits closer to the
-    bottom boundary than to the RPE on top.
-    """
+    """Per-anchor CSI membership and the unit CSI normal at each anchor's column."""
     rpe, csi = clean_boundaries(*extract_boundaries_fast(masks.astype(bool)))
     rpe_ref, csi_ref = rpe[reference], csi[reference]  # (W,) each
 
@@ -204,27 +157,7 @@ def draw_quiver(
     labels: Sequence[str] | None = None,
     vrange: tuple[float, float] | None = None,
 ) -> np.ndarray:
-    """Draw the displacement quiver over ``frames`` -> (T, H, W[·2], 3) uint8.
-
-    Parameters
-    ----------
-    frames : (T, H, W) uint8
-        Grayscale frames the arrows are drawn on.
-    ref_xy : (N, 2)
-        Anchor coordinates ``(x, y)`` in *this* frame's pixel space.
-    disp : (T, N, 2)
-        Displacement of each anchor per frame, relative to the reference frame.
-    masks : (T, H, W), optional
-        Choroid masks, in the same pixel space as ``frames``. Required by the
-        options that need the interfaces (``only_orthogonal_to_border``,
-        ``show_csi_summary``, ``show_only_csi_anchors``).
-    labels :
-        Per-frame caption; defaults to ``"<i> / <T>"``.
-    vrange :
-        Magnitude range the arrow colours are normalised over. Computed from
-        ``disp`` when omitted — pass it to keep the colours comparable across
-        several clips (e.g. the cycles of one video).
-    """
+    """Draw the displacement quiver over ``frames`` -> (T, H, W[·2], 3) uint8."""
     if frames.ndim != 3:
         raise ValueError(f"`frames` must have shape (T, H, W); got {frames.shape}.")
     T, H, W = frames.shape
@@ -259,8 +192,7 @@ def draw_quiver(
         if border_normal is not None:
             border_normal = border_normal[keep]
 
-    # Drawn magnitude — the same rule the arrows use, so the colour ramp spans
-    # exactly what is on screen.
+    # Drawn magnitude
     if style.only_y:
         mags = np.abs(disp[..., 1])
     elif border_normal is not None:
@@ -276,7 +208,7 @@ def draw_quiver(
         vrange = magnitude_range(mags, style.min_magnitude)
     vmin, vmax = vrange
 
-    # Mean across-interface motion of the CSI anchors — the thickness signal.
+    # Mean across-interface motion of the CSI anchors
     csi_mean = np.zeros(T, dtype=np.float32)
     if style.show_csi_summary and is_csi is not None and is_csi.any():
         proj = (
@@ -343,8 +275,6 @@ def draw_quiver(
                 2,
             )
         if style.show_csi_summary:
-            # Vertical arrow (top-right), scaled like the quiver and clamped so
-            # it never leaves the panel.
             base_x, base_y = W - 20, 75
             length = int(
                 round(min(float(csi_mean[t]) * style.arrow_scale, base_y - 20))

@@ -9,13 +9,7 @@ def temporal_median(
     device: str = "cuda",
     row_chunk: int = 64,
 ) -> torch.Tensor:
-    """Mediane temporelle d'un volume recale ``(T, H, W)`` -> template ``(H, W)``.
-
-    Returns
-    -------
-    torch.Tensor
-        Template median ``(H, W)`` (float32, sur ``device``).
-    """
+    """Mediane temporelle d'un volume recale ``(T, H, W)`` -> template ``(H, W)``."""
     if isinstance(frames, np.ndarray):
         frames = torch.from_numpy(frames)
     T, H, W = frames.shape
