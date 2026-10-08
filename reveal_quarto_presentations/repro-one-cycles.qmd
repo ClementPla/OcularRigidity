@@ -1,0 +1,93 @@
+---
+title: "One-cycles des réplicats"
+subtitle: "Les vidéos cascade_v9 repliées en one-cycles de 6 battements × 6 bins, recalées bin par bin par le même modèle : occupation des bins et épaisseur choroïdienne, repliée et resegmentée"
+# Figure Plotly sur cette page : sans cet en-tete, les <div> sont ecrits mais
+# aucun script ne les dessine.
+include-in-header: figures_repro_one_cycles/plotlyjs.html
+---
+
+Un **one-cycle** est un battement cardiaque moyen. Chaque frame reçoit une phase
+cardiaque, les frames sont rangées par phase dans des bins, puis moyennées. Cette
+page replie les acquisitions de répétabilité et montre, bin par bin, combien de
+frames ont été moyennées et quelle épaisseur de choroïde en sort.
+
+::: {.callout-note}
+## Le protocole
+
+- **Vidéos** : recalage appris cascade_v9 sur images agrandies à 1536 × 1024
+  (page *Recalage appris cascade_v9*).
+- **Pouls et phase** : le lot ancré sur la **FC médiane par personne** (page
+  *Pouls ancré sur la FC médiane*), méthode `1_fir`. Rien n'est ré-estimé ici :
+  la phase est seulement portée sur les horodatages réels.
+- **Découpage** : le bin 0 est centré sur le maximum du pouls. Les battements
+  sont comptés sur la phase déroulée et regroupés par **6 consécutifs** : un
+  groupe donne un one-cycle de **6 bins**. Le nombre de one-cycles dépend donc
+  de la durée de l'enregistrement. Un battement est écarté à chaque bord (transitoire du FIR).
+- **Recalage intra-bin** : pour chaque bin, **toutes ses frames partent
+  ensemble** dans cascade_v9. Le modèle choisit la référence parmi elles
+  (`motion_medoid`), et son transform est appliqué en un seul warp aux frames
+  et aux masques natifs. Puis les frames sont repliées par médiane et les masques
+  par moyenne, ce qui donne une occupation dans [0, 1].
+- **Deux épaisseurs par bin**, sur les mêmes colonnes (3/4 centraux, choroïde
+  présente sur toute la vidéo) :
+  - **repliée** : les masques de chaque frame, recalés dans le bin puis moyennés ;
+  - **resegmentée** : le one-cycle replié, segmenté à nouveau avec le protocole
+    des masques de la vidéo (SegFormer `version-2.0.0`, image agrandie à
+    1536 × 1024).
+
+Calcul : `Reproducibility/compute_one_cycle.py`.
+:::
+
+::: {.callout-warning}
+## À garder en tête à la lecture
+
+- **Environ 8 frames par bin** en médiane. À 6 battements × 6 bins, un bin
+  moyenne peu de B-scans, surtout aux ART 4 et 5 (105 et 131 ms entre frames).
+  Le crête-à-crête brut est donc dominé par le bruit d'un bin isolé ; le
+  **fondamental ajusté** (tirets) est la grandeur à lire.
+- **L'ancre de FC change le pouls de DESCOVICH et MCNEIL** : pour eux, phase et
+  repliement dépendent entièrement de l'ancre choisie.
+- **Deux acquisitions manquent** : `MARTINEZ_ALEJANDRA_OS3` (frames noires, pas
+  de vidéo recalée) et `DESCOVICH_DENISE_OD3` (aucun pouls avec la médiane).
+- **Pas de recalage entre bins** : ce ne serait qu'une translation rigide par
+  colonne, qui ne change pas l'épaisseur.
+:::
+
+::: {.callout-important}
+## Ce que donne le lot
+
+**Les 53 acquisitions passent** et donnent 284 one-cycles, soit 1 704 bins,
+sans aucun bin vide. On compte **9 frames par bin** en médiane [7 – 14], et
+54 bins sur 1 704 en ont moins de 5.
+
+- **Le recalage intra-bin ne change rien à l'épaisseur.** Le dx prédit par
+  cascade_v9 dans un bin vaut 0,46 px crête-à-crête en médiane. Entre repliement
+  recalé et repliement standard, l'épaisseur diffère de **0,005 px** par bin en
+  médiane (p95 0,02 px). Le ΔY harmonique vaut 2,6 µm [1,7 – 4,1] d'un côté et
+  2,7 µm [1,7 – 4,2] de l'autre. Le recalage global avait déjà fait le travail.
+- **Replié et resegmenté s'accordent**, avec une réserve.
+  - L'accord : Dice médian 0,986 [0,976 – 0,989] ; épaisseur moyenne à
+    0,11 px près en médiane [−0,50 – 0,66] ; ΔY harmonique 2,6 µm contre
+    3,0 µm [1,6 – 6,3].
+  - La réserve : **l'œil gauche de PLAYOUT CLEMENT fait exception**. Son Dice
+    tombe à 0,87–0,94. Sur trois de ses quatre réplicats, le ΔY resegmenté
+    atteint 32 à 38 µm, contre 4 à 14 µm replié. La segmentation du one-cycle y
+    est instable d'un bin à l'autre.
+- **Le dx intra-bin le plus grand** se trouve chez MARTINEZ ALEJANDRA :
+  jusqu'à 4,8 px dans un bin sur `OS2`, et plus de 3 px sur `OD2`/`OD3`.
+  C'est là que le recalage global avait laissé le plus de mouvement.
+:::
+
+# Épaisseur et occupation des bins
+
+Choisir l'acquisition dans le menu en haut à droite. Barres grises (axe de
+droite) : frames moyennées dans le bin. Lignes bleues : épaisseur repliée, une
+teinte par one-cycle, du plus clair au plus sombre dans l'ordre de
+l'enregistrement ; tirets : son fondamental ajusté. Pointillé orange :
+épaisseur du one-cycle resegmenté.
+
+{{< include figures_repro_one_cycles/fig_epaisseur.qmd >}}
+
+# Résumé par acquisition
+
+{{< include figures_repro_one_cycles/tab_resume.qmd >}}

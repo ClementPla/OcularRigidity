@@ -1,0 +1,120 @@
+---
+title: "One-cycles des réplicats à partir de la segmentation"
+subtitle: "Les vidéos cascade_v9 repliées en one-cycles de 6 battements × 6 bins, phase assignée par le pouls d'ÉPAISSEUR choroïdienne (segmentation) et non plus par l'intensité, recalées bin par bin par cascade_v9 avec un décalage Y GÉNÉRAL (pas par A-scan) : occupation des bins et épaisseur choroïdienne, repliée et resegmentée"
+# Figure Plotly sur cette page : sans cet en-tete, les <div> sont ecrits mais
+# aucun script ne les dessine.
+include-in-header: figures_repro_one_cycles_ct/plotlyjs.html
+---
+
+Un **one-cycle** est un battement cardiaque moyen. Chaque frame reçoit une phase
+cardiaque, les frames sont rangées par phase dans des bins, puis moyennées. La
+page *One-cycles des réplicats* assignait cette phase à partir du **pouls
+d'intensité** (SVD sur les pixels). Ici, la phase vient du **pouls d'épaisseur
+choroïdienne**, tiré directement de la segmentation : c'est la choroïde
+elle-même, et non plus les pixels, qui dit à quel instant du cycle appartient
+chaque frame.
+
+::: {.callout-note}
+## Le protocole
+
+- **Vidéos** : les mêmes vidéos recalées par cascade_v9 sur images agrandies à
+  1536 × 1024 (page *Recalage appris cascade_v9*).
+- **Pouls** : l'épaisseur choroïdienne par frame (masques cascade_v9, colonnes
+  1/8 – 7/8), passée au même filtre passe-bande FIR que le pouls d'intensité —
+  FC ancrée sur la **médiane par personne** ± 20 % (page *Pouls ancré sur la FC
+  médiane*, `Reproducibility/compute_ct_pulse_traces.py`, pouls `ct_fir`).
+- **Phase** : calculée ICI, par transformée de **Hilbert** du pouls d'épaisseur
+  (angle déroulé, réduit modulo 2π) — rien n'est repris d'un calcul de phase
+  existant, à la différence de la page d'intensité qui reprenait `phase_1_fir`
+  tel quel.
+- **Découpage** : le bin 0 est centré sur le maximum du pouls d'**épaisseur**
+  (et non plus d'intensité). Les battements sont comptés sur la phase déroulée
+  et regroupés par **6 consécutifs** : un groupe donne un one-cycle de
+  **6 bins**. Un battement est écarté à chaque bord (transitoire du FIR).
+- **Recalage intra-bin, en Y GÉNÉRAL** : pour chaque bin, toutes ses frames
+  partent ensemble dans cascade_v9 (même modèle que la segmentation), qui
+  choisit sa référence parmi elles (`motion_medoid`). À la différence de la
+  page *One-cycles des réplicats* (recalage par A-scan, un `dy` par colonne),
+  le régresseur est appelé avec `dy_bulk_only=True` : il ne rend que le
+  décalage axial **rigide** (un seul `dy` par frame, constant sur toute la
+  largeur), sans résidu par A-scan — la déformation locale de la BM n'est pas
+  corrigée, seul le mouvement d'ensemble l'est. Un seul warp applique ensuite
+  ce transform aux frames et aux masques natifs ; les frames sont repliées par
+  médiane, les masques par moyenne (occupation dans [0, 1]).
+- **Deux épaisseurs par bin**, sur les mêmes colonnes (3/4 centraux, choroïde
+  présente sur toute la vidéo) :
+  - **repliée** : les masques de chaque frame, recalés (Y général) dans le bin
+    puis moyennés ;
+  - **resegmentée** : le one-cycle replié, segmenté à nouveau avec le protocole
+    des masques de la vidéo (SegFormer `version-2.0.0`, image agrandie à
+    1536 × 1024).
+- **Témoin** : le repliement standard, **sans** recalage intra-bin.
+
+Calcul : `Reproducibility/compute_one_cycle_ct.py`.
+:::
+
+::: {.callout-warning}
+## À garder en tête à la lecture
+
+- **Le nombre de battements par acquisition varie beaucoup** (2 à 9 one-cycles
+  selon l'acquisition), et avec lui le nombre de frames par bin (médiane par
+  acquisition de 6 à 25) : c'est l'ART qui fixe l'intervalle entre frames
+  (52, 105 ou 131 ms), pas la durée d'enregistrement, qui elle est à peu près
+  fixe.
+- **Deux acquisitions manquent**, comme sur la page d'intensité :
+  `MARTINEZ_ALEJANDRA_OS3` (frames noires, pas de vidéo recalée) et
+  `DESCOVICH_DENISE_OD3` (aucun pouls exploitable dans le lot dont cette page
+  reprend la FC ancre et les horodatages).
+- **PLAYOUT CLEMENT, œil gauche, reste l'exception** : ses quatre réplicats
+  (`OS1` à `OS4`) ont le Dice replié/resegmenté le plus bas du lot
+  (0,888 – 0,927), avec un écart repliée/resegmentée qui atteint 61 µm sur
+  `OS4`. C'est la même acquisition qui posait déjà problème sur la page
+  d'intensité (là, 3 de ses 4 réplicats) — la resegmentation du one-cycle y est
+  instable, pas le repliement lui-même.
+- **Le recalage intra-bin en Y général reste minime** : `dy` bulk crête-à-crête
+  0,24 px en médiane dans un bin, `dx` 0,47 px — du même ordre que le recalage
+  par A-scan de la page d'intensité (0,46 px).
+:::
+
+::: {.callout-important}
+## Ce que donne le lot
+
+**Les 53 acquisitions passent** et donnent 283 one-cycles, soit 1 698 bins,
+sans aucun bin vide. On compte **9 frames par bin** en médiane [7 – 14], et
+48 bins sur 1 698 en ont moins de 5.
+
+- **Le recalage intra-bin en Y général ne change rien à l'épaisseur**, comme le
+  recalage par A-scan de la page d'intensité. Entre repliement recalé et
+  repliement standard, l'écart médian sur le ΔY harmonique est de **0,013 µm**
+  (max 0,094 µm sur les 53 acquisitions) : `3,8 µm [2,6 – 6,7]` replié contre
+  `3,8 µm [2,6 – 6,7]` standard — indiscernables. Réduire le recalage à un seul
+  degré de liberté (un `dy` par frame plutôt que par colonne) ne change donc
+  pas la conclusion de la page d'intensité : ici comme là, le recalage global
+  (à l'export de la vidéo) avait déjà fait l'essentiel du travail.
+- **Replié et resegmenté s'accordent** : Dice médian 0,986 [0,976 – 0,989],
+  quasi identique à la page d'intensité (0,986 [0,976 – 0,989]). Épaisseur
+  moyenne à 0,14 px près en médiane [−0,47 – 0,66].
+- **Le ΔY harmonique reste plus grand qu'avec le pouls d'intensité** :
+  3,8 µm [2,6 – 6,7] replié (contre 2,6 µm [1,7 – 4,1] là-bas) et 3,2 µm
+  [1,7 – 5,8] resegmenté (contre 3,0 µm [1,6 – 6,3]). Avec cette page-ci, le
+  recalage intra-bin est maintenant écarté comme explication (voir plus haut) :
+  l'écart tient donc à la source de phase elle-même — le pouls d'épaisseur
+  regroupe les battements différemment du pouls d'intensité.
+- **PLAYOUT CLEMENT OS** concentre l'essentiel du désaccord replié/resegmenté
+  du lot (voir plus haut) ; le reste de la cohorte se comporte comme sur la
+  page d'intensité.
+:::
+
+# Épaisseur et occupation des bins
+
+Choisir l'acquisition dans le menu en haut à droite. Barres grises (axe de
+droite) : frames moyennées dans le bin. Lignes bleues : épaisseur repliée, une
+teinte par one-cycle, du plus clair au plus sombre dans l'ordre de
+l'enregistrement ; tirets : son fondamental ajusté. Pointillé orange :
+épaisseur du one-cycle resegmenté.
+
+{{< include figures_repro_one_cycles_ct/fig_epaisseur.qmd >}}
+
+# Résumé par acquisition
+
+{{< include figures_repro_one_cycles_ct/tab_resume.qmd >}}

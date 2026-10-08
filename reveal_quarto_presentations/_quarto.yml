@@ -26,9 +26,14 @@ project:
     - sans-prediction-rigidity.qmd
     - sans-prediction-strain.qmd
     - sans-prediction-viscosity.qmd
+    - repro-methods.qmd
     - repro-data-exploration.qmd
     - repro-hr-validation.qmd
     - repro-cascade-v9.qmd
+    - repro-hr-mediane.qmd
+    - repro-one-cycles.qmd
+    - repro-one-cycles-ct.qmd
+    - repro-strain-graziana.qmd
     - repro-strain-repeatability.qmd
     - explore-iceemdan-svd.qmd
   # Les <video> sont ecrites en HTML brut dans les fragments generes : le
@@ -211,12 +216,22 @@ website:
             href: sans-prediction-viscosity.qmd
       - section: "Reproducibility"
         contents:
+          - text: "Méthodes"
+            href: repro-methods.qmd
           - text: "Data exploration"
             href: repro-data-exploration.qmd
           - text: "Valider HR des réplicats"
             href: repro-hr-validation.qmd
           - text: "Recalage appris cascade_v9"
             href: repro-cascade-v9.qmd
+          - text: "Pouls ancré sur la FC médiane"
+            href: repro-hr-mediane.qmd
+          - text: "One-cycles des réplicats"
+            href: repro-one-cycles.qmd
+          - text: "One-cycles des réplicats (segmentation)"
+            href: repro-one-cycles-ct.qmd
+          - text: "Strain des réplicats — GRAZIANA OD"
+            href: repro-strain-graziana.qmd
           - text: "Strain repeatability"
             href: repro-strain-repeatability.qmd
       - section: "Paths to explore"

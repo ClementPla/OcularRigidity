@@ -1,0 +1,356 @@
+---
+title: "Méthodes"
+subtitle: "Répétabilité pixel à pixel du strain entre réplicats : les cartes comparées, la mise en correspondance des réplicats, les trois ICC, leurs intervalles de confiance par bootstrap de blocs, et le lien avec le graphique « strain moyen contre distance à x = y »"
+---
+
+Cette page donne les mathématiques de l'**ICC pixel à pixel** calculé dans
+`notebook/GRAZIANA_replicate.ipynb`. Elle ne rapporte aucun résultat : les
+valeurs sont sur la page *Strain des réplicats — GRAZIANA OD*. Chaque grandeur
+est donnée avec le nom qu'elle porte dans le code.
+
+::: {.callout-note}
+## La question posée
+
+Trois acquisitions du même œil, prises à quelques minutes d'intervalle,
+produisent-elles la **même carte de strain**, pixel pour pixel ? Le sujet
+de l'ICC n'est donc plus un œil ni une bande latérale, mais un **pixel du
+tissu**. Les évaluateurs sont les réplicats.
+:::
+
+## 1. Les cartes comparées
+
+### Strain d'un one-cycle
+
+Dans le one-cycle $g$ du réplicat $r$, les démons recalent le bin de choroïde la
+plus mince (image fixe $F$) sur le bin le plus épais (image mobile $M$). Ils
+rendent un champ de déplacement $\mathbf u = (u_x, u_y)$ dans la convention
+d'ITK :
+
+$$
+F(\mathbf p) \;\approx\; M\big(\mathbf p + \mathbf u(\mathbf p)\big),
+\qquad \mathbf p = (x, y).
+$$
+
+Le strain axial est la dérivée de $u_y$ selon la profondeur, estimée par
+différences centrées (`cds.strain_yy`) :
+
+$$
+e^{(r,g)}(\mathbf p) \;=\; \frac{\partial u_y^{(r,g)}}{\partial y}(\mathbf p).
+$$
+
+Il est sans dimension : $u_y$ et $y$ partagent l'échelle axiale.
+
+### Carte d'un réplicat
+
+Les one-cycles d'un réplicat partagent déjà le même repère, car ils viennent de
+la même vidéo recalée. On ne les recale donc pas entre eux. La carte du
+réplicat est la **médiane pixel par pixel** sur ses one-cycles valides
+$\mathcal G_r$ (`carte_mediane`) :
+
+$$
+E_r(\mathbf p) \;=\; \operatorname*{med}_{g \in \mathcal G_r} \, e^{(r,g)}(\mathbf p).
+$$
+
+La médiane plutôt que la moyenne limite l'effet d'un one-cycle dont le
+recalage a déraillé.
+
+## 2. Mise en correspondance des réplicats
+
+D'un réplicat à l'autre, la tête et l'œil ont bougé. Sur GRAZIANA OD, le
+décalage axial atteint plusieurs dizaines de pixels. Avant toute comparaison,
+chaque carte est ramenée dans le repère du réplicat 1 (OD1).
+
+**Images recalées.** Pour chaque réplicat, l'image de référence $I_r$ est la
+moyenne des bins minces de ses one-cycles, pleine hauteur (`image_reference`).
+Les trois images passent en **un seul appel** du recaleur appris cascade_v9
+(`fused.segment_and_register`, images agrandies en $1536 \times 1024$, référence
+imposée `ref_idx = 0`).
+
+**Le transform.** Le recaleur rend, pour chaque réplicat, un décalage latéral
+global $\delta x_r$ et un décalage axial par A-scan $\delta y_r(x)$.
+`losses.warp` les applique ainsi :
+
+$$
+\mathcal T_r[f](x, y) \;=\; f\big(x - \delta x_r,\; y + \delta y_r(x)\big),
+$$
+
+par interpolation bilinéaire, avec des zéros hors de l'image. Le même
+$\mathcal T_r$ est appliqué à l'image, aux masques (rétine, choroïde, tissu) et
+aux cartes. OD1 passe lui aussi par son propre transform, qui est quasi nul.
+
+**Cartes à trous.** Une carte $E_r$ n'est définie que sur le tissu : ailleurs
+elle vaut NaN. L'interpolation ne peut pas mêler une valeur et un NaN. On
+transporte donc séparément la valeur, mise à zéro hors de son support
+$\Omega_r$, et l'indicatrice de ce support, puis on renormalise
+(`recaler_carte`) :
+
+$$
+\tilde E_r \;=\;
+\frac{\mathcal T_r\big[E_r \, \mathbb 1_{\Omega_r}\big]}{\mathcal T_r\big[\mathbb 1_{\Omega_r}\big]}
+\quad \text{là où } \mathcal T_r\big[\mathbb 1_{\Omega_r}\big] > 0{,}999,
+\qquad \text{NaN ailleurs.}
+$$
+
+Le seuil de 0,999 ne garde que les pixels dont les quatre voisins interpolés
+sont tous dans le tissu. Les bords du tissu ne mélangent donc jamais du strain
+et du vide.
+
+**Pixels analogues.** Un pixel $\mathbf p$ du repère d'OD1 entre dans la
+comparaison s'il appartient au même tissu dans les trois réplicats recalés et
+si toutes les cartes y sont finies :
+
+$$
+\Omega \;=\; \bigcap_{r=1}^{k}
+\Big\{ \mathbf p :\; \mathcal T_r[\mathbb 1_{\text{rétine}, r}](\mathbf p) > 0{,}5
+\ \text{ et } \ \tilde E_r(\mathbf p) \text{ fini} \Big\}.
+$$
+
+Même construction pour la choroïde. Dans la suite, on note
+$n = |\Omega|$ le nombre de pixels analogues, $k = 3$ le nombre de réplicats,
+et $Y_{ir} = \tilde E_r(\mathbf p_i)$ la valeur du pixel $i$ dans le réplicat
+$r$. La matrice $Y \in \mathbb R^{n \times k}$ a les pixels en lignes et les
+réplicats en colonnes.
+
+## 3. Les trois ICC
+
+### Les modèles
+
+L'ICC est la part de la variance totale qui vient des différences **entre
+sujets**. Deux modèles d'ANOVA le fondent (Shrout et Fleiss, 1979 ; McGraw et
+Wong, 1996).
+
+**À un facteur.** Chaque valeur est la somme d'un niveau propre au pixel et
+d'une erreur :
+
+$$
+Y_{ir} \;=\; \mu + s_i + \varepsilon_{ir},
+\qquad s_i \sim (0, \sigma_s^2),\quad \varepsilon_{ir} \sim (0, \sigma_\varepsilon^2).
+$$
+
+$$
+\rho_{(1,1)} \;=\; \frac{\sigma_s^2}{\sigma_s^2 + \sigma_\varepsilon^2}.
+$$
+
+Un écart systématique d'un réplicat entier (par exemple, tout OD2 un peu plus
+positif) est ici compté comme de l'erreur.
+
+**À deux facteurs.** On isole un effet $c_r$ propre à chaque réplicat :
+
+$$
+Y_{ir} \;=\; \mu + s_i + c_r + \varepsilon_{ir},
+\qquad c_r \sim (0, \sigma_c^2).
+$$
+
+Deux ICC en découlent, selon qu'on pénalise ou non cet effet de réplicat :
+
+$$
+\rho_{(A,1)} \;=\; \frac{\sigma_s^2}{\sigma_s^2 + \sigma_c^2 + \sigma_\varepsilon^2}
+\quad \text{(accord absolu)},
+\qquad
+\rho_{(C,1)} \;=\; \frac{\sigma_s^2}{\sigma_s^2 + \sigma_\varepsilon^2}
+\quad \text{(cohérence)}.
+$$
+
+$\rho_{(C,1)}$ ignore un décalage global entre réplicats ; $\rho_{(A,1)}$ le
+compte comme un désaccord. Le « ,1 » signifie qu'on juge la fiabilité d'**une**
+mesure, et non de la moyenne des $k$ réplicats.
+
+### Les estimateurs
+
+Avec les moyennes par pixel $\bar Y_{i\cdot}$, par réplicat $\bar Y_{\cdot r}$
+et globale $\bar Y$, on forme les sommes de carrés :
+
+$$
+\begin{aligned}
+SS_R &= k \sum_{i=1}^{n} \big(\bar Y_{i\cdot} - \bar Y\big)^2
+&& \text{entre pixels,} \\
+SS_C &= n \sum_{r=1}^{k} \big(\bar Y_{\cdot r} - \bar Y\big)^2
+&& \text{entre réplicats,} \\
+SS_T &= \sum_{i=1}^{n}\sum_{r=1}^{k} \big(Y_{ir} - \bar Y\big)^2
+&& \text{totale,} \\
+SS_W &= SS_T - SS_R
+&& \text{intra-pixel,} \\
+SS_E &= SS_T - SS_R - SS_C
+&& \text{résiduelle.}
+\end{aligned}
+$$
+
+Les carrés moyens correspondants sont :
+
+$$
+MS_R = \frac{SS_R}{n-1},\qquad
+MS_C = \frac{SS_C}{k-1},\qquad
+MS_W = \frac{SS_W}{n(k-1)},\qquad
+MS_E = \frac{SS_E}{(n-1)(k-1)}.
+$$
+
+D'où les trois estimateurs, calculés d'un bloc sur toute la matrice par
+`icc3` (l'ICC(1,1) seul par `icc_one_way`, ce qui sert de contrôle croisé) :
+
+$$
+\widehat{\mathrm{ICC}}(1,1) = \frac{MS_R - MS_W}{MS_R + (k-1)\,MS_W},
+$$
+
+$$
+\widehat{\mathrm{ICC}}(A,1) = \frac{MS_R - MS_E}{MS_R + (k-1)\,MS_E + \dfrac{k}{n}\,\big(MS_C - MS_E\big)},
+$$
+
+$$
+\widehat{\mathrm{ICC}}(C,1) = \frac{MS_R - MS_E}{MS_R + (k-1)\,MS_E}.
+$$
+
+Ce sont les formules de McGraw et Wong (1996), les mêmes que `pingouin`
+applique à l'ICC par bande. Un ICC peut être négatif : cela arrive quand la
+variance intra-pixel dépasse la variance entre pixels, c'est-à-dire quand deux
+réplicats d'un même pixel diffèrent plus que deux pixels différents.
+
+### Témoin : u_y
+
+Le même calcul est refait sur la médiane de $u_y$ au lieu de $e_{yy}$. Le
+déplacement est plus lisse que sa dérivée et devrait, en principe, se répéter
+au moins aussi bien. Un ICC du strain nettement supérieur à celui de $u_y$
+signale un motif du strain qui se répète pour une autre raison que la
+pulsation, par exemple parce qu'il est accroché aux couches de la rétine.
+
+## 4. Intervalles de confiance : bootstrap par blocs
+
+### Pourquoi pas l'intervalle analytique
+
+Les intervalles classiques de l'ICC (loi F, McGraw et Wong, 1996) supposent des
+sujets **indépendants**. Des pixels voisins ne le sont pas : le champ des
+démons est lissé par une gaussienne d'écart-type 15 px, et $e_{yy}$ hérite de
+ce lissage. Avec $n$ de l'ordre de $10^4$ à $10^5$ pixels, l'intervalle
+analytique serait donc beaucoup trop étroit : il traiterait comme
+indépendantes des mesures qui sont presque des copies.
+
+### La procédure
+
+Le repère commun est découpé en blocs carrés disjoints de $b = 8$ pixels de
+côté (`BLOC`). Le bloc d'un pixel $(x, y)$ est :
+
+$$
+\beta(x, y) \;=\; \Big\lfloor \frac{y}{b} \Big\rfloor \Big(\Big\lfloor \frac{w}{b} \Big\rfloor + 1\Big)
++ \Big\lfloor \frac{x}{b} \Big\rfloor .
+$$
+
+Soit $\mathcal B = \{B_1, \dots, B_m\}$ les blocs qui contiennent au moins un
+pixel analogue. Pour $t = 1, \dots, N$ avec $N = 1000$ (`N_BOOT`) :
+
+1. tirer $m$ indices $j_1, \dots, j_m$ uniformément avec remise dans
+   $\{1, \dots, m\}$ ;
+2. former la matrice $Y^{*(t)}$ en empilant les lignes de tous les pixels des
+   blocs $B_{j_1}, \dots, B_{j_m}$ ;
+3. calculer $\widehat{\mathrm{ICC}}^{*(t)}$ sur $Y^{*(t)}$, avec les formules
+   ci-dessus.
+
+L'IC95 est l'intervalle des percentiles :
+
+$$
+\Big[\, q_{0{,}025}\big(\widehat{\mathrm{ICC}}^{*}\big)\;;\; q_{0{,}975}\big(\widehat{\mathrm{ICC}}^{*}\big) \,\Big].
+$$
+
+C'est un bootstrap par grappes (blocs disjoints, Carlstein, 1986 ; version
+spatiale dans Lahiri, 2003). La dépendance à l'intérieur d'un bloc est
+conservée telle quelle, et seuls les blocs sont traités comme indépendants.
+Un bloc au bord du tissu, partiellement rempli, pèse selon son nombre de
+pixels. Aucun p n'est donné pour les ICC pixel à pixel.
+
+::: {.callout-warning}
+## Limite connue : la taille des blocs
+
+La procédure n'est valide que si deux blocs voisins sont à peu près
+indépendants, donc si $b$ dépasse la portée de corrélation spatiale de
+$e_{yy}$. Avec un lissage des démons de 15 px, cette portée est probablement
+**supérieure à 8 px**. Les IC95 obtenus sont alors encore trop étroits, moins
+que l'IC analytique, mais tout de même. Un contrôle de sensibilité s'impose
+(IC avec $b = 16, 32$) avant de citer ces intervalles comme définitifs.
+L'estimation ponctuelle, elle, ne dépend pas de $b$.
+:::
+
+## 5. Par bande latérale
+
+Le repère d'OD1 est découpé en 5 bandes latérales, de +2 à −2, avec les bornes
+de colonnes des masques de bande de la chaîne démons (`column_masks`). Pour la
+bande $\ell$ :
+
+$$
+\Omega_\ell \;=\; \Omega \,\cap\, \{\mathbf p = (x, y) :\; x \in X_\ell\},
+$$
+
+et $\widehat{\mathrm{ICC}}(1,1)$ est recalculé sur les seules lignes de
+$\Omega_\ell$. Sur cette page de résultats, ces ICC par bande n'ont pas d'IC.
+
+Il ne faut pas confondre cet ICC avec l'**ICC par bande** du tableau
+« Répétabilité : ICC ». Là, chaque bande est **un seul sujet** : sa valeur est
+la médiane, sur les one-cycles, du strain moyen de la rétine de la bande, et
+l'ICC se calcule sur une matrice $5 \times 3$. Ici, chaque pixel de la bande est
+un sujet. Le premier demande que le **niveau moyen** de chaque bande se
+répète ; le second, que le **motif** à l'intérieur de la carte se répète.
+
+## 6. Strain moyen et distance à x = y
+
+Pour une paire de réplicats $(r, r')$, on pose, pour chaque pixel $i$ :
+
+$$
+a_i = Y_{ir},\qquad b_i = Y_{ir'},\qquad
+m_i = \frac{a_i + b_i}{2},\qquad
+d_i = \frac{|b_i - a_i|}{\sqrt 2}.
+$$
+
+$d_i$ est la distance euclidienne du point $(a_i, b_i)$ de l'histogramme 2D à
+la droite $b = a$. $\sqrt 2\, m_i$ est sa coordonnée **le long** de cette
+droite. Le graphique $(m_i, d_i)$ est donc le nuage pixel contre pixel tourné
+de 45°, puis replié sur la diagonale. C'est une variante du graphique de Bland
+et Altman (1986), avec l'écart pris en valeur absolue et divisé par
+$\sqrt 2$.
+
+Ce graphique porte exactement les ingrédients de l'ICC. Pour **une paire**
+($k = 2$), l'écart d'un pixel à sa moyenne vaut
+$a_i - m_i = -(b_i - m_i) = (a_i - b_i)/2$. D'où :
+
+$$
+SS_W = \sum_i \Big[(a_i - m_i)^2 + (b_i - m_i)^2\Big] = \sum_i \frac{(a_i - b_i)^2}{2} = \sum_i d_i^2,
+\qquad
+MS_W = \frac{1}{n}\sum_{i} d_i^2 = \overline{d^2},
+$$
+
+$$
+MS_R = \frac{2}{n-1} \sum_i \big(m_i - \bar m\big)^2 = 2\, s_m^2 .
+$$
+
+L'ICC(1,1) d'une paire s'écrit donc avec les deux axes du graphique :
+
+$$
+\widehat{\mathrm{ICC}}(1,1)_{r,r'} \;=\; \frac{2\, s_m^2 - \overline{d^2}}{2\, s_m^2 + \overline{d^2}} .
+$$
+
+L'**étalement horizontal** du nuage (variance du strain moyen) fait monter
+l'ICC, et sa **hauteur** (distance quadratique moyenne à la diagonale) le fait
+baisser. Une distance qui croît avec $|m|$ trahit un désaccord proportionnel à
+l'amplitude. Une distance plate trahit un bruit additif, que l'ICC résume
+correctement.
+
+## Références
+
+- Shrout PE, Fleiss JL (1979). Intraclass correlations: uses in assessing rater
+  reliability. *Psychological Bulletin* 86(2):420–428.
+  doi:10.1037/0033-2909.86.2.420
+- McGraw KO, Wong SP (1996). Forming inferences about some intraclass
+  correlation coefficients. *Psychological Methods* 1(1):30–46.
+  doi:10.1037/1082-989X.1.1.30
+- Koo TK, Li MY (2016). A guideline of selecting and reporting intraclass
+  correlation coefficients for reliability research. *Journal of Chiropractic
+  Medicine* 15(2):155–163. doi:10.1016/j.jcm.2016.02.012
+- Carlstein E (1986). The use of subseries values for estimating the variance
+  of a general statistic from a stationary sequence. *Annals of Statistics*
+  14(3):1171–1179. doi:10.1214/aos/1176350057
+- Künsch HR (1989). The jackknife and the bootstrap for general stationary
+  observations. *Annals of Statistics* 17(3):1217–1241.
+  doi:10.1214/aos/1176347265
+- Lahiri SN (2003). *Resampling Methods for Dependent Data.* Springer.
+  doi:10.1007/978-1-4757-3803-2
+- Bland JM, Altman DG (1986). Statistical methods for assessing agreement
+  between two methods of clinical measurement. *The Lancet*
+  327(8476):307–310. doi:10.1016/S0140-6736(86)90837-8
+- Vallat R (2018). Pingouin: statistics in Python. *Journal of Open Source
+  Software* 3(31):1026. doi:10.21105/joss.01026

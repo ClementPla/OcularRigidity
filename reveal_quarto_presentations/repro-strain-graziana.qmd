@@ -1,0 +1,173 @@
+---
+title: "Strain des réplicats — GRAZIANA OD"
+subtitle: "Démons sur les one-cycles cascade_v9 des trois réplicats de l'œil droit de MODICA GRAZIANA : cartes de déplacement et de strain axiaux, strain rétinien par bande latérale, et répétabilité du profil latéral"
+# Figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits mais
+# aucun script ne les dessine.
+include-in-header: figures_repro_strain_graziana/plotlyjs.html
+---
+
+L'œil droit de MODICA GRAZIANA est le meilleur cas de l'étude pour une première
+lecture du strain sur les nouveaux one-cycles. Il a trois réplicats pris à
+quelques minutes d'intervalle, chacun avec 5 one-cycles d'environ 10 frames par
+bin, et aucun bin sous 5 frames (page *One-cycles des réplicats*).
+
+::: {.callout-note}
+## Le protocole
+
+- **One-cycles** : ceux de la page *One-cycles des réplicats*. Vidéos
+  cascade_v9, pouls ancré sur la FC médiane, 6 battements × 6 bins, recalage
+  intra-bin cascade_v9. Chaque bin est égalisé A-scan par A-scan sur l'image
+  moyenne de la vidéo, comme dans le lot SANS.
+- **Paire mesurée** : dans chaque one-cycle, le **bin de choroïde la plus
+  mince** (image fixe) contre le **bin le plus épais** (image mobile). C'est
+  l'amplitude complète de la pulsation, et le même marqueur que la page
+  *Strain repeatability*.
+- **Démons** : FastSymmetricForces de SimpleITK, `displacement_sigma = 15`,
+  sur un crop rétine + choroïde. La chaîne est **importée** de
+  `Astronauts/compute_demons_strain.py`, sans recopie : Otsu pour la rétine,
+  5 bandes latérales de +2 (gauche de l'image) à −2.
+- **Strain** : e_yy = ∂u_y/∂y, sans dimension. Un e_yy positif signifie un
+  tissu plus épais dans le bin épais.
+- **Marqueur par bande** : la moyenne de e_yy sur la **rétine** de la bande.
+
+Calcul : `Reproducibility/compute_one_cycle_strain.py`.
+:::
+
+::: {.callout-warning}
+## À garder en tête à la lecture
+
+- **Pas de recalage entre bins** sur ces one-cycles. u_y peut donc contenir une
+  translation rigide par colonne entre le bin mince et le bin épais. Ce décalage
+  change la carte de déplacement, **pas le strain**, qui est une dérivée en
+  profondeur.
+- **Les bins sont relus en 8 bits** : médianes repliées, arrondies.
+- **ICC sur un seul œil** : les « sujets » sont les **5 bandes latérales**. L'ICC
+  répond donc à « le profil latéral du strain se répète-t-il d'un réplicat à
+  l'autre ? », pas à la répétabilité de l'œil. Avec 5 sujets, ses intervalles de
+  confiance sont très larges.
+:::
+
+::: {.callout-important}
+## Ce que donnent les trois réplicats
+
+**La dilatation choroïdienne se répète ; le strain rétinien ne se répète pas.**
+
+- **Les recalages sont propres.** 75 démons ont tourné, dont 15 sur la paire
+  marqueur. On ne compte aucun pixel de jacobien négatif. L'écart d'intensité à
+  l'image fixe baisse de 9 à 32 % (11 % en médiane), et |u| max va de 9,6 à
+  23 µm.
+- **Le contrôle de méthode passe.** Le strain *choroïdien* médian est positif
+  dans les 15 one-cycles (+0,003 à +0,012), dans le sens de la dilatation
+  connue : ΔCT de +3,2 à +5,8 µm entre bin mince et bin épais.
+- **Le strain rétinien reste au niveau du bruit.** Son ordre de grandeur est de
+  10⁻³, mais sa médiane par bande change de signe d'un réplicat à l'autre dans
+  4 bandes sur 5, et les boxes des trois réplicats se chevauchent autour de 0.
+- **ICC du profil latéral** :
+  - strain rétinien moyen : ICC(1,1) **0,04** [−0,33 ; 0,75] ;
+  - strain rétinien médian : 0,28 [−0,20 ; 0,86] ;
+  - p95 signé : −0,31.
+
+  Aucun n'est significatif (p ≥ 0,14).
+- **Le témoin, lui, se répète.** Le profil latéral du dCT donne un ICC(1,1) de
+  **0,61** [0,08 ; 0,94], p = 0,012. La bande centrale se dilate de 4,6 à
+  5,6 µm selon le réplicat, et la bande la moins dilatée est
+  toujours −1 ou −2 (3,1 à 3,3 µm). La géométrie de la pulsation est donc reproductible
+  d'un enregistrement à l'autre ; c'est la mesure du strain rétinien qui ne
+  l'est pas.
+
+C'est le même constat que sur l'ancienne chaîne (page *Strain repeatability*,
+ICC médian 0,16) : les nouveaux one-cycles cascade_v9 ne le changent pas sur
+cet œil.
+:::
+
+# Épaisseur et occupation des bins
+
+La figure de la page *One-cycles des réplicats*, pour les trois réplicats, suivie
+de l'**épaisseur moyenne de la rétine dans chacune des 5 bandes latérales**.
+
+- **Segmentation de la rétine** : celle de la chaîne démons
+  (`compute_demons_strain.segment_tissue`), appliquée à chaque bin égalisé par
+  A-scan. Seuil d'Otsu, de l'ILM au haut de la choroïde du bin ; la RPE est
+  donc comprise.
+- **Bandes** : les mêmes 5 bandes que le strain, de +2 (gauche de l'image) à −2.
+- **Épaisseur** : `thickness.features.compute_deltaY_masks`, la somme du masque
+  par A-scan, moyennée sur les colonnes exploitables de la bande. Ce sont les
+  mêmes que pour la variation d'épaisseur choroïdienne par bande.
+- **Un panneau par bande** : la rétine va d'environ 65 px (bande +2) à 89 px
+  (bande −2), et un axe commun écraserait des variations de 0,2 px.
+
+::: {.callout-note}
+## Ce que montrent les bandes
+
+- **Rétine stable** : sur OD1 et OD3, l'épaisseur de chaque bande varie de 0,2
+  à 0,4 px sur un cycle (harmonique), contre environ 1 px pour la choroïde.
+- **Exception : la bande centrale d'OD2.** Elle mesure 65,6 px contre environ
+  76,5 px sur OD1 et OD3, avec un écart-type de 3,2 px d'un bin à l'autre.
+  C'est la segmentation par Otsu qui décroche près de la fovéa, pas une
+  pulsation ; la bande +1 d'OD2 en porte aussi une trace (écart-type 1,4 px).
+:::
+
+Barres grises (axe de droite) : frames moyennées dans le bin.
+
+{{< include figures_repro_strain_graziana/fig_epaisseur.qmd >}}
+
+## Choroïde contre rétine, bande par bande
+
+Un graphique par réplicat, une colonne par bande latérale.
+
+- **Axes** : l'épaisseur de la choroïde en x, celle de la rétine en y, sur les
+  mêmes colonnes d'A-scans de la bande.
+- **Points** : un par bin. Les bins d'un one-cycle sont reliés dans l'ordre de
+  phase et la boucle est refermée ; l'étoile marque le bin 0, le maximum du
+  pouls.
+- **Couleurs** : celles des one-cycles de la figure précédente.
+- **Échelles** : chaque bande a ses propres axes, puisque la rétine y va de
+  ~65 à ~89 px.
+
+{{< include figures_repro_strain_graziana/fig_ct_retine.qmd >}}
+
+::: {.callout-note}
+## Lecture
+
+- **Gradient latéral opposé** : de la bande +2 à la bande −2, la choroïde
+  s'amincit (~71 → ~39 px) tandis que la rétine s'épaissit (~65 → ~89 px). Ce
+  gradient se retrouve à l'identique sur les trois réplicats.
+- **Pas de couplage reproductible au cours du cycle.** Dans une bande, la
+  choroïde parcourt 1,3 à 2,4 px sur les bins et la rétine quelques dixièmes.
+  La corrélation choroïde–rétine calculée sur tous les bins d'une bande va de
+  −0,27 à +0,54, et son signe s'inverse d'un réplicat à l'autre dans **les 5
+  bandes**. La plus stable est la bande +1 (+0,36 et +0,33 sur OD1 et OD3), et
+  pourtant elle tombe à −0,06 sur OD2.
+:::
+
+# Cartes de déplacement axial
+
+{{< include figures_repro_strain_graziana/fig_uy.qmd >}}
+
+# Cartes de strain axial
+
+{{< include figures_repro_strain_graziana/fig_strain.qmd >}}
+
+# Strain rétinien par bande
+
+{{< include figures_repro_strain_graziana/fig_box.qmd >}}
+
+# Répétabilité
+
+La valeur de chaque (bande, réplicat) est la **médiane de ses 5 one-cycles**. Le
+témoin est le même ICC calculé sur la variation d'épaisseur choroïdienne de la
+bande (dCT) pour la même paire de bins. Si le profil latéral de la dilatation
+elle-même ne se répète pas, on ne peut pas attendre du strain qu'il se répète.
+
+Trois ICC, qui ne posent pas la même question :
+
+- **ICC(1,1)** : les réplicats sont interchangeables ;
+- **ICC(A,1)** : accord absolu ;
+- **ICC(C,1)** : cohérence, qui ignore un décalage constant d'un réplicat à
+  l'autre.
+
+{{< include figures_repro_strain_graziana/tab_icc.qmd >}}
+
+# Détail des recalages
+
+{{< include figures_repro_strain_graziana/tab_resume.qmd >}}

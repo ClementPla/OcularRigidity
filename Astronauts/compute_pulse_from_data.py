@@ -110,6 +110,13 @@ MASK_VARIANT = layout.env_str("OR_VARIANT", "model1_scale_1.0_flatten_choroid_xc
 FRAMES_SUBDIR = "registered_frames"
 MASKS_SUBDIR = "registered_masks"
 OUTPUT_SUBDIR = "pulse_from_data"
+# Non vide : les videos et masques recales sont relus A COTE DES DONNEES,
+# ``<condition>/RawImages/<OR_DATA_SUBDIR>/{registered_video.mp4, mask.npz}``
+# (format de ``export_registered_videos.py`` et ``register_newmodel.py``), au
+# lieu de ``SEGVAR_ROOT/<variante>/registered_frames|registered_masks``. Les
+# tables sortent toujours sous ``SEGVAR_ROOT/<variante>/pulse_from_data``. Vide :
+# comportement d'origine, inchange.
+DATA_SUBDIR = os.environ.get("OR_DATA_SUBDIR", "")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OVERWRITE = bool(os.environ.get("OR_OVERWRITE"))  # True = retraiter les conditions deja presentes dans les CSV
@@ -556,8 +563,13 @@ def process_condition(path_condi: Path) -> dict:
     slug = slug_of(astro, moment, condition)
 
     variant_root = SEGVAR_ROOT / MASK_VARIANT
-    frames_path = variant_root / FRAMES_SUBDIR / astro / moment / condition / "cube.mp4"
-    mask_path = variant_root / MASKS_SUBDIR / astro / moment / condition / "mask.npz"
+    if DATA_SUBDIR:
+        data_dir = path_condi / "RawImages" / DATA_SUBDIR
+        frames_path = data_dir / "registered_video.mp4"
+        mask_path = data_dir / "mask.npz"
+    else:
+        frames_path = variant_root / FRAMES_SUBDIR / astro / moment / condition / "cube.mp4"
+        mask_path = variant_root / MASKS_SUBDIR / astro / moment / condition / "mask.npz"
     for p in (frames_path, mask_path):
         if not p.exists():
             raise FileNotFoundError(p)

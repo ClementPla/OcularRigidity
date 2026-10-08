@@ -1,0 +1,248 @@
+---
+title: "Pouls ancré sur la FC médiane par personne"
+subtitle: "Le lot de pouls initial relancé sur les vidéos cascade_v9, avec une FC par personne tirée de ses réplicats plutôt que du consensus : ce que l'ancre change au pouls et à sa phase"
+# Trois figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits
+# mais aucun script ne les dessine.
+include-in-header: figures_repro_hr_mediane/plotlyjs.html
+---
+
+Le pipeline initial de pouls (`Astronauts/compute_pulse_from_data.py`) a
+besoin d'une fréquence cardiaque (FC) : elle borne la recherche de la
+composante cardiaque (FC ± 20 %), le filtre FIR et la phase. Les réplicats n'en
+ont aucune mesure. Le lot s'est donc jusqu'ici appuyé sur un **consensus** par
+personne (`hr_prior.csv`) : la médiane des estimations SVD brutes, après repli
+des erreurs d'octave.
+
+Les pages *Valider HR des réplicats* et *Recalage appris cascade_v9* ont
+montré que ce consensus s'écarte nettement de ce que retrouvent deux signaux
+indépendants, sans a priori. Cette page change donc d'ancre et mesure ce que
+cela change.
+
+::: {.callout-note}
+## La nouvelle ancre : une FC par personne
+
+Pour chaque participant, on prend la **médiane de toutes les FC trouvées sur
+ses réplicats** par le test sans a priori : FIR fixe 50–85 BPM, puis pic
+Lomb-Scargle, sur les vidéos cascade_v9. L'**intensité** (SVD) et
+l'**épaisseur** choroïdienne sont réunies, soit 2 valeurs par réplicat.
+Calcul : `Reproducibility/estimate_median_hr.py`.
+
+Cette ancre est **bornée par construction** : les FC d'entrée sortent d'une
+recherche de pic entre 50 et 85 BPM. Une FC réelle hors de cette plage ne peut
+pas en ressortir. C'est ce qui arrive au consensus de MCNEIL THOMAS (102 BPM),
+qu'aucune médiane de ce test ne peut atteindre.
+:::
+
+{{< include figures_repro_hr_mediane/tab_prior.qmd >}}
+
+{{< include figures_repro_hr_mediane/fig_prior.qmd >}}
+
+# Le protocole : trois lots
+
+Le lot de pouls est **strictement celui du pipeline initial** : même zone de
+choroïde (3/4 centraux × moitié supérieure), même SVD de rang 100, même
+combinaison optimisée, même FIR, SSA, BOPDMD et phase. Seules changent la
+vidéo lue et l'ancre de FC.
+
+| lot | vidéos | ancre de FC | rôle |
+|:--|:--|:--|:--|
+| référence | U-Net + chaîne actuelle | consensus | le pouls publié jusqu'ici |
+| B | cascade_v9 agrandi | consensus | témoin : isole l'effet du **recalage** (B − référence) |
+| A | cascade_v9 agrandi | **médiane par personne** | la demande : isole l'effet de l'**ancre** (A − B) |
+
+::: {.callout-warning}
+## À garder en tête à la lecture
+
+- **La fraction de puissance en bande n'est pas comparable d'un lot à l'autre.**
+  Elle est mesurée dans FC ± 20 % autour de l'ancre propre à chaque lot : changer
+  d'ancre déplace la bande elle-même. Les figures privilégient donc des
+  indicateurs qui ne dépendent pas de la bande :
+  - la part de fréquence instantanée **négative** (légitimité de la phase) ;
+  - la **dispersion** de la FC instantanée ;
+  - l'**accord de la DMD** avec l'ancre ;
+  - le **nombre de canaux** retenus par la combinaison.
+- **cascade_v9 change aussi la segmentation** (SegFormer au lieu du U-Net), donc
+  la zone de choroïde dont on tire les traces.
+- **Le code utilisé est celui du pipeline initial** (commit `8fd820d`).
+  `PixelTraceSource` a été réécrit depuis la fusion avec `main`, et le lot ne
+  tourne plus sur le code actuel.
+:::
+
+# Qualité du pouls et de la phase
+
+{{< include figures_repro_hr_mediane/fig_qualite_pouls.qmd >}}
+
+{{< include figures_repro_hr_mediane/tab_qualite.qmd >}}
+
+::: {.callout-important}
+## La réponse, en une ligne
+
+**Pour 6 personnes sur 8, changer d'ancre ne change rien. Pour DESCOVICH et
+MCNEIL, cela remplace entièrement le pouls, et aucun indicateur ne dit lequel
+des deux est le bon.** Leurs ancres bougent de 16 et 33 BPM. Les pouls A et B
+de leurs 14 acquisitions ne se ressemblent plus du tout (corrélation absolue
+médiane 0,03), alors que la qualité mesurée reste du même ordre dans les deux
+lots.
+:::
+
+## Ce que disent les chiffres
+
+- **L'ancre ne bouge que pour deux personnes.** La médiane et le consensus
+  diffèrent de 1,9 BPM en médiane [1,2 – 5,8]. Les écarts dépassent 5 BPM
+  seulement pour DESCOVICH (−15,8) et MCNEIL (−32,7).
+- **Là où l'ancre ne bouge pas, le pouls est le même.** Sur les 39
+  acquisitions dont l'ancre varie de moins de 5 BPM, les pouls A et B ont une
+  corrélation absolue médiane de **0,99**. Cinq font exception malgré un
+  déplacement de moins de 2 BPM : `MARTINEZ_ALEJANDRA_OS2` (0,12),
+  `ROY_JOANNIE_OD2` (0,63), `MARTINEZ_ALEJANDRA_OD1` (0,68), `ROY_JOANNIE_OD3`
+  et `ROY_JOANNIE_OS1` (0,74). Pour ces vidéos, la combinaison optimisée bascule
+  sur d'autres composantes à la moindre variation de bande.
+- **Là où l'ancre bouge, le pouls est un autre.** Sur les 14 acquisitions
+  concernées, la corrélation absolue médiane tombe à **0,03** [0,01 – 0,28] :
+  les deux lots ne suivent plus la même oscillation.
+- **La qualité ne tranche pas.** Sur les 53 acquisitions communes :
+  - la fréquence instantanée n'est négative dans **aucun** lot ;
+  - la combinaison retient **3 canaux** en médiane partout ;
+  - la dispersion de la FC instantanée baisse à peine : 5,36 BPM pour B, 5,31
+    pour A (différence appariée −0,10 [−0,93 – 0,36], A meilleur sur 31 cas).
+    C'est chez MCNEIL qu'elle baisse le plus (−4,0 BPM en médiane), et chez
+    DESCOVICH (−1,3 BPM) ;
+  - la DMD reste aussi proche de l'ancre dans les deux lots (écart +0,02 BPM
+    en médiane).
+
+  Ce dernier accord ne valide rien : la DMD cherche sa fréquence à ± 20 %
+  autour de l'ancre qu'on lui donne, et elle la retrouve donc presque par
+  construction.
+- **Une acquisition perdue.** `DESCOVICH_DENISE_OD3` passe avec le consensus
+  (82,9 BPM), mais échoue avec la médiane (67,1 BPM) : aucune composante SVD n'y
+  pique entre 54 et 81 BPM. Les deux lots partent de la même SVD et leurs bandes
+  se recouvrent entre 66 et 81 BPM. La composante retenue avec le consensus
+  pique donc au-dessus de 81 BPM, hors de ce que la nouvelle ancre autorise.
+- **Le recalage cascade_v9 ne dégrade pas le pouls** (B contre référence) :
+  dispersion de la FC instantanée −0,30 BPM [−1,50 – 0,77], meilleure sur 33
+  acquisitions sur 53, même nombre de canaux, même accord de la DMD.
+
+::: {.callout-note}
+## Ce que cela implique
+
+L'ancre de FC n'est pas un détail de réglage : pour les deux participants où
+consensus et médiane divergent, **choisir l'ancre, c'est choisir le pouls**.
+Pour eux, tout ce qui en découle en dépend entièrement : phase, repliement,
+bin de référence, strain.
+
+Les indicateurs disponibles ne permettent pas de départager les deux ancres.
+Ils sont mesurés dans la bande que l'ancre elle-même définit, et la médiane
+50–85 BPM ne peut pas, par construction, rendre une FC au-delà de 85 BPM, comme
+les 102 BPM du consensus de MCNEIL. Seule une FC **mesurée** pendant
+l'acquisition trancherait.
+:::
+
+## Les pouls, acquisition par acquisition
+
+Pouls filtré (méthode `1_fir`) des lots B et A sur la même vidéo, centrés-réduits.
+Ils ne diffèrent que par l'ancre de FC.
+
+{{< include figures_repro_hr_mediane/fig_pouls.qmd >}}
+
+## Intensité contre épaisseur : COSTS
+
+Sur la **même vidéo cascade_v9**, on compare un pouls d'**épaisseur** à trois
+pouls d'**intensité**, tous tirés des mêmes pixels que le lot (3/4 centraux ×
+moitié supérieure de la choroïde).
+
+- **COSTS** (*Coherent Spatio-Temporal Scale separation*, Dylewsky, Tao & Kutz
+  2019 ; `pydmd.costs.COSTS`). La méthode fait tourner un **BOP-DMD** de rang 8
+  dans des fenêtres glissantes de 5 battements (≈ 4,3 s), puis range les
+  fréquences en 3 bandes par *k*-means. La vidéo est reconstruite par la seule
+  bande cardiaque, celle dont la fréquence médiane est la plus proche de
+  l'ancre. Le pouls est la première composante temporelle de cette
+  reconstruction. Calcul : `Reproducibility/compute_costs_pulse.py`.
+- **Premier mode SVD qui pulse** : le mode de plus petit indice dont le pic
+  tombe dans FC ± 20 % (`Reproducibility/compute_svd_first_mode.py`).
+- **Combinaison** optimisée du lot, en référence.
+
+L'**épaisseur** est l'épaisseur choroïdienne moyenne par frame, lue sur les
+masques SegFormer de cascade_v9. Chacun des quatre signaux passe par **le même
+FIR**, à FC ± 20 % autour de l'ancre (`Reproducibility/compute_ct_pulse_traces.py`).
+
+::: {.callout-warning}
+## Deux réglages de COSTS sans lesquels le résultat est faux
+
+- **Valeurs propres imaginaires pures** (`eig_constraints = {"imag",
+  "conjugate_pairs"}`). Sans cette contrainte, BOP-DMD rend dans quelques
+  fenêtres des modes très amortis, d'amplitude énorme, qui se compensent
+  d'une bande à l'autre. La reconstruction totale reste juste, mais la bande
+  cardiaque seule explose : 22 acquisitions sur 52 dépassaient la norme des
+  données, jusqu'à 10⁹ fois. `"stable"` seul ne suffit pas. Avec `"imag"`, la
+  bande cardiaque porte 24 % de la norme des données en médiane, 47 % au
+  plus.
+- **`use_proj = True`**. COSTS le désactive par défaut, et la projection
+  variable tourne alors sur tous les pixels (14 000 en médiane) : 23 s par
+  fenêtre, contre 0,2 s dans la base POD.
+:::
+
+Trois mesures de l'accord intensité / épaisseur, calculées hors des bords du
+filtre :
+
+- la **corrélation r** ;
+- le **déphasage moyen Δφ** ;
+- la **PLV** (*phase-locking value*), qui dit si ce déphasage reste stable
+  dans le temps.
+
+Le signe d'un pouls d'intensité est une convention : 0° et ±180° décrivent donc
+la même relation, au signe près. Chaque PLV est comparée au 95e centile de 500
+décalages circulaires de l'épaisseur, d'au moins deux cycles chacun. Ces
+décalages gardent les deux spectres, mais cassent le lien de phase.
+
+{{< include figures_repro_hr_mediane/fig_pouls_int_ct.qmd >}}
+
+Le panneau du bas trace la FC suivie par COSTS, fenêtre par fenêtre.
+Le premier mode SVD et la combinaison s'affichent en cliquant sur leur
+légende.
+
+{{< include figures_repro_hr_mediane/fig_accord_int_ct.qmd >}}
+
+{{< include figures_repro_hr_mediane/tab_int_ct.qmd >}}
+
+::: {.callout-important}
+## La réponse, en une ligne
+
+**COSTS ne suit pas mieux l'épaisseur que les deux pouls SVD.** Avec l'ancre
+médiane, son pouls dépasse le hasard sur 11 acquisitions sur 53, autant que le
+premier mode SVD (11) et moins que la combinaison (14). GRAZIANA reste le seul
+accord net, et il y est plus faible qu'avec la combinaison : PLV 0,76 contre
+0,98.
+:::
+
+- **COSTS trouve bien la bande cardiaque.** Sur les 53 acquisitions, sa bande
+  tombe à 0,3 BPM de l'ancre en médiane [−0,7 – 1,5], et chaque fenêtre y a
+  au moins un mode.
+- **Mais ce n'est pas le même pouls que la SVD.** Sa corrélation absolue
+  médiane est de 0,33 avec la combinaison et de 0,38 avec le premier mode.
+- **L'accord avec l'épaisseur reste faible** : PLV médiane 0,38, sous un seuil
+  médian de 0,52 ; |r| médian 0,19.
+- **Les succès ne se répètent pas d'un réplicat à l'autre.** Les 11
+  acquisitions au-dessus du hasard ont des déphasages de −108° à +163°. Seule
+  GRAZIANA en cumule plusieurs (4 sur 6).
+- **Une régularité à signaler, sans plus.** Chez BELANGER, 5 réplicats sur 6
+  ont un déphasage compris entre +10° et +30° (OD2 : −53°). Un seul dépasse
+  pourtant le seuil. Le déphasage moyen semble donc se répéter, mais dans
+  chaque acquisition il reste trop instable pour se distinguer du hasard.
+- **L'ancre ne change rien.** Avec l'ancre consensus, COSTS dépasse le seuil
+  sur 9 acquisitions sur 54. DESCOVICH reste à 0 avec les deux ancres ; MCNEIL
+  est à 1 sur 8 avec la médiane, à 0 avec le consensus.
+- **La FC suivie varie de 7 BPM (IQR) au sein d'une acquisition.** Cette
+  variation est du même ordre que la résolution fréquentielle d'une fenêtre de
+  4,3 s (≈ 14 BPM). On ne peut donc pas la distinguer d'une variabilité réelle
+  de la FC.
+
+::: {.callout-note}
+## Ce que cela implique
+
+Changer la façon d'extraire le pouls d'intensité ne fait apparaître aucun
+second pouls dans l'épaisseur : ni un seul mode SVD, ni la combinaison, ni
+COSTS. Seule exception : GRAZIANA, avec les trois méthodes, et d'abord avec la
+combinaison. Le pouls d'épaisseur ne fait qu'environ 1,5 µm, soit moins d'un
+demi-pixel : c'est probablement lui qui limite la comparaison, plus que la
+méthode du côté de l'intensité.
+:::
