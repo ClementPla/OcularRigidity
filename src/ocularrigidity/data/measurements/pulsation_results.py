@@ -2,8 +2,9 @@ import pandas as pd
 from pathlib import Path
 from tqdm.auto import tqdm
 import pickle
+import warnings
 import numpy as np
-from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM
+from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM, CHOROID_TRIM_PX
 from ocularrigidity.friedenwald import FRIEDENWALD
 from ocularrigidity.pipeline_config import N_CYCLES
 from ocularrigidity.data.io import load_mask
@@ -20,7 +21,19 @@ from ocularrigidity.thickness.delta import (
     measure_delta_ct_from_disp,
 )
 
-TRIM = 100
+TRIM = CHOROID_TRIM_PX
+
+
+def _resample_frames(arr: np.ndarray, n_frames: int) -> np.ndarray:
+    """Linearly resample a (T, ...) array to `n_frames` along the time axis."""
+    arr = np.asarray(arr, dtype=float)
+    if arr.shape[0] == n_frames:
+        return arr
+    pos = np.linspace(0, arr.shape[0] - 1, n_frames)
+    lo = np.floor(pos).astype(int)
+    hi = np.minimum(lo + 1, arr.shape[0] - 1)
+    w = (pos - lo).reshape(-1, *([1] * (arr.ndim - 1)))
+    return np.where(w == 0, arr[lo], arr[lo] * (1 - w) + arr[hi] * w)
 
 
 def load_pulsation_results(
@@ -76,8 +89,11 @@ def load_pulsation_results(
 
         cts, min_cts, mask_cts, mask_thick_cts = [], [], [], []
         ups, downs, asyms = [], [], []
+        strain_ups, strain_downs, stretch_series = [], [], []
+        half_times = []
         masks = trim_choroid(load_mask(mask_file), TRIM)
         mask_ct_series = mask_ct_series_mm(masks)  # (T,) mm
+        delta_ct_maps = []
         for i in range(N_CYCLES):
             cycle = slice(i * frame_per_cycle, (i + 1) * frame_per_cycle)
             ref_mask = masks[cycle.start : cycle.start + 1]
@@ -91,6 +107,12 @@ def load_pulsation_results(
             ups.append(rates.thickening_um_s)
             downs.append(rates.thinning_um_s)
             asyms.append(rates.asymmetry)
+            # Same rates as a strain rate: µm/s over the thinnest CT of the cycle.
+            pct_per_um = 0.1 / res.min_ct_mm if res.min_ct_mm else np.nan
+            strain_ups.append(rates.thickening_um_s * pct_per_um)
+            strain_downs.append(rates.thinning_um_s * pct_per_um)
+            stretch_series.append(res.stretch_series)  # (T,)
+            half_times.append(rates.thinning_half_time_s)
             ct_mask = deltaY_by_cycle.get(i, np.nan) * AXIAL_PIXEL_SIZE_MM
             cycle_series = mask_ct_series[cycle]
             ct_mask_thick = (
@@ -102,6 +124,7 @@ def load_pulsation_results(
             min_cts.append(res.min_ct_mm)
             mask_cts.append(ct_mask)
             mask_thick_cts.append(ct_mask_thick)
+            delta_ct_maps.append(res.delta_ct_spatial_mm)  # (T, W) mm
             cycle_rows.append(
                 {
                     "video": video,
@@ -118,11 +141,18 @@ def load_pulsation_results(
                     "thinning_um_s": rates.thinning_um_s,
                     "rate_asymmetry": rates.asymmetry,
                     "thickening_fraction": rates.thickening_fraction,
+                    "thickening_strain_pct_s": strain_ups[-1],
+                    "thinning_strain_pct_s": strain_downs[-1],
+                    "thinning_half_time_s": rates.thinning_half_time_s,
+                    # same, as a fraction of the cardiac period
+                    "thinning_half_fraction": rates.thinning_half_time_s / period_s,
                 }
             )
         if not cts:
             continue
-
+        
+        
+        
         median_ct = np.nanmedian(cts)  # mm
         choroid_thickness = np.nanmedian(min_cts)  # mm
         median_ct_mask = (
@@ -133,6 +163,20 @@ def load_pulsation_results(
             if np.any(np.isfinite(mask_thick_cts))
             else np.nan
         )
+        
+        # Resample the deltaCT maps to a common shape across cycles and average them to get a spatial map of deltaCT across the choroid.
+        min_frames = min(map(lambda x: x.shape[0], delta_ct_maps))
+        delta_ct_maps_resampled = [
+            _resample_frames(delta_ct_map, min_frames)
+            for delta_ct_map in delta_ct_maps
+        ]
+        with warnings.catch_warnings():
+            # Columns without any CSI anchor are all-NaN by construction.
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            median_delta_ct_map = np.nanmedian(delta_ct_maps_resampled, axis=0)
+            median_stretch_series = np.nanmedian(
+                [_resample_frames(s, min_frames) for s in stretch_series], axis=0
+            )
 
         case_rows.append(
             {
@@ -148,6 +192,9 @@ def load_pulsation_results(
                     row.OPA,
                     choroidal_thickness_mm=choroid_thickness,
                 ),
+                "deltaCT_spatial_mm": median_delta_ct_map,  # (T, W) mm
+                # (T,) (ΔCT(t) + CT) / CT over the folded cycle, 1 at the thinnest
+                "stretch_series": median_stretch_series,
                 "K": K_from_deltaCT_mm(
                     median_ct,
                     row.AxialLength,
@@ -199,6 +246,18 @@ def load_pulsation_results(
                 else np.nan,
                 "rate_asymmetry": np.nanmedian(asyms)
                 if np.any(np.isfinite(asyms))
+                else np.nan,
+                "thickening_strain_pct_s": np.nanmedian(strain_ups)
+                if np.any(np.isfinite(strain_ups))
+                else np.nan,
+                "thinning_strain_pct_s": np.nanmedian(strain_downs)
+                if np.any(np.isfinite(strain_downs))
+                else np.nan,
+                "thinning_half_time_s": np.nanmedian(half_times)
+                if np.any(np.isfinite(half_times))
+                else np.nan,
+                "thinning_half_fraction": np.nanmedian(half_times) / period_s
+                if np.any(np.isfinite(half_times))
                 else np.nan,
                 "video": video,
                 "caseId": f"{row.PatientId}/{row.Date}/{row.Eye}",

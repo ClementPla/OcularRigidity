@@ -9,11 +9,11 @@ from ocularrigidity.consts import REGISTRATION_BATCH_SIZE, REGISTRATOR_REVISION
 @dataclass()
 class RegistrationConfig:
     # Which estimator produces (dx, dy).
-    method: Literal["classical", "learned"] = "classical"
+    method: Literal["classical", "learned"] = "learned"
 
-    skip_first_n_frames: int = 20
-    drop_last_n_frames: int = 10
-    use_encoded_video: bool = True
+    skip_first_n_frames: int = 10
+    drop_last_n_frames: int = 0
+    use_encoded_video: bool = False
     correct_transversal: bool = True
     correct_axial: bool = True
     flatten_rpe: bool = False
@@ -50,11 +50,12 @@ class RegistrationConfig:
     fused_batch_size: int = 8
 
     # Blank the A-scan columns whose BM is unreliable, in frames and masks alike.
-    filter_bad_columns: bool = True
-    keep_largest_cc: bool = True
+    filter_bad_columns: bool = False
+    keep_largest_cc: bool = False
 
     dy_bulk_only: bool = False
 
     dy_align_bm: bool = False
     # Smoothing of that correction along x, in columns (median, then Gaussian of this sigma).
     dy_align_bm_sigma: float = 5.0
+    identify_failed_frames: bool = True

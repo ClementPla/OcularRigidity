@@ -211,6 +211,37 @@ def bm_alignment_loss(
     return huber.sum() / n, (abs_d.sum() / n).detach()
 
 
+def _huber_rows(bm_f, bm_w, valid_cols, delta: float = 1.0):
+    diff = (bm_f - bm_w) * valid_cols
+    n = valid_cols.sum().clamp_min(1.0)
+    abs_d = diff.abs()
+    huber = torch.where(abs_d < delta, 0.5 * diff**2 / delta, abs_d - 0.5 * delta)
+    return huber.sum() / n, (abs_d.sum() / n).detach()
+
+
+def sample_columns(line: torch.Tensor, dx: torch.Tensor) -> torch.Tensor:
+    """``line(x - dx)`` for per-column ``line`` (B, W), linear in x as ``warp``'s
+    grid_sample (align_corners=True), zero outside the frame. Differentiable in dx."""
+    B, w = line.shape
+    xs = torch.arange(w, device=line.device, dtype=line.dtype).view(1, 1, w)
+    gx = (xs - dx.to(line.dtype).view(B, 1, 1)) / max(w - 1, 1) * 2 - 1
+    grid = torch.stack([gx, torch.zeros_like(gx)], dim=-1)  # (B, 1, w, 2)
+    out = F.grid_sample(
+        line.view(B, 1, 1, w), grid, mode="bilinear", padding_mode="zeros", align_corners=True
+    )
+    return out.view(B, w)
+
+
+def warp_bm_line(line_m: torch.Tensor, present_m: torch.Tensor, dx, dy):
+    """The moving frame's BM line after ``warp``: ``out(x, y) = moving(x - dx, y +
+    dy(x))`` puts the row ``b`` of column ``x - dx`` at row ``b - dy(x)`` of column
+    ``x``. Returns ``(rows (B, W), present (B, W) in [0, 1])``."""
+    dyw = _resample_dy(dy, line_m.shape[-1])
+    rows = sample_columns(line_m, dx) - dyw
+    present = sample_columns(present_m.to(line_m.dtype), dx)
+    return rows, present
+
+
 # --------------------------------------------------------------------------- #
 # Priors
 def smoothness_loss(dy: torch.Tensor, *, order: int = 1, eps: float = 1e-3):
@@ -292,6 +323,36 @@ class UnsupervisedRegistrationLoss(nn.Module):
         stub = img.new_zeros(b, 0, h // 2, w // 2)
         return seg.segmentation_head(seg.decoder([img, stub] + list(feats4)))
 
+    def _min_valid(self, h_rows: int) -> float:
+        return 1.0 - min(self.bm_max_shift_px / max(h_rows, 1), 0.5)
+
+    def _line_bm(self, loss, comp, dx, dy, moving_img, bm_lines, shape):
+        """BM term on precomputed lines (full resolution, no segmentation pass)."""
+        line_f, present_f, line_m, present_m = bm_lines
+        _, valid = warp(torch.ones_like(moving_img[:, :1]), dx, dy, shape)
+        rows_w, present_w = warp_bm_line(line_m, present_m, dx, dy)
+        cols = (
+            (present_f > 0.5)
+            & (present_w > 0.999)  # both neighbouring columns had a line
+            & (valid.mean(dim=2).squeeze(1) > self._min_valid(shape[0]))
+        ).to(rows_w.dtype)
+        l_bm, bm_px = _huber_rows(line_f.to(rows_w.dtype), rows_w, cols)
+        comp["bm"] = float(l_bm.detach())
+        comp["bm_px"] = float(bm_px)
+        return loss + self.w_bm * l_bm, valid
+
+    def _reseg_bm_px(self, dx, dy, fixed_img, moving_img, shape) -> float:
+        """The BM error measured as the cohort QC does: segment the warped frame."""
+        warped, valid = warp(moving_img, dx, dy, shape)
+        prob_f = torch.sigmoid(self.segmenter(fixed_img))
+        prob_w = torch.sigmoid(self.segmenter(warped))
+        cols = (
+            (prob_f.amax(dim=2) > 0.5)
+            & (prob_w.amax(dim=2) > 0.5)
+            & (valid.mean(dim=2) > self._min_valid(shape[0]))
+        ).squeeze(1).to(prob_f.dtype)
+        return float(bm_alignment_loss(prob_f, prob_w, cols)[1])
+
     def set_progress(self, progress: float) -> None:
         self._progress = float(min(max(progress, 0.0), 1.0))
 
@@ -318,7 +379,13 @@ class UnsupervisedRegistrationLoss(nn.Module):
         moving_img: torch.Tensor,
         fixed_feats: Sequence[torch.Tensor],
         moving_feats: Sequence[torch.Tensor],
+        bm_lines: Optional[Sequence[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """``bm_lines``: precomputed ``(line_f, present_f, line_m, present_m)``, each
+        ``(B, W)`` in rows of this (cropped) frame. Given, the BM term compares them
+        directly (``warp_bm_line``) instead of segmenting the warped frame; with a
+        segmenter as well, the re-segmented error is still reported as
+        ``bm_px_reseg`` (no gradient), as a check on the stored lines."""
         H, W = fixed_img.shape[-2:]
         comp: Dict[str, float] = {}
         loss = dx.new_zeros(())
@@ -349,11 +416,23 @@ class UnsupervisedRegistrationLoss(nn.Module):
             loss = loss + self.w_lateral * l_lat
             comp["lat"] = float(l_lat.detach())
 
+        line_bm = self.w_bm > 0 and bm_lines is not None
+        line_valid = None
+        if line_bm:
+            loss, line_valid = self._line_bm(loss, comp, dx, dy, moving_img, bm_lines, (H, W))
+            if self.segmenter is not None:
+                with torch.no_grad():
+                    comp["bm_px_reseg"] = self._reseg_bm_px(
+                        dx.detach(), dy.detach(), fixed_img, moving_img, (H, W)
+                    )
+
         # The image warp is only needed for the BM term
-        use_bm = self.w_bm > 0 and self.segmenter is not None
+        use_bm = self.w_bm > 0 and self.segmenter is not None and not line_bm
         feature_bm = use_bm and self.bm_on_features
-        valid = None
-        if use_bm and not feature_bm:
+        valid = line_valid
+        if line_bm:
+            pass  # valid comes from _line_bm
+        elif use_bm and not feature_bm:
             warped_img, valid = warp(moving_img, dx, dy, (H, W))
         elif use_bm or self.w_coverage > 0:
             _, valid = warp(torch.ones_like(moving_img[:, :1]), dx, dy, (H, W))

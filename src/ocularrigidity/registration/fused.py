@@ -33,6 +33,7 @@ class FusedResult:
     ref_percentile: float | None = (
         None  # of the reference's area in the full distribution
     )
+    iou: np.ndarray | None = None  # (T,) float32
 
 
 def _normalise(frames_u8: torch.Tensor) -> torch.Tensor:
@@ -272,7 +273,6 @@ def segment_and_register(
             cols = bad_cols.cpu().numpy()
             registered_frames[..., cols] = 0
             registered_masks[..., cols] = 0
-
     transform = {
         "dx": dx.numpy(),
         "dy": dy.numpy(),
@@ -280,6 +280,18 @@ def segment_and_register(
             bad_cols.cpu().numpy() if bad_cols is not None else np.zeros(W, dtype=bool)
         ),
     }
+    iou = None
+    if config.identify_failed_frames:
+        # Compute the IoU between the registered mask and the reference's, to flag failed frames.
+        ref_mask = registered_masks[ref_idx]
+        iou = np.empty(T, dtype=np.float32)
+        for s in range(0, T, batch):
+            e = min(s + batch, T)
+            iou[s:e] = (
+                (registered_masks[s:e] & ref_mask).sum(axis=(1, 2))
+                / (registered_masks[s:e] | ref_mask).sum(axis=(1, 2))
+            )
+            
 
     if verbose:
         stages = " | ".join(f"{k} {v:.1f}s" for k, v in timings.items())
@@ -293,6 +305,7 @@ def segment_and_register(
         ref_idx=ref_idx,
         ref_percentile=ref_percentile,
         timings=timings,
+        iou=iou
     )
 
 

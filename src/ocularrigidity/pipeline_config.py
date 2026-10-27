@@ -57,6 +57,9 @@ class PulsationConfig:
     )
     # If set, rate and phase come from this SiNC checkpoint's waveform.
     sinc_revision: Optional[str] = None
+    # If set, and the video comes with an expected rate, SiNC's input is
+    # band-passed to that rate ± this fraction. None: SiNC sees everything.
+    sinc_input_band_frac: Optional[float] = None
     # If set, phase 0 is moved onto minimal choroid thickness.
     anchor: Optional[ThicknessAnchorConfig] = None
 
@@ -72,13 +75,21 @@ class PulsationConfig:
         self, *, expected_bpm: Optional[float] = None, verbose: bool = True
     ) -> tuple[dict, NCycleConfig]:
         """Stage configs and fold config for one video."""
-        # SiNC finds the rate on its own: the band stays open.
+        # SiNC finds the rate on its own: the band of the rate read off its
+        # waveform stays open. An expected rate can only narrow its input.
+        sinc_input_band = None
         if self.sinc_revision is not None:
+            if expected_bpm is not None and self.sinc_input_band_frac is not None:
+                sinc_input_band = CardiacBand(
+                    expected_bpm=expected_bpm,
+                    expected_bpm_band_frac=self.sinc_input_band_frac,
+                )
             expected_bpm = None
         # One band for the bandpass and the periodogram.
         band = CardiacBand(expected_bpm=expected_bpm)
         stages = dict(
             sinc=self.sinc_revision,
+            sinc_input_band=sinc_input_band,
             anchor=self.anchor,
             trace=replace(self.trace, verbose=verbose),
             bandpass=replace(self.bandpass, band=band, verbose=verbose),

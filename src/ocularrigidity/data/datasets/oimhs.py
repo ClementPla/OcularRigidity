@@ -1,64 +1,59 @@
 from pathlib import Path
-import matplotlib.pyplot as plt
-from typing import Optional
+from typing import Optional, Sequence
+
+import albumentations as A
 import cv2
 import numpy as np
+
 from ocularrigidity.data.datasets.generic import ChoroidDataset
-import albumentations as A
 
 
 class OIMHS(ChoroidDataset):
-    """Process the OIMHS database."""
+    """The OIMHS database: each PNG is the B-scan and its colour label map side by side."""
+
+    # (axial, lateral) mm per pixel of the OIMHS B-scans
+    PIXEL_SIZE_MM = (3.77e-3, 8.69e-3)
+    WIDTH = 512  # width of the B-scan half of each PNG
 
     def __init__(
         self,
-        root_files: Path,
-        shape: tuple = (512, 512),
+        root_files: Path | str | None = None,
         transforms: Optional[A.Compose] = None,
+        files: Optional[Sequence[Path]] = None,
     ):
         super().__init__()
-        root_files = Path(root_files)
-        self.files = list(root_files.rglob("*/*.png"))
-        self.shape = shape
+        if files is None:
+            files = sorted(Path(root_files).rglob("*/*.png"))
+        self.files = list(files)
         self.transforms = transforms
 
     @property
     def patient_ids(self):
-        return list(file.parent.name for file in self.files)
+        return [file.parent.name for file in self.files]
 
-    def split(self, ratio: float, seed: int = 42) -> tuple["OIMHS", "OIMHS"]:
-        patient_ids = sorted(set(self.patient_ids))
-        np.random.default_rng(seed).shuffle(patient_ids)
-        split_idx = int(len(patient_ids) * ratio)
-        train_patient_ids = set(patient_ids[:split_idx])
-        val_patient_ids = set(patient_ids[split_idx:])
-        train_files = [
-            file for file in self.files if file.parent.name in train_patient_ids
-        ]
-        val_files = [file for file in self.files if file.parent.name in val_patient_ids]
-        train_dataset = OIMHS(
-            root_files="", shape=self.shape, transforms=self.transforms
-        )
-        val_dataset = OIMHS(root_files="", shape=self.shape, transforms=self.transforms)
-        train_dataset.update_files(train_files)
-        val_dataset.update_files(val_files)
-        return train_dataset, val_dataset
+    def split(
+        self, ratios: Sequence[float] = (0.8, 0.05, 0.15), seed: int = 42
+    ) -> tuple["OIMHS", ...]:
+        """Patient-level split, one dataset per ratio."""
+        patients = sorted(set(self.patient_ids))
+        np.random.default_rng(seed).shuffle(patients)
+        bounds = np.round(np.cumsum(ratios)[:-1] * len(patients)).astype(int)
+        parts = []
+        for chunk in np.split(np.array(patients), bounds):
+            keep = set(chunk)
+            files = [f for f in self.files if f.parent.name in keep]
+            parts.append(OIMHS(files=files, transforms=self.transforms))
+        return tuple(parts)
 
     def __len__(self):
         return len(self.files)
 
-    def __getitem__(self, index):
-        file = self.files[index]
-        image, mask = self.load_image(file)
-        if self.transforms is not None:
-            augmented = self.transforms(image=image, mask=mask)
-            image = augmented["image"]
-            mask = augmented["mask"]
-        return image, mask
+    def pixel_size_mm(self, index):
+        return self.PIXEL_SIZE_MM
 
-    def load_image(self, file):
-        image_mask = cv2.imread(str(file))
-        image = image_mask[:, :512, 0]
-        mask = image_mask[:, 512:, :]
+    def load_image(self, index):
+        image_mask = cv2.imread(str(self.files[index]))
+        image = np.ascontiguousarray(image_mask[:, : self.WIDTH, 0])
+        mask = image_mask[:, self.WIDTH :, :]
         mask = cv2.inRange(mask, (0, 255, 255), (0, 255, 255))
         return image, mask // 255

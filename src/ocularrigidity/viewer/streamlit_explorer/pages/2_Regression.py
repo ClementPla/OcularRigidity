@@ -159,6 +159,10 @@ else:
             "thinning_um_s",
             "rate_asymmetry",
             "thickening_fraction",
+            "thickening_strain_pct_s",
+            "thinning_strain_pct_s",
+            "thinning_half_time_s",
+            "thinning_half_fraction",
         )
         if c in per_cycle.columns
     ]

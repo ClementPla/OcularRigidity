@@ -34,7 +34,11 @@ def build_extractor(registrator, aligner, stage_configs: dict) -> PulseExtractor
     # source = CoherentTraceSource(source, stage_configs["coherence"])
     # source = DecomposedTraceSource(source, stage_configs["decomposition"])
     if stage_configs.get("sinc") is not None:
-        source = LearnedTraceSource(source, load_sinc_module(stage_configs["sinc"]))
+        source = LearnedTraceSource(
+            source,
+            load_sinc_module(stage_configs["sinc"]),
+            input_band=stage_configs.get("sinc_input_band"),
+        )
 
     phase = IQDemodPhaseEstimator(
         stage_configs["phase"], aggregator=SelectBestComponent()

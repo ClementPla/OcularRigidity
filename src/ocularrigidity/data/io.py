@@ -153,7 +153,48 @@ def load_cube(
     data = data.transpose(0, 2, 1)
     return data
 
+import av
 
+
+def read_mp4_frames(path, n: int) -> np.ndarray:
+    """First n frames of an MP4, without decoding the rest. Same pixels as
+    ``compression.mp4_to_cube``: the raw Y plane, no swscale range conversion."""
+    with av.open(str(path)) as c:
+        s = c.streams.video[0]
+        s.thread_type = "AUTO"
+        s.thread_count = 0
+        h, w = s.codec_context.height, s.codec_context.width
+        out = np.empty((n, h, w), dtype=np.uint8)
+        k = 0
+        for frame in c.decode(s):
+            out[k] = np.frombuffer(frame.planes[0], dtype=np.uint8).reshape(h, w)
+            k += 1
+            if k == n:
+                break
+        # Stopping early leaves frames in the decoder's threads; closing the
+        # container then can deadlock. Flush the decoder first.
+        for _ in s.codec_context.decode(None):
+            pass
+    return out[:k]
+
+
+def read_cube_frames(folder: Path, n: int, H: int = 1024, W: int = 1536) -> np.ndarray:
+    """First n frames in time order of a raw cube.bin, reading only those frames
+    (same layout and ordering as data.io.load_cube)."""
+    fb = H * W
+    total = (folder / "cube.bin").stat().st_size // fb
+    order = np.arange(total)
+    ts = folder / "timestamp.txt"
+    if ts.exists():
+        t = np.array([float(l) for l in ts.read_text().split() if l.strip()])
+        if len(t) == total:
+            order = np.argsort(t, kind="stable")
+    out = np.empty((n, W, H), np.uint8)
+    with open(folder / "cube.bin", "rb") as f:
+        for k, i in enumerate(order[:n]):
+            f.seek(int(i) * fb)
+            out[k] = np.frombuffer(f.read(fb), np.uint8).reshape(H, W).T
+    return out
 def save_mask(mask: np.ndarray, path):
     """Save a boolean mask, packed + zstd compressed."""
     packed = np.packbits(mask.reshape(-1))  # flatten and pack to uint8
