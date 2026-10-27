@@ -44,6 +44,12 @@ HEYEX_ONH_PATH = _env_path(
 
 OIMHS_ROOT = Path("/home/clement/Documents/data/OIMHS/Images/")
 
+# Didascalie choroid masks, split by scripts/segmentation/split_choroid_dataset.py:
+# <split>/<device>/{images,masks}/<name>.png
+CHOROID_SEGMENTATION_ROOT = Path(
+    "/home/clement/Documents/data/OcularRigidityAnnotated/dataset/ChoroidSegmentation/"
+)
+
 ROOT_DATA_MNT = Path("/mnt/smb/")
 
 ROOT_MASKS = _env_path("OCULARRIGIDITY_MASKS", RUN_ROOT / "masks")
@@ -65,8 +71,8 @@ QC_ERRORS_PATH = (
 )
 
 # Hugging Face Hub revisions.
-SEGMENTATION_REVISION = "version-2.0.0"
-REGISTRATOR_REVISION = "cascade_v9"
+SEGMENTATION_REVISION = "version-3.0.0"
+REGISTRATOR_REVISION = "reg_upernet_convnext_t_bmlines"
 SINC_REVISION = "sinc_v0"
 
 OUTPUT_FOLDER = ROOT_COMPRESSED_VIDEO
@@ -76,5 +82,8 @@ AXIAL_PIXEL_SIZE_MM = 1.95e-3
 TRANVERSAL_PIXEL_SIZE_MM = 5.9e-3
 
 BSCAN_WIDTH_PX = 1024
-# Columns dropped on each side of the choroid mask before measuring deltaA.
-CHOROID_TRIM_PX = 75
+# Columns dropped on each side of the choroid mask before tracking its
+# boundary and measuring ΔCT / deltaA. The one trim setting: tracking, the
+# cohort tables, the viewer and the Spectralis script all read it. 0 = the
+# whole mask.
+CHOROID_TRIM_PX = 0

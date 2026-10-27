@@ -27,6 +27,11 @@ from ocularrigidity.segmentation.postprocess.interfaces import (
 import matplotlib.pyplot as plt
 
 
+# Optional entries of transform.npz besides dx/dy: the reference frame and each
+# registered mask's IoU with the reference's registered mask (outlier frames).
+TRANSFORM_EXTRAS = ("ref_idx", "iou")
+
+
 def cache_paths_for(cache_dir: Path, video_id: Path) -> dict:
     """Cache file locations for one video's registered frames, masks and transform."""
     cache_dir = Path(cache_dir)
@@ -125,7 +130,11 @@ def read_cache_payload(
     return {
         "frames": frames,
         "masks": masks,
-        "transform": {"dx": data["dx"], "dy": data["dy"]},
+        "transform": {
+            "dx": data["dx"],
+            "dy": data["dy"],
+            **{k: data[k] for k in TRANSFORM_EXTRAS if k in data.files},
+        },
         "path": paths["masks"].parent,
     }
 
@@ -287,7 +296,13 @@ class VideoRegistrator:
             dx = dx.numpy()
         if isinstance(dy, torch.Tensor):
             dy = dy.numpy()
-        np.savez(paths["transform"], dx=dx, dy=dy, **self._cache_meta())
+        # Per-frame extras of the fused pass, when it provided them
+        extras = {
+            k: np.asarray(tf[k].numpy() if isinstance(tf[k], torch.Tensor) else tf[k])
+            for k in TRANSFORM_EXTRAS
+            if tf.get(k) is not None
+        }
+        np.savez(paths["transform"], dx=dx, dy=dy, **extras, **self._cache_meta())
 
     @property
     def transform(self) -> dict:

@@ -1,0 +1,41 @@
+# Stage 2: tune the recipe of the stage-1 winner. Set `model` first.
+# Ranked on the thickness error: deltaCT is a per-column thickness difference,
+# and Dice hardly moves for a few pixels of boundary shift.
+#   python -m ocularrigidity.scripts.segmentation.sweep create hparams
+#   python -m ocularrigidity.scripts.segmentation.sweep agent <id> --gpus 0 1 --count 10
+name: seg-hparams
+program: src/ocularrigidity/scripts/segmentation/train.py  # unused, the command runs the module
+method: bayes
+metric:
+  name: best/thickness_mae_um
+  goal: minimize
+command:
+  - ${env}
+  - ${interpreter}
+  - -m
+  - ocularrigidity.scripts.segmentation.train
+parameters:
+  model: {value: segformer_mit_b2}  # <- the stage-1 winner
+  lr:
+    distribution: log_uniform_values
+    min: 3.0e-5
+    max: 1.0e-3
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1.0e-6
+    max: 1.0e-2
+  w_smooth:
+    distribution: uniform
+    min: 0.0
+    max: 0.3
+  w_gap:
+    distribution: uniform
+    min: 0.0
+    max: 0.2
+  warmup_epochs: {values: [0, 2, 5]}
+  crop: {values: [[768, 768], [1024, 768], [1024, 1024]]}
+  epochs: {value: 60}
+  scheduler: {value: cosine}
+  patience: {value: 0}
+  monitor: {value: thickness_mae_um}
+  seed: {value: 42}

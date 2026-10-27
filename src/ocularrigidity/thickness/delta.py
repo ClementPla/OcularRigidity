@@ -27,7 +27,15 @@ class DeltaCTResult:
     min_ct_mm: float
     max_ct_mm: float
     n_csi_anchors: int
+    delta_ct_spatial_mm: np.ndarray
     rpe_residual_um: float
+
+    @property
+    def stretch_series(self) -> np.ndarray:
+        """``(ΔCT(t) + CT) / CT`` per frame, CT being the thinnest of the cycle."""
+        if not self.min_ct_mm:
+            return np.full_like(self.ct_abs_series_mm, np.nan, dtype=float)
+        return self.ct_abs_series_mm / self.min_ct_mm
 
 
 @dataclass
@@ -38,6 +46,8 @@ class CycleRates:
     thinning_um_s: float
     asymmetry: float
     thickening_fraction: float
+    # Time (s) from the thickness peak until half of the peak-to-trough fall is lost.
+    thinning_half_time_s: float = np.nan
 
 
 def cycle_rates(
@@ -67,7 +77,26 @@ def cycle_rates(
         thinning_um_s=down,
         asymmetry=up / down if down > 0 else np.nan,
         thickening_fraction=float((dy > 0).mean()),
+        thinning_half_time_s=_thinning_half_time(spec, n, period_s),
     )
+
+
+def _thinning_half_time(spec: np.ndarray, n: int, period_s: float, up: int = 8) -> float:
+    """Time from the peak to the half-way point of the fall towards the next trough.
+
+    Read on the band-limited curve, evaluated ``up`` times finer than the frames.
+    """
+    m = n * up
+    ys = np.fft.irfft(spec, m) * up
+    i_peak, i_trough = int(ys.argmax()), int(ys.argmin())
+    n_fall = (i_trough - i_peak) % m
+    if n_fall < 2:
+        return np.nan
+    limb = ys[(i_peak + np.arange(n_fall + 1)) % m]
+    z = (limb - limb[-1]) / (limb[0] - limb[-1])  # 1 at the peak, 0 at the trough
+    j = int(np.argmax(z <= 0.5))
+    crossing = j - 1 + (z[j - 1] - 0.5) / (z[j - 1] - z[j])
+    return float(crossing * period_s / m)
 
 
 def _boundary_slope(boundary: np.ndarray, window: int) -> np.ndarray:
@@ -250,6 +279,15 @@ def measure_delta_ct_from_disp(
     baseline_col_mm = (csi_ref[csi_x] - rpe_ref[csi_x]) * axial_mm_per_px * cos_tilt
     baseline_ct_mm = float(np.nanmean(baseline_col_mm))
     ct_abs_series = baseline_ct_mm + ct_series  # (T,) mm
+    # Scatter the CSI anchors onto the image columns so the map has the same
+    # (T, W) shape whatever the anchor set; NaN where a column has no anchor.
+    col_sums = np.zeros((proj_csi.shape[0], W))
+    col_counts = np.zeros((proj_csi.shape[0], W))
+    np.add.at(col_sums, (slice(None), csi_x), np.where(valid, proj_csi, 0.0))
+    np.add.at(col_counts, (slice(None), csi_x), valid)
+    delta_ct_spatial_mm = np.where(
+        col_counts > 0, col_sums / np.maximum(col_counts, 1), np.nan
+    )  # (T, W) mm, for spatial statistics
 
     return DeltaCTResult(
         deltaCT_mm=delta_ct_mm,
@@ -261,4 +299,5 @@ def measure_delta_ct_from_disp(
         max_ct_mm=float(np.nanmax(ct_abs_series)),
         n_csi_anchors=int(is_csi.sum()),
         rpe_residual_um=rpe_residual_um,
+        delta_ct_spatial_mm=delta_ct_spatial_mm,
     )

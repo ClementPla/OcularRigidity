@@ -83,9 +83,22 @@ PULSATION_METRICS = [
     "thickening_um_s",
     "thinning_um_s",
     "rate_asymmetry",
+    "thickening_strain_pct_s",
+    "thinning_strain_pct_s",
+    "thinning_half_time_s",
+    "thinning_half_fraction",
 ]
 
-COVARIATES = ["IOP", "OPA", "AxialLength", "HR", "predicted_HR", "Age"]
+COVARIATES = [
+    "IOP",
+    "OPA",
+    "AxialLength",
+    "HR",
+    "predicted_HR",
+    "Age",
+    "Systolic",
+    "Diastolic",
+]
 
 DEFAULT_MEASURES = [
     "igri_base",

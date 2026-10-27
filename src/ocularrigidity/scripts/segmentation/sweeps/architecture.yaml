@@ -1,0 +1,42 @@
+# Stage 1: every model preset (segmentation/trainer/presets.py) with one shared
+# recipe: a single cosine schedule over a fixed budget, no early stopping, so
+# runs differ only by the model.
+#   python -m ocularrigidity.scripts.segmentation.sweep create architecture
+name: seg-architecture
+program: src/ocularrigidity/scripts/segmentation/train.py  # unused, the command runs the module
+method: grid
+metric:
+  name: best/dice
+  goal: maximize
+command:
+  - ${env}
+  - ${interpreter}
+  - -m
+  - ocularrigidity.scripts.segmentation.train
+parameters:
+  model:
+    values:
+      - segformer_mit_b1
+      - segformer_mit_b2
+      - segformer_mit_b3
+      - unet_mit_b2
+      - fpn_mit_b2
+      - upernet_mit_b2
+      - unet_convnext_t
+      - upernet_convnext_t
+      - unet_resnet34
+      - unet_se_resnext50
+      - unet_effnet_b4
+      - unetpp_effnet_b4
+  # Shared recipe. Floats written with a decimal point: YAML reads 1e-4 as a string.
+  epochs: {value: 60}
+  scheduler: {value: cosine}
+  warmup_epochs: {value: 2}
+  patience: {value: 0}
+  lr: {value: 1.0e-4}
+  weight_decay: {value: 1.0e-5}
+  w_smooth: {value: 0.1}
+  w_gap: {value: 0.05}
+  crop: {value: [1024, 768]}
+  monitor: {value: dice}
+  seed: {value: 42}

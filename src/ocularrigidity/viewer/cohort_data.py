@@ -13,6 +13,7 @@ import pandas as pd
 from scipy import stats
 
 from ocularrigidity.consts import (
+    CHOROID_TRIM_PX,
     CLINICAL_VALUES_PATH,
     MEASUREMENTS_PATH,
     QC_ERRORS_PATH,
@@ -29,7 +30,7 @@ from ocularrigidity.pipeline_config import N_CYCLES
 from ocularrigidity.segmentation.closing_structures import trim_choroid
 from ocularrigidity.thickness.delta import measure_delta_ct_from_disp
 
-DELTA_CT_TRIM = 100
+DELTA_CT_TRIM = CHOROID_TRIM_PX
 
 # Numeric metric columns offered to the regression / longitudinal explorers.
 METRIC_COLUMNS = [

@@ -306,3 +306,15 @@ def rebuild_mask_torch(bm: torch.Tensor, csi: torch.Tensor, H: int) -> torch.Ten
     valid = ~(torch.isnan(bm) | torch.isnan(csi))
     mask = mask & valid[:, None, :]
     return mask
+
+def morpho_gradient(mask: np.ndarray, sigma: float = 1.0) -> np.ndarray:
+    """Morphological gradient (dilation - erosion) of a binary mask, per 2-D slice."""
+    ks = max(3, int(2 * round(sigma) + 1))  # odd kernel size
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks))
+    # bool and uint8 share a byte layout: view, no copy
+    src = mask.view(np.uint8) if mask.dtype == bool else mask.astype(np.uint8)
+    flat = src.reshape(-1, *src.shape[-2:])
+    out = np.empty(flat.shape, dtype=np.uint8)
+    for i in range(len(flat)):
+        cv2.morphologyEx(flat[i], cv2.MORPH_GRADIENT, kernel, dst=out[i])
+    return out.view(bool).reshape(mask.shape)
