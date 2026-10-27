@@ -1,0 +1,241 @@
+---
+title: "First training"
+subtitle: "SiNC (PhysNet) entraîné sans supervision sur des crops de choroïde corrigés en intensité : quelles vidéos, quelle correction, quel crop, et ce que le réseau en tire"
+# Figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits mais
+# aucun script ne les dessine.
+include-in-header: figures_sinc_first_training/plotlyjs.html
+---
+
+SiNC (Speth *et al.*, CVPR 2023) entraîne un réseau convolutif 3D à sortir une onde
+dont le spectre ressemble à un pouls. Aucun signal de référence n'est nécessaire,
+seulement trois a priori sur le spectre :
+
+- la puissance tombe **dans la bande cardiaque** (*bandwidth*) ;
+- elle est **concentrée sur un pic** (*sparsity*) ;
+- les pics **varient d'un clip à l'autre** dans le lot (*variance*), pour que le réseau
+  ne se contente pas d'une fréquence fixe.
+
+Ici, le réseau voit la choroïde en OCT et non un visage. Sur ces vidéos, il n'y a ni
+PPG ni ECG, et c'est justement ce qui rend une méthode non supervisée intéressante.
+
+Cette page décrit le premier entraînement : les données, puis le réseau, puis ce
+qu'il prédit sur un participant qu'il n'a jamais vu.
+
+# Méthodes
+
+## Recalage
+
+Les crops sont pris dans les vidéos `registered_cascade_v9_plex_full/<slug>/`. C'est
+le recaleur appris de Clément (page *Recalage appris cascade_v9*) appliqué sur la
+grille PLEX : 1,95 µm par pixel en axial et 5,9 µm en latéral, sur 1536 colonnes
+(9,1 mm). La segmentation SegFormer qui l'accompagne donne le masque de choroïde.
+
+## Vidéos retenues : une seule cadence, sans rééchantillonnage
+
+Les pertes de SiNC calculent une FFT avec **une seule** cadence pour tout le lot. Or
+c'est l'ART, et non la latéralité, qui fixe la cadence. Dans cette étude, elle ne
+prend que trois valeurs : 7,63, 9,5–9,6 et 19,23 Hz.
+
+On garde donc une seule cadence, sans rééchantillonner : les 23 vidéos à
+**9,52–9,62 Hz**. Ce sont toutes des OD. On calcule les spectres à 9,57 Hz, ce qui
+fait une erreur de moins de 1 % sur la fréquence.
+
+Les rôles sont attribués **par participant**, jamais par réplicat. Sinon, le même
+œil, enregistré à quelques minutes d'intervalle, se retrouverait à la fois en
+entraînement et en évaluation :
+
+- **test** : MODICA GRAZIANA ;
+- **validation** (choix de l'époque) : ROY JOANNIE ;
+- **entraînement** : les six autres participants.
+
+{{< include figures_sinc_first_training/tab_videos.qmd >}}
+
+## Correction de l'intensité
+
+L'intensité d'un A-scan dépend de bien plus que de la choroïde : ombre des vaisseaux
+rétiniens, inclinaison du faisceau, gain de la frame. La correction se fait en deux
+temps, d'abord A-scan par A-scan, puis d'une image à l'autre. Le script est
+`Astronauts/pulsation/sinc_intensity/preprocessing/OCT_choroid/make_dataset.py`.
+
+1. **Aplatissement.** La frontière BM est le bord supérieur du masque, prise comme
+   la **médiane par colonne** sur toutes les frames. On n'utilise qu'une seule
+   frontière, puisque la vidéo est déjà recalée. On extrait une fenêtre aplatie qui
+   va de **117 µm au-dessus** de la BM à **117 µm en dessous**, sur toute la largeur.
+2. **Image moyenne** M de cette fenêtre.
+3. **Correction A-scan par A-scan.** Chaque colonne de M est ajustée linéairement sur
+   le profil médian r(d) :
+
+   $$M[:, x] \approx a_x \, r + b_x, \qquad M_c = (M - b) / a$$
+
+4. **Correction d'une image à l'autre.** Chaque frame reçoit la même correction par
+   colonne, puis est ajustée linéairement sur la moyenne corrigée :
+
+   $$F'_t \approx \alpha_t \, M_c + \beta_t, \qquad F''_t = (F'_t - \beta_t) / \alpha_t$$
+
+   Cet ajustement porte sur toute la largeur, et non sur le seul crop. Ainsi α et β
+   absorbent le gain global plutôt que la pulsation propre au crop.
+
+::: {.callout-note}
+## Pourquoi la fenêtre monte au-dessus de la BM
+
+Le crop ne descend que de 117 µm sous la BM. Or, dans la choroïde seule, le profil
+moyen est presque plat, si bien que l'ajustement linéaire par A-scan est mal
+conditionné. Sur `BELANGER_CHARLES_OD1`, 454 colonnes sur 1536 sortaient avec une
+pente **négative**. En ajoutant 117 µm au-dessus de la BM (RPE et photorécepteurs,
+des réflecteurs très contrastés), aucune pente n'est dégénérée, et a reste entre
+0,24 et 1,2. Cette partie haute ne sert qu'aux ajustements : elle n'entre pas dans
+le crop.
+:::
+
+## Définition du crop
+
+C'est la région du pouls SVD d'intensité de
+`Astronauts/data_visualizer_GUI/pulse_compute.py`, importée telle quelle :
+
+- en **profondeur**, `ROI_DEPTH_UM` = 117 µm sous la BM, soit 60 lignes ;
+- en **largeur**, `ROI_WIDTH_MM` = 2,9 mm centrés, le tiers central du scan, soit 492 colonnes.
+
+Les frames invalides (noires ou sans masque) et les colonnes invalides (mises à zéro
+par le recalage) sont mises à 0 et signalées. Sur les 23 vidéos retenues, une seule
+frame est écartée.
+
+Le réseau, lui, voit des **patchs de 64 × 64 px à la résolution native**. Les 60
+lignes sont complétées à 64 en répliquant le bord, et les 492 colonnes donnent 7
+patchs côte à côte. Réduire 492 colonnes à 64 aurait moyenné environ 8 A-scans par
+pixel et effacé la texture vasculaire.
+
+## Les crops
+
+Dans la figure suivante, un menu permet de choisir la vidéo. Les trois panneaux
+montrent :
+
+- la fenêtre moyenne avant correction ;
+- la même fenêtre après correction ;
+- une frame du crop corrigé, découpée en patchs.
+
+Repères : le pointillé rouge marque la BM, le rectangle jaune le crop, et les
+tirets verts les 7 patchs. L'échelle est étirée verticalement, car un pixel fait
+1,95 µm de haut pour 5,9 µm de large.
+
+{{< include figures_sinc_first_training/fig_crop_moyennes.qmd >}}
+
+Les deux gains de la correction sont montrés ci-dessous, avec une courbe par
+vidéo ; cliquer sur un nom de la légende masque la vidéo correspondante.
+
+{{< include figures_sinc_first_training/fig_corrections.qmd >}}
+
+Les crops corrigés, tels que le réseau les reçoit, sont lus à leur cadence native.
+Ils sont étirés ×3 verticalement, et l'échelle de gris est fixée sur toute la vidéo
+(percentiles 1–99).
+
+{{< include figures_sinc_first_training/fig_crop_videos.qmd >}}
+
+# Entraînement
+
+Le code est le dépôt SiNC copié dans `Astronauts/pulsation/sinc_intensity/`, avec
+peu de changements. Les quatre principaux :
+
+- un loader `datasets/OCT.py` qui construit les échantillons (vidéo × clip × patch).
+  Il exclut les clips qui contiennent une frame invalide et centre-réduit chaque clip ;
+- les fréquences des pertes placées sur le GPU, pour corriger un plantage du code amont ;
+- une cadence décimale acceptée en argument ;
+- des journaux de pertes écrits en CSV, car tensorboard est absent de
+  l'environnement.
+
+À l'entraînement, chaque patch est décalé au hasard dans la marge latérale.
+
+{{< include figures_sinc_first_training/tab_entrainement.qmd >}}
+
+Sur la figure des pertes, la courbe d'entraînement est la moyenne par époque ; les
+valeurs par itération peuvent être affichées depuis la légende. La validation est
+calculée à chaque époque sur les clips de ROY JOANNIE. On retient l'époque où
+*bandwidth* + *sparsity* est la plus basse.
+
+{{< include figures_sinc_first_training/fig_losses.qmd >}}
+
+Les pertes baissent sur l'entraînement comme sur la validation. Sur la validation :
+
+- le total passe de 0,57 à la première époque à 0,33 à l'époque 181, retenue ;
+- presque tout le gain est acquis dès l'époque 10 (0,37), après quoi la courbe stagne ;
+- *sparsity* porte l'essentiel de la baisse : de 0,52 à 0,31 ;
+- *bandwidth* était déjà basse dès le départ, à 0,05.
+
+Le réseau apprend donc bien ce qu'on lui demande : une onde dont la puissance est
+dans la bande et concentrée sur un pic. Reste à savoir si **ce pic est le pouls**.
+
+# Résultats
+
+L'évaluation (`evaluate_oct.py`) passe chaque vidéo entière dans le modèle retenu :
+
+- par clips de 95 frames, au pas de 48 ;
+- sur les 7 patchs de chaque clip.
+
+Les ondes des patchs sont recombinées par *overlap-add* (fenêtre de Hann), alignées en
+signe, puis moyennées. La FC est le pic du périodogramme entre 40 et 120 BPM, calculé
+à la **vraie** cadence de chaque vidéo.
+
+On la compare à deux références :
+
+- **`hr_prior`** : le consensus par personne de la page *Pouls ancré sur la FC médiane* ;
+- **la FC du pouls d'épaisseur** : l'épaisseur moyenne du masque sur les colonnes du
+  crop. C'est une mesure indépendante de l'intensité.
+
+Les barres d'erreur donnent la plage des FC obtenues patch par patch.
+
+{{< include figures_sinc_first_training/fig_hr.qmd >}}
+
+::: {.callout-important}
+## Le pic n'est pas le pouls
+
+- **FC resserrée :** les FC SiNC des 23 vidéos tiennent toutes entre **55 et 78 BPM**
+  (écart-type 6 BPM). Celles de `hr_prior` vont de 61 à 102 BPM (écart-type 14 BPM).
+- **Aucune corrélation :** la corrélation entre les deux est **nulle** (Spearman 0,01,
+  Pearson 0,03), et l'écart médian est de 13 BPM.
+- **Pas mieux que le hasard :** à ±10 % de `hr_prior`, on trouve **5 vidéos sur 23**,
+  dont 2 en entraînement, 2 en validation et 1 en test. Une FC tirée au hasard entre
+  40 et 120 BPM en ferait 4,4 en moyenne, et une FC **constante** de 66 BPM en ferait 10.
+- **Aucun accord en forme d'onde :** l'onde filtrée ne suit pas le pouls d'épaisseur
+  (|r| médian 0,11).
+
+Les 17 vidéos d'entraînement ne font pas mieux que les autres. Le réseau n'a donc pas
+appris le pouls, même sur les données qu'il a vues. Il produit un pic bien formé dans
+le bas de la bande, sans lien avec la FC.
+:::
+
+## Test : MODICA GRAZIANA
+
+{{< include figures_sinc_first_training/tab_test.qmd >}}
+
+Sur GRAZIANA, la FC est très stable d'un réplicat à l'autre : 60–61 BPM pour
+`hr_prior`, pour la SVD et pour le pouls d'épaisseur. SiNC ne la retrouve que sur
+**OD1** (60,2 BPM). Il donne 78,0 BPM sur OD2 et 72,4 BPM sur OD3. Sur OD3, certains patchs descendent à 60,6 BPM : ils retrouvent la bonne fréquence,
+mais la moyenne des 7 ne la retient pas. Sur OD2, aucun patch ne descend sous
+65,5 BPM. Enfin,
+l'onde reste décorrélée du pouls d'épaisseur sur les trois réplicats (|r| ≤ 0,11).
+
+{{< include figures_sinc_first_training/fig_test_ondes.qmd >}}
+
+# Ce qu'on en retient
+
+Ce premier entraînement montre que **les a priori spectraux de SiNC ne suffisent pas
+sur ces crops**. Avec environ 10 minutes d'entraînement, le réseau satisfait les
+pertes avec une onde quelconque à 55–78 BPM. Plusieurs explications restent
+possibles :
+
+- **Variance et données :** la perte de variance (EMD) est censée empêcher le
+  réseau de répondre toujours la même fréquence. Elle reste basse tout du long
+  (environ 0,02–0,03), mais six participants ne fournissent sans doute pas assez de FC
+  différentes pour la rendre efficace.
+- **Signal ténu :** le pouls d'intensité est faible dans ce crop. Sur
+  `BELANGER_CHARLES_OD1`, le pic de la moyenne spatiale du crop corrigé tombait bien
+  à la FC, mais avec une puissance normalisée de seulement 0,01.
+- **Correction par frame :** elle retire la composante du pouls commune à toute la
+  bande.
+
+Pistes pour la suite :
+
+- dé-normaliser α<sub>t</sub> ;
+- prendre en entrée un crop plus large ou toute la choroïde ;
+- ajouter les vidéos des autres cadences, avec une cadence par lot ;
+- faire une validation croisée par participant ;
+- tenter une supervision faible par le pouls d'épaisseur.

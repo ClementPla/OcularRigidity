@@ -113,6 +113,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ocularrigidity.scripts.batch_layout import flat_raw_dir, flat_slugs
+
 # --------------------------------------------------------------------------- #
 # Chemins et parametres
 # --------------------------------------------------------------------------- #
@@ -200,10 +202,9 @@ def qualite_images() -> pd.DataFrame:
     lignes = []
     if not DATA_ROOT.is_dir():
         return pd.DataFrame()
-    for d in sorted(DATA_ROOT.iterdir()):
-        if not d.is_dir() or d.name.startswith("_"):
-            continue
-        tifs = list((d / "RawImages").glob("*.tif"))
+    for slug in flat_slugs(DATA_ROOT):
+        d = flat_raw_dir(DATA_ROOT, slug)
+        tifs = list(d.glob("*.tif"))
         if not tifs:
             continue
         tailles = np.array([t.stat().st_size for t in tifs])

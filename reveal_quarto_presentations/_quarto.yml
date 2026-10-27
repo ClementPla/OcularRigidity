@@ -23,6 +23,7 @@ project:
     - sans-pulse-comparison.qmd
     - sans-stress-strain.qmd
     - sans-repeatability.qmd
+    - sans-pulsatility-analysis.qmd
     - sans-prediction-rigidity.qmd
     - sans-prediction-strain.qmd
     - sans-prediction-viscosity.qmd
@@ -35,6 +36,8 @@ project:
     - repro-one-cycles-ct.qmd
     - repro-strain-graziana.qmd
     - repro-strain-repeatability.qmd
+    - sinc-first-training.qmd
+    - sinc-pretrained-physnet.qmd
     - explore-iceemdan-svd.qmd
   # Les <video> sont ecrites en HTML brut dans les fragments generes : le
   # detecteur de ressources de Quarto ne suit pas ces balises (il suit <img>,
@@ -208,6 +211,8 @@ website:
             href: sans-stress-strain.qmd
           - text: "Repeatability"
             href: sans-repeatability.qmd
+          - text: "Analyse de la pulsatilité"
+            href: sans-pulsatility-analysis.qmd
           - text: "Prediction of SANS: rigidity"
             href: sans-prediction-rigidity.qmd
           - text: "Prediction of SANS: strain"
@@ -234,6 +239,12 @@ website:
             href: repro-strain-graziana.qmd
           - text: "Strain repeatability"
             href: repro-strain-repeatability.qmd
+      - section: "Sinc on intensity"
+        contents:
+          - text: "First training"
+            href: sinc-first-training.qmd
+          - text: "Pretrained PhysNet"
+            href: sinc-pretrained-physnet.qmd
       - section: "Paths to explore"
         contents:
           - text: "ICEEMDAN + Hankel SVD"

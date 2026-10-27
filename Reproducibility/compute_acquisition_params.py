@@ -8,7 +8,7 @@ REPETABILITE, lus dans les exports XML HEYEX qui accompagnent les .tif bruts.
 Meme moteur que la cohorte SANS -- ``ocularrigidity.scripts.acquisition_params``
 -- avec trois differences, et trois seulement :
 
-  - OU sont les conditions      ``E:/SANSORI/Reproducibility/<NOM_PRENOM_OEilN>/``
+  - OU sont les conditions      ``E:/SANSORI/Reproducibility/RawImages/<NOM_PRENOM_OEilN>/``
                                 (pas de niveau ``<...>_rigidity`` intermediaire :
                                 un participant peut avoir plusieurs acquisitions
                                 du meme oeil, et c'est le suffixe du dossier qui
@@ -32,16 +32,13 @@ import re
 from pathlib import Path
 
 from ocularrigidity.scripts.acquisition_params import eye_of, run_batch
+from ocularrigidity.scripts.batch_layout import flat_raw_dir, flat_slugs
 
 # --------------------------------------------------------------------------- #
 # Parametres
 # --------------------------------------------------------------------------- #
 PATH_GENERAL = Path("E:/SANSORI/Reproducibility")
 OUT_DIR = Path("E:/NASA_Rigidity/Reproducibility/AcquisitionParameters")
-
-# Les dossiers de service ecrits a cote des acquisitions (manifeste de
-# migration, et tout ce qu'on y ajouterait) commencent par un souligne.
-SERVICE_PREFIX = "_"
 
 # ``BELANGER_CHARLES_OD1`` -> participant / oeil / rang
 RE_SLUG = re.compile(r"^(?P<participant>.+)_(?P<eye>OD|OS)(?P<replicate>\d+)$")
@@ -51,12 +48,9 @@ RE_SLUG = re.compile(r"^(?P<participant>.+)_(?P<eye>OD|OS)(?P<replicate>\d+)$")
 # Chemins
 # --------------------------------------------------------------------------- #
 def iter_conditions():
-    """Toutes les acquisitions ``E:/SANSORI/Reproducibility/<slug>/``."""
-    if not PATH_GENERAL.is_dir():
-        return
-    for path_condi in sorted(PATH_GENERAL.iterdir()):
-        if path_condi.is_dir() and not path_condi.name.startswith(SERVICE_PREFIX):
-            yield path_condi
+    """Toutes les acquisitions ``E:/SANSORI/Reproducibility/RawImages/<slug>/``."""
+    for slug in flat_slugs(PATH_GENERAL):
+        yield flat_raw_dir(PATH_GENERAL, slug)
 
 
 def identity_of(path_condi: Path) -> dict:

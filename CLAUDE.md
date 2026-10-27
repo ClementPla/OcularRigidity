@@ -20,7 +20,8 @@ Everything generated lands on `E:`. The roots in use:
 
 ```
 E:/SANSORI/<NN_id>/<...>_rigidity/<..._OD|OS...>/   raw acquisitions + per-condition outputs
-E:/SANSORI/Reproducibility/<NOM_PRENOM_OD|OS+N>/    repeatability study, one folder per acquisition
+E:/SANSORI/Reproducibility/RawImages/<NOM_PRENOM_OD|OS+N>/        repeatability raw data, one folder per acquisition
+E:/SANSORI/Reproducibility/registered_<variant>/<NOM_PRENOM_OD|OS+N>/  its registrations, same subfolders
 E:/NASA_Rigidity/SegmentationVariations/<variant>/  registered frames/masks + batch analysis tables
 E:/NASA_Rigidity/Reproducibility/                   repeatability batch tables
 E:/NASA_Rigidity/quarto_results/                    figures of the Quarto report site
@@ -127,12 +128,19 @@ Fix imports/attribute names in the first two before running them.
 
 ## `Reproducibility/` — the repeatability study
 
-Same code, different question and a **different folder shape**. One folder per acquisition, flat:
+Same code, different question and a **different folder shape** (reorganised 2026-10-19). Raw data
+and every registration variant are SIBLING roots, each holding one folder per acquisition:
 
 ```
-E:/SANSORI/Reproducibility/BELANGER_CHARLES_OD1/RawImages/{*.tif, <hash>.xml}
+E:/SANSORI/Reproducibility/RawImages/BELANGER_CHARLES_OD1/{*.tif, <hash>.xml}
+                           registered_<variant>/BELANGER_CHARLES_OD1/{registered_video.mp4, mask.npz, ...}
                            _migration/{manifest.csv, duplicates.csv}
 ```
+
+Never compose these paths by hand: `scripts/batch_layout.py` has `flat_raw_dir(root, slug)`,
+`flat_data_dir(root, slug, subdir)`, `flat_slugs(root)`, and, layout-agnostic for the shared batch
+scripts, `raw_dir(path_condi)` / `data_dir(path_condi, subdir)` (on the flat layout a condition *is*
+`RawImages/<slug>/`, and the `path` column of the batch CSVs points there).
 
 The name carries participant, eye and **chronological replicate rank** (not capped at 3). There is no
 `<...>_rigidity` level, which is exactly why every SANS-track iterator — all of which filter on
@@ -260,6 +268,23 @@ up). Check which folder a script reads from before assuming A-scan registration 
   documented pipeline-glue docstring at the top of the file if you need the derivation.
 - `rigidity/` itself is now an empty directory (only `__pycache__` survives) — don't add anything there or
   import from it; it's dead.
+
+## Intensity traces are always normalized per frame
+
+**Rule:** before any decomposition of OCT *intensity* traces (SVD, PCA, ICA, DMD, SSA…), divide
+each frame by its mean intensity over the traces — `PixelTraceSource.normalized_trace`
+([traces/pixel.py](src/ocularrigidity/motion/pulsation/traces/pixel.py), helper
+`_normalize_per_frame(X, axis=1)` on a `(T, N)` matrix) — then center/standardize each trace as
+before. This removes the gain / illumination drift common to the whole ROI at a given frame.
+Corollary: after normalization the spatial mean is 1 at every frame, so keep the **raw** mean
+intensity aside if it is used as the pulse's sign reference.
+
+Applied since 2026-10-16 in `Astronauts/data_visualizer_GUI/pulse_compute.py::svd_components`
+(pulse cache `CACHE_VERSION = 2`; the GUI "Pouls" page and `compute_one_cycle_plex*.py` read it).
+Older scripts that decompose raw traces (`Astronauts/compute_pulse_from_data.py`,
+`compute_one_cycle_pixel_svd.py`, `compute_phase_shift_pixel_svd.py`,
+`Reproducibility/compute_svd_first_mode.py`, `compute_costs_pulse.py`, …) predate the rule —
+normalize when you touch them. Comparison on one condition: `notebook/test_fir_avant_svd.ipynb`.
 
 ## Cardiac-cycle extraction: `motion/pulsation/` package
 

@@ -6,7 +6,7 @@ Recale les acquisitions de repetabilite avec le RECALAGE APPRIS de Clement
 (``ClementP/OCTVideoRegistration@cascade_v9``), et ecrit chaque resultat A COTE
 DES DONNEES, a cote des trois variantes deja exportees :
 
-    E:/SANSORI/Reproducibility/<SLUG>/RawImages/registered_cascade_v9[_<H>x<W>]/
+    E:/SANSORI/Reproducibility/registered_cascade_v9[_<H>x<W>]/<SLUG>/
         registered_video.mp4  mask.npz  timestamp.txt  transform.npz
         registration_params.json
 
@@ -108,6 +108,7 @@ from ocularrigidity.scripts.registration.astronauts import (  # noqa: E402
     load_ordered_oct_series,
     write_gray_mp4,
 )
+from ocularrigidity.scripts.batch_layout import flat_data_dir, flat_raw_dir, flat_slugs  # noqa: E402
 from ocularrigidity.segmentation.utils import (  # noqa: E402
     get_choroid_segmentation_model,
     get_registration_model,
@@ -175,10 +176,7 @@ def parse_shape(text: str) -> tuple[int, int]:
 
 
 def list_slugs() -> list[str]:
-    return sorted(
-        d.name for d in PATH_GENERAL.iterdir()
-        if d.is_dir() and RE_SLUG.match(d.name) and (d / "RawImages").is_dir()
-    )
+    return flat_slugs(PATH_GENERAL)
 
 
 def read_params(out_dir: Path) -> dict | None:
@@ -307,7 +305,7 @@ def run_fused(frames, seg_model, reg_model, config):
 def process(slug, seg_model, reg_model, trained_shape, resize, config, cc_backend,
             subdir) -> dict:
     t_all = time.perf_counter()
-    raw_dir = PATH_GENERAL / slug / "RawImages"
+    raw_dir = flat_raw_dir(PATH_GENERAL, slug)
     out_dir = raw_dir / subdir
 
     series = load_ordered_oct_series(raw_dir)
@@ -438,7 +436,7 @@ def write_summary(subdir: str, slugs: list[str]) -> Path:
     y compris les sorties d'un lot precedent."""
     rows = []
     for slug in slugs:
-        params = read_params(PATH_GENERAL / slug / "RawImages" / subdir)
+        params = read_params(flat_data_dir(PATH_GENERAL, slug, subdir))
         if params:
             rows.append({k: params.get(k) for k in SUMMARY_KEYS} | {"slug": slug})
     out = SEGVAR_ROOT / subdir.removeprefix("registered_") / "registration_summary.csv"
@@ -472,9 +470,9 @@ def main(argv=None) -> int:
         print(f"Acquisition(s) introuvable(s) : {', '.join(unknown)}")
         return 2
     todo = [s for s in slugs
-            if args.overwrite or not is_complete(PATH_GENERAL / s / "RawImages" / subdir)]
+            if args.overwrite or not is_complete(flat_data_dir(PATH_GENERAL, s, subdir))]
     print(f"{len(slugs)} acquisition(s), {len(slugs) - len(todo)} deja complete(s), "
-          f"{len(todo)} a traiter -> RawImages/{subdir}/", flush=True)
+          f"{len(todo)} a traiter -> {subdir}/<slug>/", flush=True)
 
     config = REGISTRATION
     batch = args.fused_batch or (RESIZE_DEFAULT_FUSED_BATCH if resize else None)
@@ -500,7 +498,7 @@ def main(argv=None) -> int:
                         cc_backend, subdir)
         except Exception as e:  # noqa: BLE001 - une acquisition ne doit pas tout arreter
             traceback.print_exc()
-            out_dir = PATH_GENERAL / slug / "RawImages" / subdir
+            out_dir = flat_data_dir(PATH_GENERAL, slug, subdir)
             out_dir.mkdir(parents=True, exist_ok=True)
             p = {"variant": subdir, "slug": slug, "status": "error",
                  "reason": f"{type(e).__name__}: {str(e)[:300]}",

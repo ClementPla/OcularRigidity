@@ -72,6 +72,7 @@ import SimpleITK as sitk  # noqa: E402
 from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner  # noqa: E402
 from ocularrigidity.scripts.one_cycle.astronauts import _prepared_registrator  # noqa: E402
 from ocularrigidity.scripts.registration.astronauts import load_ordered_oct_series  # noqa: E402
+from ocularrigidity.scripts.batch_layout import flat_data_dir, flat_raw_dir  # noqa: E402
 from ocularrigidity.thickness.features import compute_deltaY_masks  # noqa: E402
 
 occ = cds.occ
@@ -108,8 +109,8 @@ cds.SIGMAS = (SIGMA,)
 # --------------------------------------------------------------------------- #
 def prepare(slug: str, n_beats: float):
     oc = np.load(ONE_CYCLE_DIR / "cycles" / f"{slug}.npz")
-    raw_dir = PATH_GENERAL / slug / "RawImages"
-    data_dir = raw_dir / DATA_SUBDIR
+    raw_dir = flat_raw_dir(PATH_GENERAL, slug)
+    data_dir = flat_data_dir(PATH_GENERAL, slug, DATA_SUBDIR)
 
     registrator = _prepared_registrator(data_dir / "registered_video.mp4",
                                         data_dir / "mask.npz", "cpu", verbose=False)
@@ -201,7 +202,7 @@ def retina_by_bin(slug: str) -> pd.DataFrame:
     """
     m = RE_SLUG.match(slug)
     oc = np.load(ONE_CYCLE_DIR / "cycles" / f"{slug}.npz")
-    data_dir = PATH_GENERAL / slug / "RawImages" / DATA_SUBDIR
+    data_dir = flat_data_dir(PATH_GENERAL, slug, DATA_SUBDIR)
     registrator = _prepared_registrator(data_dir / "registered_video.mp4",
                                         data_dir / "mask.npz", "cpu", verbose=False)
     frames = np.asarray(registrator.registered_frames)

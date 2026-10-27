@@ -1,0 +1,180 @@
+---
+title: "Pretrained PhysNet"
+subtitle: "L'encodeur du PhysNet de rPPG-Toolbox, préentraîné sur cinq jeux de visages ou non, affiné sans supervision avec les pertes de SiNC sur les crops de choroïde"
+# Figures Plotly sur cette page : sans cet en-tete, les <div> sont ecrits mais
+# aucun script ne les dessine.
+include-in-header: figures_sinc_pretrained/plotlyjs.html
+---
+
+Le premier entraînement (page *First training*) partait de zéro. Il a appris à
+satisfaire les pertes de SiNC, mais pas à retrouver la FC :
+
+- les FC prédites tombent toutes entre 55 et 78 BPM ;
+- la corrélation avec `hr_prior` est de 0,01 ;
+- 5 vidéos sur 23 sont à ±10 %, comme au hasard.
+
+Cette page repart d'un réseau qui **sait déjà** extraire un pouls de faibles
+variations d'intensité : PhysNet entraîné en rPPG sur des vidéos de visages.
+
+# Méthodes
+
+## Le modèle préentraîné
+
+**PhysNet** (Yu *et al.*, BMVC 2019) est un réseau convolutif 3D qui prend une vidéo de
+visage et sort une onde de pouls, une valeur par frame. Les poids viennent de
+**rPPG-Toolbox** (Liu *et al.*, NeurIPS 2023 Datasets & Benchmarks), dossier
+`final_model_release/`, commit `b7500b8`, sous *Responsible AI License* v1.1.
+
+Ils ont été entraînés de façon **supervisée** contre un PPG de contact, avec :
+
+- des visages redimensionnés à 72 × 72 px en RGB ;
+- une cadence de 30 fps ;
+- des clips de 128 frames ;
+- une entrée *DiffNormalized*.
+
+Cinq jeux de données ont servi :
+
+| poids | jeu d'entraînement |
+|:--|:--|
+| SCAMPS | 2 800 vidéos de visages **synthétiques**, FC très variées |
+| PURE | 10 sujets, 59 vidéos de laboratoire, mouvements de tête contrôlés |
+| UBFC-rPPG | 42 sujets, peu de mouvement |
+| MA-UBFC | UBFC-rPPG avec augmentation de mouvement |
+| BP4D | visages de BP4D+, étiquetés par **pseudo-labels** |
+
+La classe d'origine, `PhysNet_padding_Encoder_Decoder_MAX`, est copiée telle quelle dans
+`Astronauts/pulsation/sinc_intensity/models/PhysNetRPPG.py`.
+
+## L'encodeur seul
+
+`models/PhysNetRPPGEncoder.py` ne garde que **l'encodeur**, `ConvBlock1` à `ConvBlock9`.
+Le **décodeur** (deux `ConvTranspose3d`) est abandonné. Trois modifications :
+
+- **Plus de réduction temporelle.** Les deux pools spatio-temporels (2, 2, 2) de
+  l'encodeur deviennent spatiaux (1, 2, 2). Avec la réduction, la sortie serait à T/4,
+  soit 2,4 Hz pour nos vidéos à 9,57 Hz, avec un Nyquist à 72 BPM : sous une partie
+  des FC de l'étude (jusqu'à 102 BPM). Un pool n'a pas de poids, donc rien n'est perdu.
+- **La tête** est un pool spatial moyen suivi de `ConvBlock10` (1 × 1 × 1, 64 → 1),
+  initialisée par ses poids préentraînés. Elle sort une valeur par frame.
+- **Un seul canal.** La première convolution reçoit la somme de ses poids RGB. C'est
+  exactement le réseau d'origine appliqué à une image grise répliquée trois fois
+  (vérifié à 4 × 10⁻⁶ près sur les cinq poids).
+
+Un **contrôle** utilise la même architecture initialisée au hasard. Il sépare l'effet
+du préentraînement de celui de l'architecture.
+
+## Deux entrées
+
+- **diffnorm**, comme au préentraînement : (x[t+1] − x[t]) / (x[t+1] + x[t]), divisé par
+  l'écart-type du clip. Le dénominateur est borné par le bas à 0,2 × 2 × la moyenne du
+  clip, parce que nos intensités corrigées approchent 0 dans les vaisseaux. Le réseau
+  sort alors la **dérivée** du pouls. À l'évaluation, l'onde est intégrée (somme cumulée
+  et détendance) avant la comparaison au pouls d'épaisseur.
+- **zscore** : intensité centrée-réduite par clip, comme au premier entraînement.
+
+## Ce qui ne change pas
+
+Tout le reste est repris du premier entraînement :
+
+- les données : mêmes crops corrigés, mêmes 23 OD à 9,5–9,6 Hz ;
+- les rôles : test GRAZIANA, validation ROY JOANNIE ;
+- les clips : 95 frames, pas de 48 ;
+- les patchs : 64 × 64 ;
+- les augmentations : vitesse, miroir, inversion du temps, bruit ;
+- les pertes de SiNC : *bandwidth* + *sparsity* + *variance*, bande 40–120 BPM, spectres à 9,57 Hz ;
+- l'évaluation : `evaluate_oct.py`.
+
+Spécifique à ce balayage :
+
+- **60 époques** par entraînement : au premier entraînement, la validation
+  plafonnait dès l'époque 10 ;
+- AdamW avec **lr = 10⁻⁴ pour la tête** et **10⁻⁵ pour l'encodeur**, pour ne pas
+  effacer d'emblée ce qu'il a appris ;
+- lot de 16, pas de dropout, comme au préentraînement.
+
+Le balayage (`run_pretrained_sweep.py`) croise les **6 initialisations** (5 poids et
+le hasard) avec les **2 entrées**, soit **12 entraînements**.
+
+# Résultats
+
+## Vue d'ensemble
+
+{{< include figures_sinc_pretrained/tab_sweep.qmd >}}
+
+{{< include figures_sinc_pretrained/fig_grille.qmd >}}
+
+::: {.callout-important}
+## Aucun entraînement ne retrouve la FC
+
+- **Au mieux 9 vidéos sur 23 à ±10 % de `hr_prior`** (SCAMPS · zscore et MA-UBFC · zscore).
+  C'est au-dessus du hasard (4,4 sur 23), mais **en dessous d'une FC constante** de
+  66 BPM, qui en placerait 10. Le contrôle sans préentraînement en place 4 avec
+  diffnorm et 7 avec zscore, soit autant que les modèles préentraînés : le
+  préentraînement n'apporte rien de mesurable.
+- **Spearman entre −0,52 et +0,27.** Le signe est le plus souvent négatif : le
+  classement des FC prédites ne suit pas celui des vraies.
+- **Aucune entrée ne se détache.** diffnorm n'est pas meilleure que zscore, alors que
+  c'est l'entrée sur laquelle les poids ont été appris.
+- **Test GRAZIANA** (`hr_prior` = 60,7 BPM sur les trois réplicats). Aucun
+  entraînement ne la retrouve sur les trois. Deux tombent juste sur OD2 (UBFC · diffnorm
+  60,7, MA-UBFC · zscore 60,8). Les autres reviennent presque tous aux **mêmes valeurs**,
+  environ 78 BPM sur OD2 et 72 BPM sur OD3, quels que soient les poids et même sans
+  préentraînement, comme le premier entraînement.
+:::
+
+Ces valeurs récurrentes ne viennent pas des poids. Elles semblent venir des vidéos
+elles-mêmes. Sur les trois réplicats de GRAZIANA, la moyenne spatiale du crop corrigé a
+son pic principal dans la bande cardiaque à **75 BPM** (75,2, 74,7 et 74,8 BPM), et non
+à la FC de 60,7 BPM. La composante d'intensité la plus forte de ce crop n'est donc pas le
+pouls. Un réseau entraîné uniquement à trouver un pic net et unique dans la bande
+l'accroche plutôt que la FC.
+
+## Pertes de validation
+
+Le trait plein correspond à diffnorm et le pointillé à zscore, avec une couleur par
+initialisation.
+
+{{< include figures_sinc_pretrained/fig_val.qmd >}}
+
+Les deux contrôles sans préentraînement atteignent leur minimum dès l'époque 25, à
+0,53 avec diffnorm et 0,58 avec zscore. Les modèles préentraînés, eux, finissent plus
+haut (0,65 à 0,91), avec leur meilleure époque à 58 ou 59 sur 60 : ils n'ont pas fini
+de converger. Deux raisons :
+
+- les poids ont été appris à 30 fps, et placent d'abord leur pic **hors** de notre
+  bande (la perte *bandwidth* part de 0,65) ;
+- l'encodeur, à lr = 10⁻⁵, s'en éloigne lentement.
+
+Plus d'époques baisseraient sans doute les pertes. Mais les pertes basses du premier
+entraînement (0,33) n'avaient pas rendu la FC non plus.
+
+## FC prédite contre FC de référence
+
+Le menu choisit l'entraînement ; la vue initiale est le meilleur du balayage. Les
+barres donnent la plage des FC obtenues patch par patch, et les droites grises
+l'identité et ±10 %.
+
+{{< include figures_sinc_pretrained/fig_hr.qmd >}}
+
+## Test : MODICA GRAZIANA, meilleur entraînement
+
+{{< include figures_sinc_pretrained/fig_test_ondes.qmd >}}
+
+# Ce qu'on en retient
+
+Repartir d'un PhysNet préentraîné en rPPG ne change pas le constat du premier
+entraînement. Avec les seules pertes de SiNC, le réseau trouve un pic net dans la bande,
+mais ce n'est pas la FC. C'est vrai quels que soient les poids de départ (cinq jeux de
+visages ou le hasard) et l'entrée (diffnorm ou intensité).
+
+Le premier frein semble être le **signal**, plus que l'architecture ou l'initialisation.
+Dans ce crop, l'intensité porte des composantes périodiques plus fortes que le pouls.
+Sans référence, un objectif purement spectral n'a aucun moyen de les écarter.
+
+Pistes pour la suite :
+
+- **Supervision faible** par le pouls d'épaisseur des masques. C'est la seule source
+  qui retrouve la FC de GRAZIANA (61–62 BPM sur les trois réplicats).
+- **Origine des ~75 BPM** dans l'intensité du crop : appareil, balayage, ou résidu de
+  la correction d'intensité ?
+- **Autre région** : un crop plus profond, ou toute la choroïde.

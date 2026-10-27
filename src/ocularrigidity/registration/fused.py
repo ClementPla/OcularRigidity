@@ -33,6 +33,11 @@ class FusedResult:
     ref_percentile: float | None = (
         None  # of the reference's area in the full distribution
     )
+    # Only with ``return_probs=True``: sigmoid of the segmentation logits as
+    # uint8 (0..255 <-> 0..1), BEFORE the largest-component filter, raw and
+    # warped by the same transform as the frames.
+    raw_probs: np.ndarray | None = None  # (T, H, W) uint8
+    registered_probs: np.ndarray | None = None  # (T, H, W) uint8
 
 
 def _normalise(frames_u8: torch.Tensor) -> torch.Tensor:
@@ -46,8 +51,10 @@ def _encode_segment(
     batch_u8: torch.Tensor,
     amp_dtype: torch.dtype,
     keep_largest_cc: bool = True,
-) -> tuple[torch.Tensor, list[torch.Tensor]]:
-    """One encode, two outputs: the mask and the pyramid the regressor wants."""
+    return_probs: bool = False,
+):
+    """One encode, two outputs: the mask and the pyramid the regressor wants
+    (plus the uint8 probability map when ``return_probs``)."""
     with torch.autocast("cuda", dtype=amp_dtype):
         feats = seg_model.model.encoder(_normalise(batch_u8))
         logits = seg_model.model.segmentation_head(seg_model.model.decoder(feats))
@@ -56,6 +63,9 @@ def _encode_segment(
     else:
         mask = logits.squeeze(1) > 0.0
     # feats[0] and feats[1] are the stride-1 input and an empty stride-2 stage
+    if return_probs:
+        probs = (torch.sigmoid(logits.squeeze(1).float()) * 255.0).round_().to(torch.uint8)
+        return mask, list(feats[2:]), probs
     return mask, list(feats[2:])
 
 
@@ -157,8 +167,13 @@ def segment_and_register(
     ref_idx: int | None = None,
     device: str = "cuda",
     verbose: bool = True,
+    return_probs: bool = False,
 ) -> FusedResult:
-    """Segment and register one already-trimmed volume in a single encode pass."""
+    """Segment and register one already-trimmed volume in a single encode pass.
+
+    ``return_probs`` also returns the segmentation probabilities (uint8, raw and
+    warped), kept on the host as they come so they cost no GPU memory.
+    """
     import time
 
     timings: dict = {}
@@ -218,6 +233,7 @@ def segment_and_register(
     dx = torch.empty(T, dtype=torch.float32)
     dy = torch.empty(T, W, dtype=torch.float32)
     areas = torch.empty(T, dtype=torch.float64)
+    raw_probs = np.empty((T, H, W), dtype=np.uint8) if return_probs else None
     for s in tqdm(
         range(0, T, batch),
         desc="segmenting + registering",
@@ -225,9 +241,13 @@ def segment_and_register(
         leave=False,
     ):
         e = min(s + batch, T)
-        mask, feats = _encode_segment(
-            seg_model, d_frames[s:e], amp_dtype, keep_largest_cc=config.keep_largest_cc
+        out_seg = _encode_segment(
+            seg_model, d_frames[s:e], amp_dtype, keep_largest_cc=config.keep_largest_cc,
+            return_probs=return_probs,
         )
+        mask, feats = out_seg[0], out_seg[1]
+        if return_probs:
+            raw_probs[s:e] = out_seg[2].cpu().numpy()
         d_masks[s:e] = mask
         areas[s:e] = mask.sum(dim=(1, 2)).double().cpu()
         fixed = [f.expand(e - s, -1, -1, -1) for f in ref_feats]
@@ -252,13 +272,19 @@ def segment_and_register(
     raw_masks = np.empty((T, H, W), dtype=bool)
     registered_masks = np.empty((T, H, W), dtype=bool)
     registered_frames = np.empty((T, H, W), dtype=np.uint8)
+    registered_probs = np.empty((T, H, W), dtype=np.uint8) if return_probs else None
     for s in range(0, T, batch):
         e = min(s + batch, T)
         raw_masks[s:e] = d_masks[s:e].cpu().numpy()
-        data = torch.stack([d_masks[s:e].float(), d_frames[s:e].float()], dim=1)
+        chans = [d_masks[s:e].float(), d_frames[s:e].float()]
+        if return_probs:
+            chans.append(torch.from_numpy(raw_probs[s:e]).to(device).float())
+        data = torch.stack(chans, dim=1)
         out, _ = warp(data, dx[s:e].to(device), dy[s:e].to(device), (H, W))
         registered_masks[s:e] = (out[:, 0] > 0.5).cpu().numpy()
         registered_frames[s:e] = out[:, 1].clamp(0, 255).to(torch.uint8).cpu().numpy()
+        if return_probs:
+            registered_probs[s:e] = out[:, 2].round().clamp(0, 255).to(torch.uint8).cpu().numpy()
     timings["warp"] = _tick() - t0
 
     del d_frames, d_masks
@@ -272,6 +298,8 @@ def segment_and_register(
             cols = bad_cols.cpu().numpy()
             registered_frames[..., cols] = 0
             registered_masks[..., cols] = 0
+            if return_probs:
+                registered_probs[..., cols] = 0
 
     transform = {
         "dx": dx.numpy(),
@@ -293,6 +321,8 @@ def segment_and_register(
         ref_idx=ref_idx,
         ref_percentile=ref_percentile,
         timings=timings,
+        raw_probs=raw_probs,
+        registered_probs=registered_probs,
     )
 
 

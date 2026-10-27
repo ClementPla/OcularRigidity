@@ -5,7 +5,7 @@ compute_registration_metrics.py
 Mesure, avec LA MEME definition que ``register_newmodel.py``, la qualite des
 variantes de recalage deja ecrites a cote des donnees :
 
-    E:/SANSORI/Reproducibility/<SLUG>/RawImages/<variante>/
+    E:/SANSORI/Reproducibility/<variante>/<SLUG>/
         registered_video.mp4  mask.npz  transform.npz  registration_params.json
 
 Critere : ``registration_metrics.ncc_to_median`` -- NCC de chaque frame recalee a
@@ -44,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import registration_metrics as rm  # noqa: E402
 from ocularrigidity.data.compression import read_gray  # noqa: E402
 from ocularrigidity.data.io import load_mask  # noqa: E402
+from ocularrigidity.scripts.batch_layout import flat_data_dir, flat_slugs  # noqa: E402
 
 PATH_GENERAL = Path("E:/SANSORI/Reproducibility")
 OUT_CSV = Path("E:/NASA_Rigidity/Reproducibility/registration_comparison/metrics.csv")
@@ -56,14 +57,11 @@ RE_SLUG = re.compile(r"^(?P<participant>.+)_(?P<eye>OD|OS)(?P<replicate>\d+)$")
 
 
 def list_slugs() -> list[str]:
-    return sorted(
-        d.name for d in PATH_GENERAL.iterdir()
-        if d.is_dir() and RE_SLUG.match(d.name) and (d / "RawImages").is_dir()
-    )
+    return flat_slugs(PATH_GENERAL)
 
 
 def measure(slug: str, variant: str) -> dict:
-    d = PATH_GENERAL / slug / "RawImages" / variant
+    d = flat_data_dir(PATH_GENERAL, slug, variant)
     row = {"slug": slug, "variant": variant}
     params_path = d / "registration_params.json"
     params = json.loads(params_path.read_text(encoding="utf-8")) if params_path.exists() else {}

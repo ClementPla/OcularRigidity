@@ -62,6 +62,7 @@ from ocularrigidity.pipeline_config import REGISTRATION
 from ocularrigidity.registration.deep_learning.models.losses import warp
 from ocularrigidity.registration.fused import segment_and_register
 from ocularrigidity.registration.postprocess import filter_bad_ascans_per_bms
+from ocularrigidity.scripts.batch_layout import flat_raw_dir
 from ocularrigidity.scripts.registration.astronauts import (
     build_cube_and_timestamps,
     load_ordered_oct_series,
@@ -173,7 +174,7 @@ def main(argv=None) -> int:
     ap.add_argument("--slug", required=True)
     args = ap.parse_args(argv)
 
-    raw_dir = PATH_GENERAL / args.slug / "RawImages"
+    raw_dir = flat_raw_dir(PATH_GENERAL, args.slug)
     series = load_ordered_oct_series(raw_dir)
     cube, _ = build_cube_and_timestamps(raw_dir, series)
     T, H, W = cube.shape

@@ -37,7 +37,7 @@ Entrees (variante de reference, celle de la page Strain repeatability)
         registered_frames/<astro>/<moment>/<condition>/cube.mp4
         registered_masks/<astro>/<moment>/<condition>/mask.npz
         demons_strain/conditions.csv            um_per_px_y
-    E:/SANSORI/Reproducibility/<SLUG>/RawImages/  horodatages (XML)
+    E:/SANSORI/Reproducibility/RawImages/<SLUG>/  horodatages (XML)
 
 Sorties (sous ``<variante>/hr_bandpass_<lo>_<hi>/``, ex. ``hr_bandpass_50_85``)
 ------------------------------------------------------------------------------
@@ -80,6 +80,7 @@ from ocularrigidity.motion.pulsation.rate import lomb_scargle_power
 from ocularrigidity.motion.video_timeline_aligner import VideoTimelineAligner
 from ocularrigidity.scripts.one_cycle.astronauts import _prepared_registrator
 from ocularrigidity.scripts.registration.astronauts import load_ordered_oct_series
+from ocularrigidity.scripts.batch_layout import flat_data_dir
 
 # --------------------------------------------------------------------------- #
 # Parametres
@@ -96,7 +97,7 @@ HR_PRIOR_CSV = Path("E:/NASA_Rigidity/Reproducibility/hr_prior.csv")
 REF_ROOT = Path(os.environ.get(
     "OR_REF_ROOT", str(SEGVAR_ROOT / "model1_scale_1.0_flatten_choroid_xcorr")))
 # Non vide : les videos et masques recales sont relus A COTE DES DONNEES,
-# ``<path>/RawImages/<OR_DATA_SUBDIR>/{registered_video.mp4, mask.npz}`` (format
+# ``<racine>/<OR_DATA_SUBDIR>/<slug>/{registered_video.mp4, mask.npz}`` (format
 # de ``export_registered_videos.py`` et ``register_newmodel.py``), au lieu de
 # ``VARIANT_ROOT/registered_frames`` et ``registered_masks``. Vide : comportement
 # d'origine, inchange.
@@ -146,12 +147,11 @@ def raw_timestamps_us(raw_dir: Path) -> np.ndarray:
     )
 
 
-def find_raw_dir(condition_dir: Path) -> Path | None:
-    for name in ("RawImages", "RawData"):
-        d = condition_dir / name
-        if d.is_dir():
-            return d
-    return None
+def data_dir_of(path) -> Path:
+    """``<racine>/<OR_DATA_SUBDIR>/<slug>/`` a partir de la colonne ``path``, qui
+    vaut ``<racine>/RawImages/<slug>``."""
+    path = Path(path)
+    return flat_data_dir(path.parent.parent, path.name, DATA_SUBDIR)
 
 
 def grille(duree_s: float, bpm_range) -> np.ndarray:
@@ -205,7 +205,7 @@ def process(row, um_y: float, hr_prior: float) -> tuple[dict, dict]:
     slug = row["slug"]
     astro, moment, condition = row["astro"], row["moment"], row["condition"]
     if DATA_SUBDIR:
-        data_dir = Path(row["path"]) / "RawImages" / DATA_SUBDIR
+        data_dir = data_dir_of(row["path"])
         frames_path = data_dir / "registered_video.mp4"
         mask_path = data_dir / "mask.npz"
     else:
@@ -214,9 +214,9 @@ def process(row, um_y: float, hr_prior: float) -> tuple[dict, dict]:
     for p in (frames_path, mask_path):
         if not p.exists():
             raise FileNotFoundError(p)
-    raw_dir = find_raw_dir(Path(row["path"]))
-    if raw_dir is None:
-        raise FileNotFoundError(f"RawImages absent : {row['path']}")
+    raw_dir = Path(row["path"])
+    if not raw_dir.is_dir():
+        raise FileNotFoundError(f"RawImages absent : {raw_dir}")
 
     reg = _prepared_registrator(frames_path, mask_path, DEVICE, verbose=False)
     ts_us = raw_timestamps_us(raw_dir)
@@ -320,14 +320,14 @@ def main() -> int:
         # Une acquisition dont CE recalage a echoue n'a pas de video a lire : on
         # l'ecarte ici, avec un compte, plutot que de la marquer en echec.
         def _registration_ok(path) -> bool:
-            f = Path(path) / "RawImages" / DATA_SUBDIR / "registration_params.json"
+            f = data_dir_of(path) / "registration_params.json"
             try:
                 return json.loads(f.read_text(encoding="utf-8")).get("status") == "ok"
             except Exception:  # noqa: BLE001
                 return False
 
         keep = conditions["path"].map(_registration_ok)
-        print(f"recalage lu dans RawImages/{DATA_SUBDIR}/ : {int(keep.sum())} valide(s), "
+        print(f"recalage lu dans {DATA_SUBDIR}/<slug>/ : {int(keep.sum())} valide(s), "
               f"{int((~keep).sum())} ecartee(s)")
         conditions = conditions[keep].reset_index(drop=True)
     if LIMIT is not None:

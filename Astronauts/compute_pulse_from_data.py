@@ -111,8 +111,9 @@ FRAMES_SUBDIR = "registered_frames"
 MASKS_SUBDIR = "registered_masks"
 OUTPUT_SUBDIR = "pulse_from_data"
 # Non vide : les videos et masques recales sont relus A COTE DES DONNEES,
-# ``<condition>/RawImages/<OR_DATA_SUBDIR>/{registered_video.mp4, mask.npz}``
-# (format de ``export_registered_videos.py`` et ``register_newmodel.py``), au
+# ``layout.data_dir(condition, OR_DATA_SUBDIR)/{registered_video.mp4, mask.npz}``,
+# soit ``<condition>/RawImages/<sub>/`` (SANSORI) ou ``<racine>/<sub>/<slug>/``
+# (plate) (format de ``export_registered_videos.py`` et ``register_newmodel.py``), au
 # lieu de ``SEGVAR_ROOT/<variante>/registered_frames|registered_masks``. Les
 # tables sortent toujours sous ``SEGVAR_ROOT/<variante>/pulse_from_data``. Vide :
 # comportement d'origine, inchange.
@@ -175,11 +176,7 @@ METHODS = ("0_sans_filtre", "1_fir", "2_ssa", "3a_mssa", "3b_ssa_canal",
 # Resolution des chemins
 # --------------------------------------------------------------------------- #
 def find_raw_dir(condition_dir: Path) -> Path | None:
-    for name in ("RawImages", "RawData"):
-        d = condition_dir / name
-        if d.is_dir():
-            return d
-    return None
+    return layout.raw_dir(condition_dir)
 
 
 def raw_timestamps_us(raw_dir: Path) -> np.ndarray:
@@ -564,7 +561,7 @@ def process_condition(path_condi: Path) -> dict:
 
     variant_root = SEGVAR_ROOT / MASK_VARIANT
     if DATA_SUBDIR:
-        data_dir = path_condi / "RawImages" / DATA_SUBDIR
+        data_dir = layout.data_dir(path_condi, DATA_SUBDIR)
         frames_path = data_dir / "registered_video.mp4"
         mask_path = data_dir / "mask.npz"
     else:

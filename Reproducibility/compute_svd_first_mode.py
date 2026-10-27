@@ -72,7 +72,7 @@ def charger(path_condi: Path) -> dict:
         peak_lot = np.asarray(z["peak_comp"], dtype=float)
         u_lot, hr = np.asarray(z["u_time"], dtype=float), float(z["hr"])
 
-    data_dir = path_condi / "RawImages" / cpd.DATA_SUBDIR
+    data_dir = cpd.layout.data_dir(path_condi, cpd.DATA_SUBDIR)
     registrator = cpd._prepared_registrator(data_dir / "registered_video.mp4",
                                             data_dir / "mask.npz", cpd.DEVICE,
                                             verbose=False)

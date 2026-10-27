@@ -20,8 +20,10 @@ acquis**. Rien n'y est calculé sur les images.
 ## Ce qui est lu, et sur quoi exactement
 
 **55 acquisitions**, 8 participants, **18 442 B-scans**. Une acquisition est un
-dossier `E:/SANSORI/Reproducibility/<NOM_PRENOM_OEilN>/` : un participant, un
-œil, un enregistrement — et `N` est le rang chronologique du réplicat.
+dossier `E:/SANSORI/Reproducibility/RawImages/<NOM_PRENOM_OEilN>/` (les `.tif`
+et leur XML) : un participant, un œil, un enregistrement — et `N` est le rang
+chronologique du réplicat. Chaque recalage vit à côté, avec les mêmes
+sous-dossiers : `E:/SANSORI/Reproducibility/registered_<variante>/<NOM_PRENOM_OEilN>/`.
 
 Les données brutes arrivent en vrac, tous participants mêlés dans un dossier
 unique, avec des `.tif` aux noms opaques (`7DB83000.tif`). C'est

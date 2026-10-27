@@ -1,0 +1,202 @@
+---
+title: "Analyse de la pulsatilité"
+subtitle: "Le coefficient de rigidité k de Sayah, ce qui le fait varier, et ses corrélations avec les paramètres de SANS"
+include-in-header: figures_sans_pulsatilite/plotlyjs.html
+---
+
+Cette page fait le point sur le **coefficient de rigidité oculaire $k$** (Sayah et al.
+2020) de la cohorte SANS : ses valeurs, ce qui le fait varier, sa répétabilité, et
+ses corrélations avec les paramètres de SANS. Elle ne recalcule rien. Elle relit les
+tables du lot `Astronauts/compute_sans_predictors.py`, variante de segmentation
+`model1_scale_1.0_flatten_choroid_xcorr`, et reproduit au bit près les $r$ publiés
+dans `sans_correlations.csv` pour les quatre marqueurs de la chaîne de $k$.
+
+**Effectifs** : 107 acquisitions (51 avant le vol, 56 après), 28 yeux, 14
+astronautes. $k$ n'est défini que sur **78 acquisitions** (34 avant, 44 après) :
+quatre astronautes (8 yeux) n'ont pas de longueur axiale dans `sansori_db.db`.
+
+## Le calcul de $k$
+
+Pour chaque acquisition, `rigidity_hilbert` (dans
+`Astronauts/compute_rigidity_compare_mask_model.py`) :
+
+1. calcule l'épaisseur choroïdienne de chaque A-scan à chaque frame, à partir du
+   masque recalé ;
+2. filtre ces séries par un **passe-bande centré sur la FC** (± 20 BPM), puis prend
+   l'enveloppe de Hilbert ;
+3. donne ainsi l'amplitude crête-à-crête $\Delta CT$ (médiane des A-scans) et
+   l'épaisseur de base $CT$ (médiane de tout le cube).
+
+`sayah_k` (dans `Astronauts/compute_rigidity_time_series.py`) applique ensuite la
+formule de Sayah :
+
+$$
+\Delta V = \frac{\pi}{2}\,\big(0{,}87\,AL + CT\big)^2\,\Delta CT,
+\qquad
+k = \frac{\ln\!\big((PIO + OPA)/PIO\big)}{\Delta V}.
+$$
+
+La FC, la PIO et l'OPA viennent de `visit_data.csv` ; la longueur axiale $AL$ vient
+de `sansori_db.db`.
+
+{{< include figures_sans_pulsatilite/pk_tab_valeurs.qmd >}}
+
+{{< include figures_sans_pulsatilite/pk_k_avant_apres.qmd >}}
+
+**Le vol ne déplace pas $k$.** La médiane par acquisition passe de 26 à
+19 × 10⁻³ mm⁻³. Mais sur les 20 yeux mesurés aux deux moments, $k$ monte chez 9 et
+baisse chez 11 : médiane des écarts −1,0 × 10⁻³ mm⁻³, Wilcoxon $p = 0{,}45$. L'OPA,
+elle, baisse nettement après le vol (2,8 → 2,1 mmHg en médiane).
+
+## Ce qui fait varier $k$
+
+En logarithme, la formule devient une somme de trois termes :
+
+$$
+\ln k = \underbrace{\ln\ln\!\Big(1 + \tfrac{OPA}{PIO}\Big)}_{\text{OPA / PIO}}
+\;-\;\underbrace{2\ln\big(0{,}87\,AL + CT\big)}_{\text{AL + CT}}
+\;-\;\underbrace{\ln \Delta CT}_{\Delta CT}
+\;-\;\ln\tfrac{\pi}{2}.
+$$
+
+La variance de $\ln k$ se partage donc exactement entre ces trois termes. Chacun
+compte pour $\operatorname{cov}(\text{terme}, \ln k)/\operatorname{var}(\ln k)$, et
+la somme vaut 100 %, termes croisés compris.
+
+{{< include figures_sans_pulsatilite/pk_decomposition.qmd >}}
+
+**$k$ est, à 85 %, l'inverse de l'amplitude de pulsation $\Delta CT$.** Le rapport
+OPA / PIO en explique 20 %. La géométrie ($AL$ et $CT$) ne contribue en rien (−4 %) :
+son terme a un écart-type de 0,07 en log, contre 0,61 pour celui de $\Delta CT$. Toute la
+fiabilité de $k$ est donc celle de la mesure de $\Delta CT$, une pulsation de
+l'ordre de 10 µm, soit 2 à 3 pixels.
+
+## Répétabilité
+
+On mesure ici l'**ICC(A,1)** entre deux acquisitions du même œil dans la même
+séance, avant le vol, ainsi que le **CV intra-œil**. La dernière colonne donne la
+**corrélation avant / après le vol** du même œil : une stabilité à long terme,
+mesurée à des mois d'intervalle et avec un vol entre les deux.
+
+{{< include figures_sans_pulsatilite/pk_tab_repetabilite.qmd >}}
+
+L'épaisseur $CT$ est très répétable : ICC 0,93, CV 7 %. $\Delta CT$ ne l'est pas
+(ICC 0,44, CV 52 %), et $\Delta V$ hérite de son bruit. $k$ fait mieux que ses deux
+entrées (ICC 0,67), mais avec un CV intra-œil de 38 % : deux acquisitions du même
+œil, à quelques minutes d'intervalle, donnent couramment des $k$ qui diffèrent d'un
+tiers.
+
+## Corrélations avec les paramètres de SANS
+
+**Six issues de SANS**, toutes définies comme *après − avant* (voir
+[Methods](sans-methods.qmd)) :
+
+* le gonflement rétinien $\Delta TRT$ des quatre quadrants (S, I, N, T) et sa
+  moyenne ;
+* l'aplatissement du globe $\Delta AL$.
+
+**Sept marqueurs** :
+
+* la chaîne de $k$ : $k$, $\Delta V$, $\Delta CT$, $CT$ ;
+* les entrées cliniques de $k$ : $AL$, PIO, OPA. Elles permettent de voir si une
+  corrélation de $k$ vient de la choroïde ou de la clinique.
+
+**Trois vues** : la valeur avant le vol (peut-on *prédire* ?), après le vol, et leur
+différence. Pour $AL$, la vue *après − avant* **est** $\Delta AL$ ; elle est donc
+laissée vide.
+
+::: {.callout-important}
+## Comment lire les q
+
+* Les **astérisques de la carte** et le **q (page)** corrigent les tests de chaque
+  vue par Benjamini-Hochberg : 42 tests avant et après le vol, 36 pour après −
+  avant.
+* Le **q (catégorie du lot)** est celui des pages *Prediction of SANS*. Il porte
+  sur les 22 marqueurs de la catégorie rigidité et n'existe donc que pour la chaîne
+  de $k$.
+* **Aucune des deux corrections ne tient compte d'un autre point** : les deux yeux
+  d'un même astronaute ne sont pas indépendants. Voir la table par astronaute plus
+  bas.
+:::
+
+{{< include figures_sans_pulsatilite/pk_heatmap.qmd >}}
+
+{{< include figures_sans_pulsatilite/pk_tab_significatifs.qmd >}}
+
+Les nuages de points derrière chaque case : choisir le marqueur et la vue dans le
+menu.
+
+{{< include figures_sans_pulsatilite/pk_nuages.qmd >}}
+
+### Ce que disent les corrélations
+
+* **$k$ mesuré avant le vol ne prédit aucune issue.** Son meilleur $r$ est
+  +0,46 contre $\Delta TRT_N$ ($n = 16$, $p = 0{,}08$). Aucune de ses corrélations
+  d'avant le vol n'atteint $p < 0{,}05$.
+* **La seule corrélation forte d'avant le vol est celle de l'épaisseur $CT$.**
+  $CT \sim \Delta TRT_N$ : $r = -0{,}69$ ($n = 18$, $q$ catégorie 0,005, $q$ page
+  0,063). Une choroïde épaisse avant le vol va avec un gonflement rétinien nasal
+  plus faible. C'est l'entrée de $k$ que la formule pèse le moins, et $\Delta CT$,
+  qui fait $k$, n'a aucun lien ($r = -0{,}17$).
+* **Après le vol, $k$ suit l'aplatissement du globe** : $r = -0{,}62$ contre
+  $\Delta AL$ ($n = 20$, $q$ page 0,069). Le signe est négatif ; comme $\Delta AL$
+  est négatif, les globes qui s'aplatissent le plus ont le $k$ post-vol le plus
+  élevé. Ce lien ne vient pas de $\Delta CT$ seul ($r = +0{,}18$), et l'OPA
+  post-vol en porte une partie ($r = -0{,}47$). Il ne passe pas non plus par le
+  facteur $AL$ de la formule (voir la circularité ci-dessous).
+* **Rien ne survit** à la correction de la page, en dehors de $CT$ post-vol
+  $\sim \Delta TRT_N$ ($q = 0{,}033$).
+
+### Deux yeux par astronaute
+
+Les $n$ ci-dessus comptent des **yeux**. Or les deux yeux d'un astronaute
+partagent sa physiologie et son vol. La même corrélation, refaite avec une valeur
+par astronaute (moyenne des deux yeux) :
+
+{{< include figures_sans_pulsatilite/pk_tab_astronautes.qmd >}}
+
+**$CT \sim \Delta TRT_N$ tient avec un point par astronaute** ($r = -0{,}78$,
+$n = 9$, $p = 0{,}013$). Celle de $k$ monte à +0,70, mais sur 8 astronautes, et
+reste à $p = 0{,}054$ : ce n'est pas un résultat.
+
+### Circularité avec $\Delta AL$
+
+$k$ contient $AL$, et $\Delta AL = AL_\text{après} - AL_\text{avant}$. La table vérifie
+si la corrélation post-vol de $k$ avec $\Delta AL$ ne fait que repasser par $AL$.
+
+{{< include figures_sans_pulsatilite/pk_tab_circularite.qmd >}}
+
+Ce n'est pas le cas :
+
+* $AL$ seul ne corrèle pas avec $\Delta AL$, ni avant ni après le vol ;
+* recalculé **sans** le facteur $(0{,}87\,AL + CT)^2$, $k$ donne encore $r = -0{,}60$.
+
+Le lien vient donc de $\Delta CT$ et de l'OPA / PIO post-vol, pas de la géométrie.
+
+## Les paramètres de SANS entre eux
+
+Pour situer les corrélations ci-dessus : les six issues entre elles, plus la
+longueur axiale d'avant le vol.
+
+{{< include figures_sans_pulsatilite/pk_issues.qmd >}}
+
+* **Le gonflement rétinien suit deux axes** : supérieur–nasal ($r = 0{,}74$) et
+  inférieur–temporal ($r = 0{,}82$). Les deux axes ne corrèlent qu'à 0,42–0,53.
+* **$\Delta AL$ va surtout avec le quadrant nasal** ($r = -0{,}54$), puis le
+  supérieur ($-0{,}45$), à peine avec I et T (≈ −0,2). Les deux signes de SANS ne
+  se remplacent pas.
+* **La longueur axiale d'avant le vol ne prédit pas l'aplatissement** ($r = -0{,}04$).
+
+## En résumé
+
+* $k$ est surtout l'inverse de $\Delta CT$ (85 % de sa variance), une pulsation de
+  quelques pixels à 52 % de CV intra-œil.
+* **$k$ ne prédit pas SANS.** Avant le vol, aucune corrélation n'atteint
+  $p < 0{,}05$.
+* La corrélation post-vol avec $\Delta AL$ ($r = -0{,}62$) est la plus forte de
+  $k$. Ce n'est pas un artefact du facteur $AL$, mais elle ne passe pas la
+  correction de la page et elle n'existe qu'**après** le vol : elle décrit l'œil
+  aplati, elle ne l'annonce pas.
+* **Le seul prédicteur qui tienne reste l'épaisseur choroïdienne statique $CT$**,
+  contre le gonflement nasal, y compris avec un point par astronaute. Ce n'est pas
+  une mesure de pulsatilité.

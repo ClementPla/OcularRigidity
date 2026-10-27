@@ -61,7 +61,7 @@ d'entraînement, il redevient plausible.
    Les colonnes à membrane de Bruch inexploitable sont noircies comme dans
    `fused.py`.
 4. La sortie est en 496 × 768, avec les mêmes cinq fichiers que les autres
-   variantes, sous `RawImages/registered_cascade_v9_1536x1024/`.
+   variantes, sous `registered_cascade_v9_1536x1024/<slug>/`.
 
 `RegistrationConfig.scale_factor` n'y joue **aucun** rôle : il n'est lu que
 par le recalage classique, et le vérifier donne un résultat identique bit pour

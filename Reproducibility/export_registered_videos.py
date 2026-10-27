@@ -5,10 +5,11 @@ export_registered_videos.py
 Ecrit les VIDEOS RECALEES des acquisitions de repetabilite A COTE DE LEURS
 DONNEES, en TROIS variantes qui ne font varier qu'un facteur a la fois :
 
-    E:/SANSORI/Reproducibility/<SLUG>/RawImages/
-        registered_segformer2_flatten_choroid_xcorr/
-        registered_model1_flatten_choroid_xcorr/
-        registered_model1_fullframe/
+    E:/SANSORI/Reproducibility/
+        registered_segformer2_flatten_choroid_xcorr/<SLUG>/
+        registered_model1_flatten_choroid_xcorr/<SLUG>/
+        registered_model1_fullframe/<SLUG>/
+    (entree : ``RawImages/<SLUG>/`` ; chemins via ``batch_layout.data_dir``)
 
     variante                              segmentation      recalage
     ------------------------------------  ----------------  ---------------------------
@@ -326,7 +327,7 @@ def check_consistency(raw_dir: Path, variant: Variant, shape):
     for other in VARIANTS.values():
         if other.key == variant.key:
             continue
-        params = read_params(raw_dir / other.subdir)
+        params = read_params(layout.data_dir(raw_dir, other.subdir))
         if not params or params.get("status") != "ok":
             continue
         ref = (params.get("n_frames"), params.get("height"), params.get("width"))
@@ -456,10 +457,10 @@ def process(cr, condition_dir: Path, variant: Variant, model, model_sha: str) ->
     meta = base_meta(variant, condition_dir.name, model_sha)
     raw_dir = cr.find_raw_dir(condition_dir)
     if raw_dir is None:
-        out_dir = condition_dir / "RawImages" / variant.subdir
+        out_dir = layout.data_dir(condition_dir, variant.subdir)
         row = {"status": "skipped", "reason": "no_raw_dir"}
     else:
-        out_dir = raw_dir / variant.subdir
+        out_dir = layout.data_dir(condition_dir, variant.subdir)
         try:
             if variant.engine == "chain":
                 row = run_chain(cr, raw_dir, out_dir, model)
@@ -519,7 +520,7 @@ def report(conditions) -> None:
         variant = VARIANTS[key]
         ok, bad = [], []
         for cond in conditions:
-            out_dir = cond / "RawImages" / variant.subdir
+            out_dir = layout.data_dir(cond, variant.subdir)
             params = read_params(out_dir)
             if params and params.get("status") == "ok" and is_complete(out_dir):
                 ok.append(cond.name)
@@ -607,7 +608,7 @@ def main(argv=None) -> int:
         todo = [
             cond
             for cond in conditions
-            if args.overwrite or not is_complete(cond / "RawImages" / variant.subdir)
+            if args.overwrite or not is_complete(layout.data_dir(cond, variant.subdir))
         ]
         if args.limit is not None:
             todo = todo[: args.limit]

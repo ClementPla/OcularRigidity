@@ -16,9 +16,9 @@ l'image.
 
 Entrees
 -------
-    E:/SANSORI/Reproducibility/<SLUG>/RawImages/
-        registered_cascade_v9_1536x1024/{registered_video.mp4, mask.npz}
-        <hash>.xml                                  horodatages, taille du pixel
+    E:/SANSORI/Reproducibility/
+        registered_cascade_v9_1536x1024/<SLUG>/{registered_video.mp4, mask.npz}
+        RawImages/<SLUG>/<hash>.xml                 horodatages, taille du pixel
     E:/NASA_Rigidity/Reproducibility/SegmentationVariations/
         cascade_v9_1536x1024_hr_mediane/pulse_from_data/
             conditions.csv  traces/<slug>.npz        hr, t, u_time (grille de reference)
@@ -118,6 +118,7 @@ from ocularrigidity.registration.deep_learning.models.losses import (  # noqa: E
 )
 from ocularrigidity.scripts.one_cycle.astronauts import _prepared_registrator  # noqa: E402
 from ocularrigidity.scripts.registration.astronauts import load_ordered_oct_series  # noqa: E402
+from ocularrigidity.scripts.batch_layout import flat_data_dir, flat_raw_dir  # noqa: E402
 from ocularrigidity.segmentation.utils import (  # noqa: E402
     get_choroid_segmentation_model,
     get_registration_model,
@@ -222,8 +223,8 @@ def ptp_nan(y):
 def process(slug, row, seg_model, reg_model, config, ct_traces):
     t_all = time.perf_counter()
     m = rnm.RE_SLUG.match(slug)
-    raw_dir = PATH_GENERAL / slug / "RawImages"
-    data_dir = raw_dir / DATA_SUBDIR
+    raw_dir = flat_raw_dir(PATH_GENERAL, slug)
+    data_dir = flat_data_dir(PATH_GENERAL, slug, DATA_SUBDIR)
     npz_path = PULSE_DIR / "traces" / f"{slug}.npz"
     ct_key = f"{slug}__ct_fir_um"
     for p in (data_dir / "registered_video.mp4", data_dir / "mask.npz", npz_path):

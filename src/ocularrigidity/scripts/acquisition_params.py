@@ -31,7 +31,8 @@ Trois sorties, qui repondent aux trois questions posees :
 Ce que « une condition » veut dire
 ----------------------------------
 Un dossier portant un sous-dossier ``RawImages`` (ou ``RawData``) avec les .tif
-et leur .xml. Les series retenues sont celles de ``load_ordered_oct_series`` --
+et leur .xml -- ou, sur l'arborescence plate de la repetabilite, le dossier
+``RawImages/<slug>/`` qui les porte directement. Les series retenues sont celles de ``load_ordered_oct_series`` --
 B-scan OCT present sur disque et horodate -- c'est-a-dire EXACTEMENT les images
 qui composent la video traitee par le reste de la chaine. Les series du XML sans
 .tif sont comptees a part (``n_series_xml`` vs ``n_frames``) plutot que
@@ -64,10 +65,15 @@ from ocularrigidity.scripts.registration.astronauts import load_ordered_oct_seri
 # Chemins
 # --------------------------------------------------------------------------- #
 def find_raw_dir(condition_dir: Path) -> Path | None:
+    """``RawImages/`` (ou ``RawData/``) sous la condition ; a defaut, la condition
+    elle-meme si elle porte directement le .xml -- c'est le cas de l'arborescence
+    plate, ou une condition EST ``<racine>/RawImages/<slug>/``."""
     for name in ("RawImages", "RawData"):
         d = condition_dir / name
         if d.is_dir():
             return d
+    if any(Path(condition_dir).glob("*.xml")):
+        return Path(condition_dir)
     return None
 
 

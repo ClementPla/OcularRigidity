@@ -232,12 +232,8 @@ FLATTEN_CONFIG = RegistrationConfig(
 # Resolution des chemins (arborescence SANSORI)
 # --------------------------------------------------------------------------- #
 def find_raw_dir(condition_dir: Path) -> Path | None:
-    """Sous-dossier contenant les .tif bruts + l'export XML Spectralis."""
-    for name in ("RawImages", "RawData"):
-        d = condition_dir / name
-        if d.is_dir():
-            return d
-    return None
+    """Dossier contenant les .tif bruts + l'export XML Spectralis (cf. ``batch_layout``)."""
+    return layout.raw_dir(condition_dir)
 
 
 def iter_conditions():

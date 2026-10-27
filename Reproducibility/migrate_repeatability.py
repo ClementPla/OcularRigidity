@@ -10,9 +10,12 @@ Spectralis dans un seul dossier, en un dossier par acquisition sous
         |
         v
     E:/SANSORI/Reproducibility/
-        BELANGER_CHARLES_OD1/RawImages/      les .tif de CETTE acquisition + son .xml
-        DESCOVICH_DENISE_OD1/RawImages/
-        ...
+        RawImages/
+            BELANGER_CHARLES_OD1/            les .tif de CETTE acquisition + son .xml
+            DESCOVICH_DENISE_OD1/
+            ...
+        registered_<variante>/<slug>/        ecrits plus tard par les scripts de
+                                             recalage, memes sous-dossiers que RawImages/
 
 Ce qui decide du regroupement
 -----------------------------
@@ -103,9 +106,14 @@ from ocularrigidity.data.spectralis import SpectralisStudy
 SOURCE = Path("D:/SANSORI/REPEATABILITY/Raw Images")
 DEST = Path("E:/SANSORI/Reproducibility")
 
-# Sous-dossier attendu par le reste de la chaine (``find_raw_dir``,
-# ``load_ordered_oct_series``, plus tard ``export_registered_video``).
+# Dossier des donnees brutes, a la racine : ``DEST/RawImages/<slug>/``. Les
+# variantes de recalage sont ses soeurs (``DEST/registered_*/<slug>/``) -- cf.
+# ``ocularrigidity.scripts.batch_layout``, que lit le reste de la chaine.
 RAW_SUBDIR = "RawImages"
+
+
+def raw_dir_of(slug: str) -> Path:
+    return DEST / RAW_SUBDIR / slug
 
 EYE_OF_LATERALITY = {"R": "OD", "L": "OS", "OD": "OD", "OS": "OS"}
 
@@ -216,10 +224,8 @@ def read_placed(dest: Path) -> list[dict]:
     pris.
     """
     placed = []
-    for xml in sorted(dest.glob(f"*/{RAW_SUBDIR}/*.xml")):
-        slug = xml.parent.parent.name
-        if slug.startswith("_"):
-            continue
+    for xml in sorted(dest.glob(f"{RAW_SUBDIR}/*/*.xml")):
+        slug = xml.parent.name
         try:
             e = read_export(xml)
         except Exception as exc:
@@ -403,7 +409,7 @@ def move_file(src: Path, dst: Path, verify_hash: bool) -> None:
 
 
 def apply_move(e: dict, verify_hash: bool) -> str:
-    raw_dir = DEST / e["slug"] / RAW_SUBDIR
+    raw_dir = raw_dir_of(e["slug"])
     raw_dir.mkdir(parents=True, exist_ok=True)
     for f in e["files"]:
         src = e["dir"] / f
@@ -478,7 +484,7 @@ def main(argv=None) -> int:
             e["status"] = "present"
         elif e["is_duplicate"]:
             e["status"] = "duplicate"
-        elif (DEST / e["slug"]).exists():
+        elif raw_dir_of(e["slug"]).exists():
             e["status"] = "skipped"
         else:
             e["status"] = "to_move"
@@ -518,7 +524,7 @@ def main(argv=None) -> int:
         "t_start": e["t_start"], "duration_s": e["duration_s"],
         "n_frames": e["n_frames"], "n_files": len(e["files"]),
         "duplicate_of": e["duplicate_of"],
-        "dest": str(DEST / e["slug"] / RAW_SUBDIR) if e["slug"] else None,
+        "dest": str(raw_dir_of(e["slug"])) if e["slug"] else None,
         "source": str(e["xml_path"]),
     } for e in exports]).sort_values(
         ["last_name", "first_name", "eye", "t_start"], kind="stable")

@@ -4,8 +4,16 @@ Ou sont les conditions, et sous quel nom -- pour les scripts de lot.
 
 Deux arborescences coexistent et les memes lots doivent tourner sur les deux :
 
-    SANSORI      E:/SANSORI/<astro>/<...>_rigidity/<...OD|OS...>/     3 niveaux
-    plate        E:/SANSORI/Reproducibility/<NOM_PRENOM_OEilN>/       1 niveau
+    SANSORI      E:/SANSORI/<astro>/<...>_rigidity/<...OD|OS...>/RawImages/
+                 E:/SANSORI/<astro>/<...>_rigidity/<...OD|OS...>/RawImages/registered*/
+    plate        E:/SANSORI/Reproducibility/RawImages/<NOM_PRENOM_OEilN>/
+                 E:/SANSORI/Reproducibility/registered*/<NOM_PRENOM_OEilN>/
+
+Sur l'arborescence plate, les donnees brutes (.tif + .xml) et chaque variante de
+recalage sont donc des dossiers FRERES sous la racine, avec la meme liste de
+sous-dossiers par acquisition ; sur l'arborescence SANSORI, les variantes sont
+rangees DANS ``RawImages/``. Un script de lot ne compose jamais ces chemins
+lui-meme : il passe par :func:`raw_dir` et :func:`data_dir`.
 
 Les scripts de lot (``compute_registration``, ``compute_pulse_from_data``,
 ``compute_demons_strain``) identifient une condition par un TRIPLET
@@ -48,6 +56,9 @@ from pathlib import Path
 # ``Reproducibility/*.py`` : c'est le nom de dossier qui porte l'identite.
 RE_SLUG = re.compile(r"^(?P<participant>.+)_(?P<eye>OD|OS)(?P<replicate>\d+)$")
 
+# Dossier des donnees brutes : sous la condition (SANSORI), a la racine (plate).
+RAW_SUBDIR = "RawImages"
+
 LAYOUT_SANSORI = "sansori"
 LAYOUT_FLAT = "flat"
 
@@ -79,16 +90,15 @@ def iter_condition_dirs(path_general: Path):
 
     Sur l'arborescence SANSORI, le filtre ``*rigidity`` est ce qui garde
     ``E:/SANSORI/Reproducibility/`` hors des lots de la cohorte SANS. Sur
-    l'arborescence plate, les dossiers de service (prefixe ``_``, comme
-    ``_migration``) sont ecartes.
+    l'arborescence plate, une condition EST son dossier de donnees brutes
+    ``<racine>/RawImages/<slug>/`` -- cf. :func:`flat_slugs`.
     """
     path_general = Path(path_general)
     if not path_general.is_dir():
         return
     if is_flat():
-        for d in sorted(path_general.iterdir()):
-            if d.is_dir() and not d.name.startswith("_"):
-                yield d
+        for slug in flat_slugs(path_general):
+            yield flat_raw_dir(path_general, slug)
         return
     for path_astro in sorted(path_general.iterdir()):
         if not path_astro.is_dir():
@@ -127,8 +137,58 @@ def condition_dir(astro: str, moment: str, condition: str,
     """
     path_general = Path(path_general)
     if is_flat():
-        return path_general / condition
+        return flat_raw_dir(path_general, condition)
     return path_general / astro / moment / condition
+
+
+def raw_dir(path_condi: Path) -> Path | None:
+    """Dossier des .tif + .xml d'une condition, ``None`` s'il n'existe pas.
+
+    Sur l'arborescence plate, ``path_condi`` est deja ce dossier. Sur
+    l'arborescence SANSORI, c'est ``RawImages/`` ou, a defaut, ``RawData/``.
+    """
+    path_condi = Path(path_condi)
+    if is_flat():
+        return path_condi if path_condi.is_dir() else None
+    for name in (RAW_SUBDIR, "RawData"):
+        d = path_condi / name
+        if d.is_dir():
+            return d
+    return None
+
+
+def data_dir(path_condi: Path, subdir: str) -> Path:
+    """Dossier d'une variante de recalage (``registered*``) d'une condition.
+
+    SANSORI : ``<condition>/RawImages/<subdir>/`` ; plate :
+    ``<racine>/<subdir>/<slug>/``, ou ``<racine>`` est le parent de ``RawImages``.
+    """
+    path_condi = Path(path_condi)
+    if is_flat():
+        return flat_data_dir(path_condi.parent.parent, path_condi.name, subdir)
+    return path_condi / RAW_SUBDIR / subdir
+
+
+# --------------------------------------------------------------------------- #
+# Arborescence plate, a racine explicite (independant de OR_LAYOUT)
+# --------------------------------------------------------------------------- #
+def flat_raw_dir(root: Path, slug: str) -> Path:
+    """``<racine>/RawImages/<slug>/`` -- les .tif + le .xml d'une acquisition."""
+    return Path(root) / RAW_SUBDIR / slug
+
+
+def flat_data_dir(root: Path, slug: str, subdir: str) -> Path:
+    """``<racine>/<subdir>/<slug>/`` -- une variante de recalage d'une acquisition."""
+    return Path(root) / subdir / slug
+
+
+def flat_slugs(root: Path) -> list[str]:
+    """Acquisitions presentes : les sous-dossiers de ``<racine>/RawImages/``
+    dont le nom a la forme ``NOM_PRENOM_OD|OS<rang>``, tries."""
+    d = Path(root) / RAW_SUBDIR
+    if not d.is_dir():
+        return []
+    return sorted(p.name for p in d.iterdir() if p.is_dir() and RE_SLUG.match(p.name))
 
 
 def slug_of(astro: str, condition: str) -> str:
