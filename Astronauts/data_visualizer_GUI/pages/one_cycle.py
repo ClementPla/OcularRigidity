@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """PAGE 3 -- One-cycle : tous les cycles, frames par bin et epaisseur, one-cycle en video.
 
-Lit les sorties de ``Astronauts/compute_one_cycle_plex.py`` (variante cascade_v9 PLEX pleine
-largeur, quel que soit le recalage choisi dans la barre) par ``one_cycle_figure`` -- le meme
+Lit les sorties de ``Astronauts/compute_one_cycle_plex.py`` / ``compute_one_cycle_plex_groups.py``
+(source au choix dans la page : cascade_v9 PLEX pleine largeur ou UPerNet brut / lisse, quel que
+soit le recalage choisi dans la barre) par ``one_cycle_figure`` -- le meme
 code de lecture et la meme presentation que la figure Plotly (celle des notebooks) : tous
 les one-cycles bout a bout, frames par bin en barres grises (axe de droite), epaisseur des
 masques replies par cycle (+ fondamental en tirets) et du one-cycle resegmente (pointille noir).
@@ -25,7 +26,7 @@ import one_cycle_figure as ocf  # noqa: E402
 
 PULSES = {"ct": "Epaisseur des masques", "svd": "Intensite (SVD)", "sinc": "SiNC (appris)"}
 MASKS = {"seg": "masque recalcule (resegmente)", "fold": "masque replie (> 0,5)",
-         "reg": "one-cycle recale cascade_v9 (frames + masque)"}
+         "reg": "one-cycle recale (frames + masque)"}
 VARIANTS = {"6beats": "6 battements par cycle", "1per_video": "1 one-cycle par video",
             "3per_video": "3 one-cycles par video"}
 CURSOR_PEN = pg.mkPen((0, 0, 0, 140), width=1, style=QtCore.Qt.DashLine)
@@ -63,12 +64,15 @@ class OneCyclePage(Page):
         self.data = None
         self.cursor = self.highlight = None
         banner = QtWidgets.QLabel(
-            "One-cycles de cascade_v9 PLEX pleine largeur (grille PLEX, 1,95 x 5,9 um/px), "
-            "groupes de battements x bins -- recalage et segmentation de la barre ignores.")
+            "One-cycles de la source choisie ci-dessous (groupes de battements x bins) "
+            "-- recalage et segmentation de la barre ignores.")
         banner.setStyleSheet("color: gray")
         layout.addWidget(banner)
 
         ctrl = QtWidgets.QHBoxLayout()
+        self.cb_source = QtWidgets.QComboBox()
+        for k, v in ocf.SOURCE_LABELS.items():
+            self.cb_source.addItem(v, k)
         self.cb_variant = QtWidgets.QComboBox()
         for k, v in VARIANTS.items():
             self.cb_variant.addItem(v, k)
@@ -77,13 +81,14 @@ class OneCyclePage(Page):
         self.cb_mask_src = QtWidgets.QComboBox()
         for k, v in MASKS.items():
             self.cb_mask_src.addItem(v, k)
-        for lbl, w in (("Variante", self.cb_variant), ("Phase du pouls", self.cb_pulse), ("Cycle (video)", self.cb_cycle),
+        for lbl, w in (("Source", self.cb_source), ("Variante", self.cb_variant), ("Phase du pouls", self.cb_pulse), ("Cycle (video)", self.cb_cycle),
                        ("Masque affiche", self.cb_mask_src)):
             ctrl.addWidget(QtWidgets.QLabel(lbl))
             ctrl.addWidget(w)
             ctrl.addSpacing(12)
         ctrl.addStretch(1)
         layout.addLayout(ctrl)
+        self.cb_source.currentIndexChanged.connect(lambda _i: self._maybe_reload())
         self.cb_variant.currentIndexChanged.connect(lambda _i: self._maybe_reload())
         self.cb_pulse.currentIndexChanged.connect(lambda _i: self.reload())
         self.cb_cycle.currentIndexChanged.connect(lambda _i: self._show_cycle())
@@ -125,8 +130,12 @@ class OneCyclePage(Page):
         return self.cb_variant.currentData() or "6beats"
 
     @property
+    def source(self) -> str:
+        return self.cb_source.currentData() or "cascade_v9"
+
+    @property
     def selection_key(self):
-        return (*super().selection_key, self.variant, self.pulse)
+        return (*super().selection_key, self.source, self.variant, self.pulse)
 
     def _refresh_pulse_combo(self, cond):
         """Libelles du choix de pouls, « non calcule » quand le .npz manque."""
@@ -134,18 +143,18 @@ class OneCyclePage(Page):
         self.cb_pulse.blockSignals(True)
         self.cb_pulse.clear()
         for k, v in PULSES.items():
-            ok = ocf.npz_path(cond.astro, cond.name, k, ocf.cycles_dir(self.variant)).exists()
+            ok = ocf.npz_path(cond.astro, cond.name, k, ocf.cycles_dir(self.variant, self.source)).exists()
             self.cb_pulse.addItem(v if ok else f"{v} ({NOT_COMPUTED})", k)
         self.cb_pulse.setCurrentIndex(list(PULSES).index(cur))
         self.cb_pulse.blockSignals(False)
 
     def fetch(self, cond, reg, seg):
         # Fil secondaire : le pouls a ete fige dans le fil de l'interface (_maybe_reload).
-        pulse, variant = self._pulse_req, self._variant_req
-        path = ocf.npz_path(cond.astro, cond.name, pulse, ocf.cycles_dir(variant))
+        pulse, variant, source = self._pulse_req, self._variant_req, self._source_req
+        path = ocf.npz_path(cond.astro, cond.name, pulse, ocf.cycles_dir(variant, source))
         if not path.exists():
-            raise NotComputed(f"one-cycle ({VARIANTS[variant]}), phase {PULSES[pulse].lower()}, "
-                              f"de {cond.name}")
+            raise NotComputed(f"one-cycle ({ocf.SOURCE_LABELS[source]}, {VARIANTS[variant]}), "
+                              f"phase {PULSES[pulse].lower()}, de {cond.name}")
         return ocf.load_one_cycle(path)
 
     def _maybe_reload(self):
@@ -153,6 +162,7 @@ class OneCyclePage(Page):
             self._refresh_pulse_combo(self.state.condition)
         self._pulse_req = self.pulse
         self._variant_req = self.variant
+        self._source_req = self.source
         super()._maybe_reload()
 
     def show_result(self, data, _res):

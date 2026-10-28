@@ -33,7 +33,13 @@ Epaisseurs par bin (um) sur les colonnes ou le masque est present dans >= 90 % d
 (resegmente recale, colonnes ``bad_columns`` du recalage exclues en plus), fondamental ajuste
 par one-cycle (``*_fit``) et Dice resegmente / replie (> 0,5).
 
-Sorties :
+``--source`` (``compute_one_cycle_plex.SOURCES``) : cascade_v9 (defaut), upernet ou
+upernet_lisse (``RawImages/upernet``, resolution d'origine, masque brut ou lisse dans le
+temps) ; pour UPerNet la passe de resegmentation (UPerNet version-3.0.0 +
+reg_upernet_convnext_t_bmlines, ``REGISTRATION`` tel quel comme ``register_upernet.py``)
+tourne sur la grille PLEX et ses sorties sont ramenees en natif.
+
+Sorties (``one_cycle_figure.SOURCE_ROOTS[source]``, ici pour cascade_v9) :
     E:/NASA_Rigidity/SegmentationVariations/cascade_v9_plex_full/one_cycle_<G>per_video_10bins/
         cycles/<astro>__<condition>__<pouls>.npz   ``one_cycle_figure.load_one_cycle`` le lit
         conditions.csv   une ligne par (condition, pouls)
@@ -69,13 +75,15 @@ sys.path.insert(0, str(HERE))
 import catalog  # noqa: E402
 import pulse_compute  # noqa: E402
 from compute_one_cycle_plex import (  # noqa: E402
-    CACHE_REG,
-    CACHE_SEG,
-    DATA_SUBDIR,
+    DEFAULT_SOURCE,
     EDGE_BEATS,
     PHASE_PROBE_BINS,
+    SOURCES,
+    OneCycleSource,
     fit_cycle,
     frame_phase,
+    masks_to_native,
+    native_to_plex,
     ptp_nan,
     thickness_curve,
     to_u8,
@@ -89,6 +97,12 @@ from ocularrigidity.motion.one_cycle import (  # noqa: E402
     fold_video_numba_median,
 )
 from ocularrigidity.pipeline_config import REGISTRATION  # noqa: E402
+from ocularrigidity.registration.plex_grid import (  # noqa: E402
+    native_coverage,
+    plex_to_native,
+    transform_to_native,
+)
+from ocularrigidity.scripts.registration import cascade_v9_plex as engine  # noqa: E402
 from ocularrigidity.scripts.registration.cascade_v9_plex import load_models, run_fused  # noqa: E402
 
 N_BINS = 10
@@ -97,25 +111,50 @@ PULSES = ("ct", "svd", "sinc")
 FUSED_BATCH = 2  # grille PLEX pleine largeur : 2 tenait (cascade_v9_plex.VARIANTS["full"])
 
 
-def out_dir(n_groups: int) -> Path:
-    return (catalog.SEGVAR_ROOT / DATA_SUBDIR.removeprefix("registered_")
-            / f"one_cycle_{n_groups}per_video_{N_BINS}bins")
+def fused_config(src: OneCycleSource):
+    """Reglages de la passe de resegmentation : ceux du recalage de la video.
+    cascade_v9 : reglages du modele (REGISTRATION porte desormais ceux d'UPerNet) ;
+    UPerNet : REGISTRATION tel quel, comme register_upernet.py (1024 colonnes, lot 8)."""
+    if src.native:
+        return REGISTRATION
+    return replace(REGISTRATION, fused_batch_size=FUSED_BATCH, **engine.MODELS[src.model].config)
 
 
-def npz_path(n_groups: int, cond: catalog.Condition, pulse: str) -> Path:
-    return out_dir(n_groups) / "cycles" / f"{cond.astro}__{cond.name}__{pulse}.npz"
+def out_dir(n_groups: int, src: OneCycleSource = DEFAULT_SOURCE) -> Path:
+    return src.root / f"one_cycle_{n_groups}per_video_{N_BINS}bins"
+
+
+def npz_path(n_groups: int, cond: catalog.Condition, pulse: str,
+             src: OneCycleSource = DEFAULT_SOURCE) -> Path:
+    return out_dir(n_groups, src) / "cycles" / f"{cond.astro}__{cond.name}__{pulse}.npz"
 
 
 def packbits(m: np.ndarray) -> np.ndarray:
     return np.packbits(np.asarray(m, bool).reshape(-1))
 
 
-def resegment_cascade(cycles_u8: np.ndarray, filled: np.ndarray, seg_model, reg_model):
-    """Passe cascade_v9 sur les bins non vides ; les bins vides restent a zero."""
+def resegment_cascade(cycles_u8: np.ndarray, filled: np.ndarray, seg_model, reg_model,
+                      src: OneCycleSource = DEFAULT_SOURCE):
+    """Passe segmentation + recalage sur les bins non vides ; les bins vides restent a zero.
+    Video native (UPerNet) : passe sur la grille PLEX, sorties ramenees en natif."""
     n, H, W = cycles_u8.shape
     idx = np.flatnonzero(filled)
-    res, cfg = run_fused(cycles_u8[idx], seg_model, reg_model,
-                         replace(REGISTRATION, fused_batch_size=FUSED_BATCH))
+    stack = cycles_u8[idx]
+    if src.native:
+        stack, g = native_to_plex(stack)
+    res, cfg = run_fused(stack, seg_model, reg_model, fused_config(src))
+    raw_m, raw_p = res.raw_masks, res.raw_probs
+    reg_f, reg_m, reg_p = res.registered_frames, res.registered_masks, res.registered_probs
+    dx_i, dy_i = res.transform["dx"], res.transform["dy"]
+    bad = np.asarray(res.transform["bad_columns"], bool)
+    if src.native:
+        raw_m, reg_m = masks_to_native(raw_m, g), masks_to_native(reg_m, g)
+        raw_p, reg_p = to_u8(plex_to_native(raw_p, g)), to_u8(plex_to_native(reg_p, g))
+        reg_f = to_u8(plex_to_native(reg_f, g))
+        dx_i, dy_i = transform_to_native(dx_i, dy_i, g)
+        # colonne native mauvaise si une colonne PLEX qui la couvre l'est, ou hors recadrage
+        bad = (plex_to_native(np.broadcast_to(bad.astype(np.float32), (1, g.new_h, g.width)),
+                              g)[0].max(axis=0) > 0) | (native_coverage(g) < 0.999)
 
     def scatter(a, dtype):
         out = np.zeros((n, H, W), dtype)
@@ -124,13 +163,13 @@ def resegment_cascade(cycles_u8: np.ndarray, filled: np.ndarray, seg_model, reg_
 
     dx = np.full(n, np.nan, np.float32)
     dy = np.full((n, W), np.nan, np.float32)
-    dx[idx], dy[idx] = res.transform["dx"], res.transform["dy"]
+    dx[idx], dy[idx] = dx_i, dy_i
     return {
-        "seg_masks": scatter(res.raw_masks, bool), "seg_probs": scatter(res.raw_probs, np.uint8),
-        "reg_frames": scatter(res.registered_frames, np.uint8),
-        "reg_masks": scatter(res.registered_masks, bool),
-        "reg_probs": scatter(res.registered_probs, np.uint8),
-        "dx": dx, "dy": dy, "bad_columns": np.asarray(res.transform["bad_columns"], bool),
+        "seg_masks": scatter(raw_m, bool), "seg_probs": scatter(raw_p, np.uint8),
+        "reg_frames": scatter(reg_f, np.uint8),
+        "reg_masks": scatter(reg_m, bool),
+        "reg_probs": scatter(reg_p, np.uint8),
+        "dx": dx, "dy": dy, "bad_columns": bad,
         "ref_slot": int(idx[res.ref_idx]), "ref_percentile": res.ref_percentile,
         "config": cfg,
     }
@@ -139,14 +178,15 @@ def resegment_cascade(cycles_u8: np.ndarray, filled: np.ndarray, seg_model, reg_
 # --------------------------------------------------------------------------- #
 # Une condition : video et pouls lus une fois, tous les (G, pouls) demandes
 # --------------------------------------------------------------------------- #
-def process(cond: catalog.Condition, seg_model, reg_model, jobs) -> dict[int, tuple[list, list]]:
+def process(cond: catalog.Condition, seg_model, reg_model, jobs,
+            src: OneCycleSource = DEFAULT_SOURCE) -> dict[int, tuple[list, list]]:
     t_all = time.perf_counter()
-    data_dir = cond.raw / DATA_SUBDIR
-    for name in ("registered_video.mp4", "mask.npz", "timestamp.txt", "registration_params.json"):
+    data_dir = cond.raw / src.data_subdir
+    for name in ("registered_video.mp4", src.mask_file, "timestamp.txt", "registration_params.json"):
         if not (data_dir / name).exists():
             raise FileNotFoundError(data_dir / name)
     frames = np.ascontiguousarray(read_gray(data_dir / "registered_video.mp4"))
-    masks = np.asarray(load_mask(data_dir / "mask.npz"), dtype=bool)
+    masks = np.asarray(load_mask(data_dir / src.mask_file), dtype=bool)
     ts = np.loadtxt(data_dir / "timestamp.txt", dtype=np.int64, ndmin=1)
     T, H, W = frames.shape
     if masks.shape != frames.shape or ts.size != T:
@@ -158,7 +198,7 @@ def process(cond: catalog.Condition, seg_model, reg_model, jobs) -> dict[int, tu
 
     t0 = time.perf_counter()
     res = pulse_compute.cached_compute(
-        pulse_compute.cache_path(CACHE_REG, CACHE_SEG, cond.astro, cond.name),
+        pulse_compute.cache_path(src.cache_reg, src.cache_seg, cond.astro, cond.name),
         frames, masks, t, catalog.read_hr(cond), pixel_mm)
     t_pulse = time.perf_counter() - t0
     hr = res.hr
@@ -241,7 +281,7 @@ def process(cond: catalog.Condition, seg_model, reg_model, jobs) -> dict[int, tu
             if not filled.any():
                 raise ValueError(f"G={G}, {pulse} : aucun bin rempli")
 
-            rs = resegment_cascade(cycles_u8, filled, seg_model, reg_model)
+            rs = resegment_cascade(cycles_u8, filled, seg_model, reg_model, src)
             bad = rs["bad_columns"]
             cols_reg = cols[~bad[cols]]
 
@@ -258,7 +298,7 @@ def process(cond: catalog.Condition, seg_model, reg_model, jobs) -> dict[int, tu
             dice = 2 * (a & b).sum(axis=(1, 2)) / (a.sum(axis=(1, 2)) + b.sum(axis=(1, 2)) + 1e-12)
             dice = np.where(filled, dice, np.nan)
 
-            out = npz_path(G, cond, pulse)
+            out = npz_path(G, cond, pulse, src)
             out.parent.mkdir(parents=True, exist_ok=True)
             tmp = out.with_name(out.name + ".tmp.npz")
             np.savez_compressed(
@@ -278,8 +318,9 @@ def process(cond: catalog.Condition, seg_model, reg_model, jobs) -> dict[int, tu
                 pixel_um=np.array([1e3 * pixel_mm[0], 1e3 * pixel_mm[1]]),
                 phase_max=ph["phase_max"], phase_min=ph["phase_min"], pulse=np.array(pulse),
                 condition=np.array(cond.name), astro=np.array(cond.astro),
-                data_subdir=np.array(DATA_SUBDIR), pulse_info=np.array(ph["info"]),
-                resegmentation=np.array("cascade_v9 (segment_and_register)"),
+                data_subdir=np.array(src.data_subdir), mask_file=np.array(src.mask_file),
+                source=np.array(src.key), pulse_info=np.array(ph["info"]),
+                resegmentation=np.array(f"{engine.MODELS[src.model].reg_revision} (segment_and_register)"),
                 sinc_bpm=res.sinc_bpm, sinc_confidence=np.array(res.sinc_confidence))
             tmp.replace(out)
 
@@ -332,17 +373,22 @@ def process(cond: catalog.Condition, seg_model, reg_model, jobs) -> dict[int, tu
 # --------------------------------------------------------------------------- #
 # Lot
 # --------------------------------------------------------------------------- #
-def write_params(G: int) -> None:
-    d = out_dir(G)
+def write_params(G: int, src: OneCycleSource = DEFAULT_SOURCE) -> None:
+    d = out_dir(G, src)
     d.mkdir(parents=True, exist_ok=True)
+    spec = engine.MODELS[src.model]
+    reseg = (f"segment_and_register (segmentation {spec.seg_revision} + recalage {spec.reg_revision}) "
+             "sur la pile des bins non vides, une reference pour tous les one-cycles")
+    if src.native:
+        reseg += " ; one-cycle natif -> grille PLEX (to_plex_grid) -> sorties ramenees en natif"
     (d / "params.json").write_text(json.dumps({
-        "data_subdir": DATA_SUBDIR, "n_groups": G, "n_bins": N_BINS,
+        "source": src.key, "data_subdir": src.data_subdir, "mask_file": src.mask_file,
+        "pulses_cache_keys": [src.cache_reg, src.cache_seg], "n_groups": G, "n_bins": N_BINS,
         "grouping": "phase deroulee coupee en n_groups tranches egales de n_battements / n_groups",
         "phase_probe_bins": PHASE_PROBE_BINS, "edge_beats": EDGE_BEATS,
         "fold": "frames mediane, masques moyenne (occupation)", "intra_bin_registration": False,
-        "resegmentation": "cascade_v9 segment_and_register (SegFormer version-2.0.0 + cascade_v9) "
-                          "sur la pile des bins non vides, une reference pour tous les one-cycles",
-        "registration_config": {**asdict(REGISTRATION), "fused_batch_size": FUSED_BATCH},
+        "resegmentation": reseg,
+        "registration_config": asdict(fused_config(src)),
         "bin0": "centre sur le maximum d'epaisseur des masques, pour toutes les phases",
         "sinc_phase": "chaine par defaut du package (PULSATION) : SiNC + IQ ancree sur l'epaisseur",
         "pulses_cache": str(pulse_compute.CACHE_ROOT),
@@ -357,6 +403,8 @@ def main(argv=None) -> int:
     ap.add_argument("--condition", action="append", help="ex. 210713001before_rigidity_OD")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--source", choices=list(SOURCES), action="append",
+                    help="videos recalees (defaut cascade_v9) ; repetable")
     args = ap.parse_args(argv)
     groups = tuple(args.groups or GROUPS)
     pulses = tuple(args.pulse or PULSES)
@@ -365,22 +413,29 @@ def main(argv=None) -> int:
              if (not args.moment or c.moment in args.moment)
              and (not args.condition or c.name in args.condition)]
     conds.sort(key=lambda c: (c.moment != "before", c.rel))
+    for key in args.source or ["cascade_v9"]:
+        run_source(SOURCES[key], conds, groups, pulses, args)
+    return 0
 
+
+def run_source(src: OneCycleSource, conds, groups, pulses, args) -> None:
     def need(c):
-        return {G: tuple(p for p in pulses if args.overwrite or not npz_path(G, c, p).exists())
+        return {G: tuple(p for p in pulses if args.overwrite or not npz_path(G, c, p, src).exists())
                 for G in groups}
 
     todo = [c for c in conds if any(need(c).values())]
     if args.limit is not None:
         todo = todo[: args.limit]
     for G in groups:
-        write_params(G)
-    print(f"{len(conds)} condition(s), {len(todo)} a traiter, G {groups}, pouls {pulses}", flush=True)
+        write_params(G, src)
+    print(f"[{src.key}] {len(conds)} condition(s), {len(todo)} a traiter, G {groups}, pouls {pulses}",
+          flush=True)
     if not todo:
-        return 0
+        return
 
-    seg_model, reg_model, cc = load_models()
-    print(f"composante connexe : {cc}\n", flush=True)
+    seg_model, reg_model, cc = load_models(engine.MODELS[src.model])
+    print(f"modeles {engine.MODELS[src.model].seg_revision} + {engine.MODELS[src.model].reg_revision} "
+          f"| composante connexe : {cc}\n", flush=True)
 
     t_batch = time.perf_counter()
     for i, cond in enumerate(todo, 1):
@@ -388,7 +443,7 @@ def main(argv=None) -> int:
         t0 = time.perf_counter()
         jobs = {G: ps for G, ps in need(cond).items() if ps}
         try:
-            results = process(cond, seg_model, reg_model, jobs)
+            results = process(cond, seg_model, reg_model, jobs, src)
         except Exception as e:  # noqa: BLE001 - une condition ne doit pas tout arreter
             traceback.print_exc()
             results = {G: ([{"slug": slug, "pulse": p, "condition": cond.name, "status": "error",
@@ -397,7 +452,7 @@ def main(argv=None) -> int:
                        for G, ps in jobs.items()}
         msgs = []
         for G, (crow, brow) in results.items():
-            d = out_dir(G)
+            d = out_dir(G, src)
             upsert(d / "conditions.csv", crow, slug, jobs[G])
             if brow:
                 upsert(d / "bins.csv", brow, slug, jobs[G])
@@ -409,8 +464,9 @@ def main(argv=None) -> int:
         gc.collect()
         print(f"[{i:>3}/{len(todo)}] {cond.name} | {time.perf_counter() - t0:.0f} s | "
               + " || ".join(msgs), flush=True)
-    print(f"\ntermine en {(time.perf_counter() - t_batch) / 60:.1f} min")
-    return 0
+    print(f"\n[{src.key}] termine en {(time.perf_counter() - t_batch) / 60:.1f} min")
+    del seg_model, reg_model
+    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":

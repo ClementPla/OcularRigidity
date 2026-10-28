@@ -118,6 +118,28 @@ def _plex(sub: str) -> Source:
 
 
 REGISTRATIONS: list[Registration] = [
+    # Calcul du notebook register_and_segment_uppernet_test (grille PLEX 1024 col.),
+    # ramene a la resolution d'origine (Astronauts/register_upernet.py).
+    Registration("UPerNet (notebook, resolution d'origine)", {
+        "UPerNet ConvNeXt-t (meme passe)": _plex("upernet"),
+        # Lissage temporel par pixel (moyenne glissante puis >= 0,5), notebook
+        # register_and_segment_smooth_mask.
+        "UPerNet ConvNeXt-t, lisse dans le temps": _in_raw(
+            "upernet", "registered_video.mp4", "mask_smooth.npz", "timestamp.txt")}),
+    # data.spectralis.process_condition : B-scans bruts -> grille PLEX -> inference
+    # -> grille native (Astronauts/register_spectralis_native.py).
+    Registration("UPerNet natif (data.spectralis)", {
+        "UPerNet ConvNeXt-t (meme passe)": _plex("registered_upernet_native")}),
+    # UPerNet ConvNeXt-t + reg_upernet_convnext_t_bmlines, meme moteur PLEX
+    # (Astronauts/register_uppernet_convnexttiny_plex.py).
+    Registration("UPerNet PLEX 1024 col. (grille PLEX)", {
+        "UPerNet ConvNeXt-t (meme passe)": _plex("registered_upernet_plex_w1024")}),
+    Registration("UPerNet PLEX 1024 col. (ramene en natif)", {
+        "UPerNet ConvNeXt-t (meme passe)": _plex("registered_upernet_plex_w1024_native")}),
+    Registration("UPerNet PLEX pleine largeur (grille PLEX)", {
+        "UPerNet ConvNeXt-t (meme passe)": _plex("registered_upernet_plex_full")}),
+    Registration("UPerNet PLEX pleine largeur (ramene en natif)", {
+        "UPerNet ConvNeXt-t (meme passe)": _plex("registered_upernet_plex_full_native")}),
     # Grille PLEX (scripts/registration/cascade_v9_plex.py) : 1,95 x 5,9 um par
     # pixel sur les variantes « grille PLEX » -- l'epaisseur en px n'y a pas la
     # meme valeur qu'en natif (3,9 um par pixel axial).

@@ -30,7 +30,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-VARIANT_ROOT = Path("E:/NASA_Rigidity/SegmentationVariations/cascade_v9_plex_full")
+SEGVAR_ROOT = Path("E:/NASA_Rigidity/SegmentationVariations")
+# Videos recalees dont on fait les one-cycles (--source des deux scripts) : dossier de
+# sortie sous SEGVAR_ROOT.
+SOURCE_ROOTS = {"cascade_v9": SEGVAR_ROOT / "cascade_v9_plex_full",
+                "upernet": SEGVAR_ROOT / "upernet",
+                "upernet_lisse": SEGVAR_ROOT / "upernet_lisse"}
+SOURCE_LABELS = {"cascade_v9": "cascade_v9 PLEX pleine largeur (grille PLEX)",
+                 "upernet": "UPerNet (resolution d'origine), masque brut",
+                 "upernet_lisse": "UPerNet (resolution d'origine), masque lisse dans le temps"}
+VARIANT_ROOT = SOURCE_ROOTS["cascade_v9"]
 # Sorties de compute_one_cycle_plex.py (6 battements par cycle) et de
 # compute_one_cycle_plex_groups.py (1 ou 3 one-cycles par video).
 VARIANTS = {"6beats": "one_cycle_6beats_10bins", "1per_video": "one_cycle_1per_video_10bins",
@@ -39,8 +48,8 @@ ROOT = VARIANT_ROOT / VARIANTS["6beats"]
 CYCLES_DIR = ROOT / "cycles"
 
 
-def cycles_dir(variant: str = "6beats") -> Path:
-    return VARIANT_ROOT / VARIANTS[variant] / "cycles"
+def cycles_dir(variant: str = "6beats", source: str = "cascade_v9") -> Path:
+    return SOURCE_ROOTS[source] / VARIANTS[variant] / "cycles"
 FIG_DIR = ROOT / "figures"
 PULSE_LABELS = {"ct": "pouls d'epaisseur (masques)", "svd": "pouls d'intensite (SVD)",
                 "sinc": "pouls SiNC (appris)"}

@@ -33,6 +33,14 @@ class FusedResult:
     ref_percentile: float | None = (
         None  # of the reference's area in the full distribution
     )
+    # Only with ``return_probs=True``: sigmoid of the segmentation logits as
+    # uint8 (0..255 <-> 0..1), BEFORE the largest-component filter, raw and
+    # warped by the same transform as the frames.
+    raw_probs: np.ndarray | None = None  # (T, H, W) uint8
+    registered_probs: np.ndarray | None = None  # (T, H, W) uint8
+    # Only with ``config.identify_failed_frames``: IoU of each registered mask
+    # with the reference's, to flag failed frames.
+    frame_iou: np.ndarray | None = None  # (T,) float32
 
 
 def _normalise(frames_u8: torch.Tensor) -> torch.Tensor:
@@ -293,6 +301,8 @@ def segment_and_register(
             cols = bad_cols.cpu().numpy()
             registered_frames[..., cols] = 0
             registered_masks[..., cols] = 0
+            if return_probs:
+                registered_probs[..., cols] = 0
 
     transform = {
         "dx": dx.numpy(),
@@ -312,7 +322,6 @@ def segment_and_register(
                 (registered_masks[s:e] & ref_mask).sum(axis=(1, 2))
                 / (registered_masks[s:e] | ref_mask).sum(axis=(1, 2))
             )
-            
 
     if verbose:
         stages = " | ".join(f"{k} {v:.1f}s" for k, v in timings.items())
@@ -326,6 +335,9 @@ def segment_and_register(
         ref_idx=ref_idx,
         ref_percentile=ref_percentile,
         timings=timings,
+        raw_probs=raw_probs,
+        registered_probs=registered_probs,
+        frame_iou=iou,
     )
 
 

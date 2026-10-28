@@ -92,7 +92,7 @@ def native_coverage(g: PlexGeometry) -> np.ndarray:
     return cv2.resize(canvas, (g.native_w, 1), interpolation=cv2.INTER_AREA)[0]
 
 
-def plex_to_native(arr: np.ndarray, g: PlexGeometry) -> np.ndarray:
+def plex_to_native(arr: np.ndarray, g: PlexGeometry, inter_flag=cv2.INTER_AREA) -> np.ndarray:
     """(T, new_h, width) -> (T, H, W) float32, area-averaged.
 
     Exact inverse geometry of ``to_plex_grid``: the crop is put back on a
@@ -105,7 +105,7 @@ def plex_to_native(arr: np.ndarray, g: PlexGeometry) -> np.ndarray:
     canvas = np.zeros((g.new_h, g.new_w), np.float32)
     for t in range(T):
         canvas[:, g.x0 : g.x0 + g.width] = arr[t]
-        out[t] = cv2.resize(canvas, (g.native_w, g.native_h), interpolation=cv2.INTER_AREA)
+        out[t] = cv2.resize(canvas, (g.native_w, g.native_h), interpolation=inter_flag)
     return out
 
 

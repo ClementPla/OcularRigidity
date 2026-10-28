@@ -28,11 +28,20 @@ Pour chaque pouls :
   5. one-cycle RESEGMENTE (SegFormer ``version-2.0.0`` + plus grande composante), directement sur
      la grille PLEX -- c'est deja la taille de pixel d'entrainement, rien a agrandir.
 
+``--source`` choisit les videos recalees (``SOURCES``) :
+    cascade_v9      ``registered_cascade_v9_plex_full`` (defaut, ci-dessus)
+    upernet         ``RawImages/upernet`` (``register_upernet.py``, resolution d'origine), mask.npz
+    upernet_lisse   meme video, ``mask_smooth.npz`` (lissage temporel par pixel)
+Pour les deux sources UPerNet, le one-cycle natif est porte sur la grille PLEX
+(``plex_grid.to_plex_grid``, comme dans ``register_upernet.py``), resegmente par UPerNet
+``version-3.0.0`` (plus grande composante selon ``REGISTRATION.keep_largest_cc``, comme le
+recalage), puis ramene a la resolution d'origine (``plex_to_native``).
+
 Epaisseurs par bin (um), sur les colonnes ou le masque est present dans >= 90 % des frames (regle
 du pouls d'epaisseur) : ``thickness_fold`` (masques replies), ``thickness_seg`` (resegmente), leur
 fondamental ajuste par cycle (``*_fit``), et le Dice resegmente / replie (> 0,5).
 
-Sorties :
+Sorties (``one_cycle_figure.SOURCE_ROOTS[source]``, ici pour cascade_v9) :
     E:/NASA_Rigidity/SegmentationVariations/cascade_v9_plex_full/one_cycle_6beats_10bins/
         cycles/<astro>__<condition>__<pouls>.npz   lire avec one_cycle_figure.load_one_cycle
         conditions.csv   une ligne par (condition, pouls)
@@ -42,6 +51,7 @@ Sorties :
 Lancer (kernel pyOR, depuis la racine) :
     python Astronauts/compute_one_cycle_plex.py --limit 1
     python Astronauts/compute_one_cycle_plex.py
+    python Astronauts/compute_one_cycle_plex.py --source upernet --source upernet_lisse
 """
 
 from __future__ import annotations
@@ -52,6 +62,7 @@ import json
 import sys
 import time
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -63,8 +74,11 @@ from scipy.signal import hilbert
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "data_visualizer_GUI"))
+sys.path.insert(0, str(HERE))
 
 import catalog  # noqa: E402
+import cv2  # noqa: E402
+import one_cycle_figure as ocf  # noqa: E402
 import pulse_compute  # noqa: E402
 
 from ocularrigidity.data.compression import read_gray  # noqa: E402
@@ -73,10 +87,12 @@ from ocularrigidity.motion.one_cycle import (  # noqa: E402
     fold_video_numba_mean,
     fold_video_numba_median,
 )
+from ocularrigidity.pipeline_config import REGISTRATION  # noqa: E402
 from ocularrigidity.registration import fused  # noqa: E402
+from ocularrigidity.registration.plex_grid import plex_to_native, to_plex_grid  # noqa: E402
+from ocularrigidity.scripts.registration import cascade_v9_plex as engine  # noqa: E402
 from ocularrigidity.scripts.registration.cascade_v9_plex import patch_largest_cc  # noqa: E402
 
-DATA_SUBDIR = "registered_cascade_v9_plex_full"
 N_CYCLE = 6  # battements par one-cycle
 N_BINS = 10  # bins de phase par one-cycle
 PHASE_PROBE_BINS = 60  # grille fine du maximum d'epaisseur
@@ -84,19 +100,47 @@ EDGE_BEATS = 1.0  # battements exclus a chaque bout
 SEG_BATCH = 2
 DEVICE = "cuda"
 PULSES = ("ct", "svd", "sinc")
-# Cle du cache des pouls : les libelles du GUI (catalog.REGISTRATIONS).
-CACHE_REG = "cascade_v9 PLEX pleine largeur (grille PLEX)"
-CACHE_SEG = "SegFormer cascade_v9 (meme passe)"
-
-OUT_DIR = (catalog.SEGVAR_ROOT / DATA_SUBDIR.removeprefix("registered_")
-           / f"one_cycle_{N_CYCLE}beats_{N_BINS}bins")
-CYCLES_DIR = OUT_DIR / "cycles"
-CSV_CONDITIONS = OUT_DIR / "conditions.csv"
-CSV_BINS = OUT_DIR / "bins.csv"
+# Tailles de pixel natives passees a to_plex_grid, comme dans register_upernet.py.
+UPERNET_PIXEL_MM = (0.0039, 0.0116)
 
 
-def npz_path(cond: catalog.Condition, pulse: str) -> Path:
-    return CYCLES_DIR / f"{cond.astro}__{cond.name}__{pulse}.npz"
+@dataclass(frozen=True)
+class OneCycleSource:
+    """Videos recalees dont on fait les one-cycles, et le modele qui les resegmente."""
+    key: str
+    data_subdir: str  # RawImages/<data_subdir>/
+    mask_file: str
+    cache_reg: str  # cle du cache des pouls : les libelles du GUI (catalog.REGISTRATIONS)
+    cache_seg: str
+    model: str  # cascade_v9_plex.MODELS
+    native: bool  # video native : resegmenter sur la grille PLEX, puis revenir
+    keep_largest_cc: bool
+
+    @property
+    def root(self) -> Path:
+        return ocf.SOURCE_ROOTS[self.key]
+
+
+_UPERNET_REG = "UPerNet (notebook, resolution d'origine)"
+SOURCES = {s.key: s for s in (
+    OneCycleSource("cascade_v9", "registered_cascade_v9_plex_full", "mask.npz",
+                   "cascade_v9 PLEX pleine largeur (grille PLEX)", "SegFormer cascade_v9 (meme passe)",
+                   "cascade_v9", False, True),
+    OneCycleSource("upernet", "upernet", "mask.npz", _UPERNET_REG, "UPerNet ConvNeXt-t (meme passe)",
+                   "upernet", True, REGISTRATION.keep_largest_cc),
+    OneCycleSource("upernet_lisse", "upernet", "mask_smooth.npz", _UPERNET_REG,
+                   "UPerNet ConvNeXt-t, lisse dans le temps", "upernet", True,
+                   REGISTRATION.keep_largest_cc),
+)}
+DEFAULT_SOURCE = SOURCES["cascade_v9"]
+
+
+def out_dir(src: OneCycleSource) -> Path:
+    return src.root / f"one_cycle_{N_CYCLE}beats_{N_BINS}bins"
+
+
+def npz_path(cond: catalog.Condition, pulse: str, src: OneCycleSource = DEFAULT_SOURCE) -> Path:
+    return out_dir(src) / "cycles" / f"{cond.astro}__{cond.name}__{pulse}.npz"
 
 
 # --------------------------------------------------------------------------- #
@@ -129,7 +173,7 @@ def thickness_curve(occ: np.ndarray, cols: np.ndarray, counts: np.ndarray, um_px
 
 
 @torch.inference_mode()
-def resegment(cycles_u8: np.ndarray, seg_model):
+def resegment(cycles_u8: np.ndarray, seg_model, keep_largest_cc: bool = True):
     """(n, H, W) uint8 -> masques bool + probabilites uint8, sur la grille PLEX telle quelle."""
     n = cycles_u8.shape[0]
     masks = np.zeros(cycles_u8.shape, bool)
@@ -137,9 +181,29 @@ def resegment(cycles_u8: np.ndarray, seg_model):
     for s in range(0, n, SEG_BATCH):
         e = min(s + SEG_BATCH, n)
         m, _, p = fused._encode_segment(seg_model, torch.from_numpy(cycles_u8[s:e]).to(DEVICE),
-                                        torch.bfloat16, keep_largest_cc=True, return_probs=True)
+                                        torch.bfloat16, keep_largest_cc=keep_largest_cc,
+                                        return_probs=True)
         masks[s:e], probs[s:e] = m.cpu().numpy(), p.cpu().numpy()
     return masks, probs
+
+
+def native_to_plex(cube_u8: np.ndarray):
+    """One-cycle natif -> grille PLEX (meme calcul que register_upernet.py)."""
+    return to_plex_grid(cube_u8, *UPERNET_PIXEL_MM)
+
+
+def masks_to_native(m_plex: np.ndarray, g) -> np.ndarray:
+    return plex_to_native(np.asarray(m_plex, np.uint8), g, cv2.INTER_NEAREST) > 0
+
+
+def resegment_source(cycles_u8: np.ndarray, seg_model, src: OneCycleSource):
+    """Resegmentation dans la geometrie de la video : telle quelle sur la grille PLEX,
+    aller-retour PLEX pour une video native."""
+    if not src.native:
+        return resegment(cycles_u8, seg_model, src.keep_largest_cc)
+    plex, g = native_to_plex(cycles_u8)
+    m, p = resegment(plex, seg_model, src.keep_largest_cc)
+    return masks_to_native(m, g), to_u8(plex_to_native(p, g))
 
 
 def to_u8(x):
@@ -154,14 +218,15 @@ def ptp_nan(y):
 # --------------------------------------------------------------------------- #
 # Une condition
 # --------------------------------------------------------------------------- #
-def process(cond: catalog.Condition, seg_model, pulses) -> tuple[list[dict], list[dict]]:
+def process(cond: catalog.Condition, seg_model, pulses,
+            src: OneCycleSource = DEFAULT_SOURCE) -> tuple[list[dict], list[dict]]:
     t_all = time.perf_counter()
-    data_dir = cond.raw / DATA_SUBDIR
-    for name in ("registered_video.mp4", "mask.npz", "timestamp.txt", "registration_params.json"):
+    data_dir = cond.raw / src.data_subdir
+    for name in ("registered_video.mp4", src.mask_file, "timestamp.txt", "registration_params.json"):
         if not (data_dir / name).exists():
             raise FileNotFoundError(data_dir / name)
     frames = np.ascontiguousarray(read_gray(data_dir / "registered_video.mp4"))
-    masks = np.asarray(load_mask(data_dir / "mask.npz"), dtype=bool)
+    masks = np.asarray(load_mask(data_dir / src.mask_file), dtype=bool)
     ts = np.loadtxt(data_dir / "timestamp.txt", dtype=np.int64, ndmin=1)
     T, H, W = frames.shape
     if masks.shape != frames.shape or ts.size != T:
@@ -174,7 +239,7 @@ def process(cond: catalog.Condition, seg_model, pulses) -> tuple[list[dict], lis
 
     t0 = time.perf_counter()
     res = pulse_compute.cached_compute(
-        pulse_compute.cache_path(CACHE_REG, CACHE_SEG, cond.astro, cond.name),
+        pulse_compute.cache_path(src.cache_reg, src.cache_seg, cond.astro, cond.name),
         frames, masks, t, hr, pixel_mm)
     t_pulse = time.perf_counter() - t0
     hr = res.hr
@@ -242,7 +307,7 @@ def process(cond: catalog.Condition, seg_model, pulses) -> tuple[list[dict], lis
         cycles_u8[counts == 0] = 0
         del cycles
 
-        seg_masks, seg_probs = resegment(cycles_u8, seg_model)
+        seg_masks, seg_probs = resegment_source(cycles_u8, seg_model, src)
         seg_masks[counts == 0] = False
         seg_probs[counts == 0] = 0
 
@@ -256,8 +321,8 @@ def process(cond: catalog.Condition, seg_model, pulses) -> tuple[list[dict], lis
         dice = 2 * (a & b).sum(axis=(1, 2)) / (a.sum(axis=(1, 2)) + b.sum(axis=(1, 2)) + 1e-12)
         dice = np.where(counts > 0, dice, np.nan)
 
-        CYCLES_DIR.mkdir(parents=True, exist_ok=True)
-        out = npz_path(cond, pulse)
+        out = npz_path(cond, pulse, src)
+        out.parent.mkdir(parents=True, exist_ok=True)
         tmp = out.with_name(out.name + ".tmp.npz")
         np.savez_compressed(
             tmp, cycles=cycles_u8, occupancy=to_u8(occupancy * 255.0),
@@ -270,7 +335,8 @@ def process(cond: catalog.Condition, seg_model, pulses) -> tuple[list[dict], lis
             pixel_um=np.array([1e3 * pixel_mm[0], 1e3 * pixel_mm[1]]),
             phase_max=phase_max, phase_min=phase_min, pulse=np.array(pulse),
             condition=np.array(cond.name), astro=np.array(cond.astro),
-            data_subdir=np.array(DATA_SUBDIR), pulse_info=np.array(info),
+            data_subdir=np.array(src.data_subdir), mask_file=np.array(src.mask_file),
+            source=np.array(src.key), pulse_info=np.array(info),
             sinc_bpm=res.sinc_bpm, sinc_confidence=np.array(res.sinc_confidence))
         tmp.replace(out)
         del occupancy, seg_masks, seg_probs, cycles_u8
@@ -338,54 +404,73 @@ def main(argv=None) -> int:
     ap.add_argument("--condition", action="append", help="ex. 210713001before_rigidity_OD")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--source", choices=list(SOURCES), action="append",
+                    help="videos recalees (defaut cascade_v9) ; repetable")
     args = ap.parse_args(argv)
     pulses = tuple(args.pulse or PULSES)
+    sources = [SOURCES[k] for k in (args.source or ["cascade_v9"])]
 
     conds = [c for c in catalog.discover_conditions()
              if (not args.moment or c.moment in args.moment)
              and (not args.condition or c.name in args.condition)]
     conds.sort(key=lambda c: (c.moment != "before", c.rel))
-    todo = [c for c in conds if args.overwrite or not all(npz_path(c, p).exists() for p in pulses)]
+    for src in sources:
+        run_source(src, conds, pulses, args)
+    return 0
+
+
+def run_source(src: OneCycleSource, conds, pulses, args) -> None:
+    todo = [c for c in conds if args.overwrite or not all(npz_path(c, p, src).exists() for p in pulses)]
     if args.limit is not None:
         todo = todo[: args.limit]
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "params.json").write_text(json.dumps({
-        "data_subdir": DATA_SUBDIR, "n_cycle": N_CYCLE, "n_bins": N_BINS,
+    od = out_dir(src)
+    od.mkdir(parents=True, exist_ok=True)
+    reseg = ("SegFormer version-2.0.0 + plus grande composante, grille PLEX telle quelle"
+             if not src.native else
+             f"UPerNet version-3.0.0 (keep_largest_cc={src.keep_largest_cc}), one-cycle natif -> "
+             f"to_plex_grid{UPERNET_PIXEL_MM} -> plex_to_native")
+    (od / "params.json").write_text(json.dumps({
+        "source": src.key, "data_subdir": src.data_subdir, "mask_file": src.mask_file,
+        "pulses_cache_keys": [src.cache_reg, src.cache_seg], "n_cycle": N_CYCLE, "n_bins": N_BINS,
         "phase_probe_bins": PHASE_PROBE_BINS, "edge_beats": EDGE_BEATS,
         "fold": "frames mediane, masques moyenne (occupation)", "intra_bin_registration": False,
-        "resegmentation": "SegFormer version-2.0.0 + plus grande composante, grille PLEX telle quelle",
+        "resegmentation": reseg,
         "bin0": "centre sur le maximum d'epaisseur des masques, pour toutes les phases",
         "sinc_phase": "chaine par defaut du package (PULSATION) : SiNC + IQ ancree sur l'epaisseur",
         "pulses_cache": str(pulse_compute.CACHE_ROOT),
         "pulse_compute": {"band_frac": pulse_compute.BAND_FRAC, "roi_depth_um": pulse_compute.ROI_DEPTH_UM,
                           "roi_width_mm": pulse_compute.ROI_WIDTH_MM, "rank_svd": pulse_compute.RANK_SVD},
     }, indent=2), encoding="utf-8")
-    print(f"{len(conds)} condition(s), {len(todo)} a traiter, pouls {pulses} -> {OUT_DIR}", flush=True)
+    print(f"[{src.key}] {len(conds)} condition(s), {len(todo)} a traiter, pouls {pulses} -> {od}",
+          flush=True)
     if not todo:
-        return 0
+        return
 
     from ocularrigidity.segmentation.utils import get_choroid_segmentation_model
 
-    seg_model = get_choroid_segmentation_model().to(DEVICE)
-    print(f"composante connexe : {patch_largest_cc()}\n", flush=True)
+    # Revision explicite : le defaut de get_choroid_segmentation_model a change (version-3.0.0).
+    seg_model = get_choroid_segmentation_model(engine.MODELS[src.model].seg_revision).to(DEVICE)
+    print(f"segmentation {engine.MODELS[src.model].seg_revision} | composante connexe : "
+          f"{patch_largest_cc()}\n", flush=True)
 
     t_batch = time.perf_counter()
     for i, cond in enumerate(todo, 1):
         slug = f"{cond.astro}__{cond.name}"
         t0 = time.perf_counter()
         # Seuls les pouls manquants (sauf --overwrite) : ajouter sinc ne refait pas ct/svd.
-        need = pulses if args.overwrite else tuple(p for p in pulses if not npz_path(cond, p).exists())
+        need = pulses if args.overwrite else tuple(p for p in pulses
+                                                   if not npz_path(cond, p, src).exists())
         try:
-            crow, brow = process(cond, seg_model, need)
+            crow, brow = process(cond, seg_model, need, src)
         except Exception as e:  # noqa: BLE001 - une condition ne doit pas tout arreter
             traceback.print_exc()
             crow = [{"slug": slug, "pulse": p, "condition": cond.name, "status": "error",
                      "reason": f"{type(e).__name__}: {str(e)[:300]}",
                      "created": datetime.now().isoformat(timespec="seconds")} for p in need]
             brow = []
-        upsert(CSV_CONDITIONS, crow, slug, need)
+        upsert(od / "conditions.csv", crow, slug, need)
         if brow:
-            upsert(CSV_BINS, brow, slug, need)
+            upsert(od / "bins.csv", brow, slug, need)
         torch.cuda.empty_cache()
         gc.collect()
         msg = " | ".join(
@@ -395,8 +480,9 @@ def main(argv=None) -> int:
             f"Dice {r['dice_median']:.3f}" if r["status"] == "ok" else f"{r['pulse']}: ERREUR {r['reason']}"
             for r in crow)
         print(f"[{i:>3}/{len(todo)}] {cond.name} | {time.perf_counter() - t0:.0f} s | {msg}", flush=True)
-    print(f"\ntermine en {(time.perf_counter() - t_batch) / 60:.1f} min -> {OUT_DIR}")
-    return 0
+    print(f"\n[{src.key}] termine en {(time.perf_counter() - t_batch) / 60:.1f} min -> {od}")
+    del seg_model
+    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":

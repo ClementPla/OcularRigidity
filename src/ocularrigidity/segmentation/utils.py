@@ -15,10 +15,10 @@ from ocularrigidity.segmentation.postprocess.blob import (
 from ocularrigidity.segmentation.trainer.pl_module import ChoroidSegmentationModule
 
 
-def get_choroid_segmentation_model():
+def get_choroid_segmentation_model(revision: str = SEGMENTATION_REVISION):
     """Automatically fetch the choroid segmentation model's weights from Hugging Face."""
     return ChoroidSegmentationModule.from_pretrained(
-        "ClementP/ChoroidSegmentationModule", revision=SEGMENTATION_REVISION
+        "ClementP/ChoroidSegmentationModule", revision=revision
     ).eval()
 
 

@@ -9,7 +9,11 @@ import av
 
 from decord import VideoReader, cpu
 
-os.environ["IMAGEIO_FFMPEG_EXE"] = "/home/clement/miniforge-pypy3/envs/dl/bin/ffmpeg"
+_CLEMENT_FFMPEG = "/home/clement/miniforge-pypy3/envs/dl/bin/ffmpeg"
+# Only where that binary exists: elsewhere it points imageio at nothing, and
+# imageio-ffmpeg's bundled binary is the one to use.
+if os.path.exists(_CLEMENT_FFMPEG):
+    os.environ["IMAGEIO_FFMPEG_EXE"] = _CLEMENT_FFMPEG
 import imageio
 
 
@@ -18,8 +22,11 @@ def cube_to_mp4(
 ):
     """Compress (n, H, W) grayscale or (n, H, W, 3) RGB uint8 cube to H.265 MP4."""
     is_color = cube.ndim == 4
+    # The ffmpeg plugin explicitly: without imageio-ffmpeg, imageio would pick
+    # PyAV, which takes none of the options below.
     writer = imageio.get_writer(
         out_path,
+        format="FFMPEG",
         fps=fps,
         codec="libx265",
         quality=None,
@@ -37,9 +44,11 @@ def cube_to_mp4(
             "log-level=none",
         ],
     )
-    for frame in cube:
-        writer.append_data(frame)
-    writer.close()
+    try:
+        for frame in cube:
+            writer.append_data(frame)
+    finally:
+        writer.close()
 
 
 def cube_to_mp4_fast(cube: np.ndarray, out_path: str, fps: int = 30, verbose=False):

@@ -540,3 +540,143 @@ def load_video(path, return_fundus=False):
         return video, fundus_video, timestamps, df
     else:
         return video, timestamps, df
+
+
+# --------------------------------------------------------------------------- #
+# Segmentation + registration of one acquisition
+# --------------------------------------------------------------------------- #
+NATIVE_MIN_COVERAGE = 0.999  # native column kept if entirely inside the PLEX crop
+
+
+def process_condition(
+    path,
+    seg_model=None,
+    reg_model=None,
+    config=None,
+    width: Optional[int] = None,
+    device: str = "cuda",
+    out_dir=None,
+) -> dict:
+    """Segment and register one acquisition folder (``*.tif`` + its XML).
+
+    The B-scans go to the networks as read from disk -- no filtering, contrast,
+    intensity or column correction -- only resampled to the PLEX pixel size the
+    networks were trained on (1.95 x 5.9 um, `registration.plex_grid`; ``width``
+    columns kept at the centre, ``None`` = the whole B-scan). Everything the
+    inference produces is then resampled back to the native grid:
+
+    * ``frames`` (T, H, W) uint8, ``masks`` / ``raw_masks`` (T, H, W) bool and
+      ``probs`` (T, H, W) uint8 (0..255 <-> 0..1): area-resampled from the PLEX
+      outputs (`plex_to_native`);
+    * ``dx`` (T,), ``dy`` (T, W): the transform in native pixels
+      (`transform_to_native`).
+
+    Native columns not entirely inside the PLEX crop are zeroed and flagged in
+    ``outside_crop``. Models default to the current Hub revisions
+    (``consts.SEGMENTATION_REVISION``, ``config.registrator_revision``) and
+    ``config`` to ``pipeline_config.REGISTRATION``. With ``out_dir``, the
+    native results are also written there in the format the GUI reads
+    (``registered_video.mp4``, ``mask.npz``, ``prob.npz``, ``timestamp.txt``,
+    ``transform.npz``, ``registration_params.json``).
+    """
+    import json
+    from dataclasses import asdict
+    from pathlib import Path
+
+    from ocularrigidity.consts import SEGMENTATION_REVISION
+    from ocularrigidity.pipeline_config import REGISTRATION
+    from ocularrigidity.registration.fused import segment_and_register
+    from ocularrigidity.registration.plex_grid import (
+        native_coverage,
+        plex_to_native,
+        to_plex_grid,
+        transform_to_native,
+    )
+    from ocularrigidity.segmentation.utils import get_model, get_registration_model
+
+    path = Path(path)
+    config = REGISTRATION if config is None else config
+    video, _, df = load_video(path)
+    # B-scans in acquisition order (the XML lists them in export order).
+    order = np.argsort(df["seconds_of_day"].to_numpy(dtype=float), kind="stable")
+    video, df = video[order], df.iloc[order].reset_index(drop=True)
+    t_s = df["seconds_of_day"].to_numpy(dtype=float)
+    t_s = t_s - t_s[0]
+    axial_mm = float(df["axial_resolution"].median())
+    lateral_mm = float(df["lateral_resolution"].median())
+
+    frames_p, g = to_plex_grid(video, axial_mm, lateral_mm, width=width)
+    seg_revision = reg_revision = "fourni par l'appelant"
+    if seg_model is None:
+        seg_model = get_model(device)
+        seg_revision = SEGMENTATION_REVISION
+    if reg_model is None:
+        reg_model = get_registration_model(config.registrator_revision).to(device)
+        reg_revision = config.registrator_revision
+    reg_model.img_shape = g.shape
+    res = segment_and_register(
+        frames_p, seg_model, reg_model, config, device=device, verbose=False,
+        return_probs=True,
+    )
+    del frames_p
+
+    outside = native_coverage(g) < NATIVE_MIN_COVERAGE
+
+    def back(arr, threshold=None):
+        out = plex_to_native(arr, g)
+        out = out >= threshold if threshold is not None else (
+            np.clip(np.round(out), 0, 255).astype(np.uint8))
+        out[..., outside] = 0
+        return out
+
+    dx, dy = transform_to_native(res.transform["dx"], res.transform["dy"], g)
+    out = {
+        "frames": back(res.registered_frames),
+        "masks": back(res.registered_masks, 0.5),
+        "raw_masks": back(res.raw_masks, 0.5),
+        "probs": back(res.registered_probs),
+        "dx": dx,
+        "dy": dy,
+        "outside_crop": outside,
+        "frame_iou": res.frame_iou,
+        "ref_idx": int(res.ref_idx),
+        "t_s": t_s,
+        "pixel_mm": (axial_mm, lateral_mm),
+        "plex_geometry": g.as_dict(),
+        "config": config,
+        "timings": res.timings,
+        "df": df,
+    }
+    if out_dir is not None:
+        from ocularrigidity.data.io import save_mask
+        from ocularrigidity.scripts.registration.astronauts import write_gray_mp4
+        from ocularrigidity.scripts.registration.cascade_v9_plex import save_probs
+
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Incomplete as long as the parameters file is missing.
+        (out_dir / "registration_params.json").unlink(missing_ok=True)
+        fps = 1.0 / float(np.median(np.diff(t_s))) if len(t_s) > 1 else 0.0
+        write_gray_mp4(out["frames"], out_dir / "registered_video.mp4", fps)
+        save_mask(out["masks"], out_dir / "mask.npz")
+        save_probs(out["probs"], out_dir / "prob.npz")
+        (out_dir / "timestamp.txt").write_text(
+            "\n".join(str(int(round(t * 1e6))) for t in t_s), encoding="utf-8")
+        np.savez(out_dir / "transform.npz", dx=dx, dy=dy, outside_crop=outside,
+                 ref_idx=np.int64(res.ref_idx),
+                 frame_iou=res.frame_iou if res.frame_iou is not None else np.array([]),
+                 pixel_mm=np.array([axial_mm, lateral_mm]))
+        params = {
+            "status": "ok", "grid": "native", "source": str(path),
+            "engine": "ocularrigidity.data.spectralis.process_condition",
+            "seg_revision": seg_revision,
+            "reg_revision": reg_revision,
+            "registration_config": asdict(config), "plex_geometry": g.as_dict(),
+            "n_frames": int(len(t_s)), "height": int(g.native_h), "width": int(g.native_w),
+            "fps": round(fps, 3), "ref_idx": int(res.ref_idx),
+            "timings_s": {k: round(float(v), 2) for k, v in res.timings.items()},
+            "created": datetime.now().isoformat(timespec="seconds"),
+        }
+        (out_dir / "registration_params.json").write_text(
+            json.dumps(params, indent=2, default=str), encoding="utf-8")
+    return out

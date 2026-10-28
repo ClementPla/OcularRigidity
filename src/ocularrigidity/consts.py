@@ -78,6 +78,7 @@ SINC_REVISION = "sinc_v0"
 OUTPUT_FOLDER = ROOT_COMPRESSED_VIDEO
 
 # Physical properties of the acquisition device, not study decisions
+PLEX_WIDTH = 1024
 AXIAL_PIXEL_SIZE_MM = 1.95e-3
 TRANVERSAL_PIXEL_SIZE_MM = 5.9e-3
 

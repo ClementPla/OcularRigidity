@@ -25,18 +25,33 @@ def keep_largest_connected_component(masks):
 
 
 def keep_largest_connected_component_gpu(masks: "torch.Tensor") -> "torch.Tensor":
-    """Per-frame largest 4-connected component, without leaving the GPU."""
+    """Per-frame largest 4-connected component, without leaving the GPU.
+
+    Labelling by cuCIM when installed, else by ``cupyx.scipy.ndimage.label``
+    (cuCIM has no Windows build): same 4-connectivity, same consecutive labels.
+    """
     import cupy as cp
-    from cucim.skimage.measure import label as cu_label
     from torch.utils.dlpack import from_dlpack, to_dlpack
+
+    try:
+        from cucim.skimage.measure import label as cu_label
+
+        def _label(x):
+            return cu_label(x, connectivity=1, background=0)
+
+    except ImportError:
+        from cupyx.scipy.ndimage import label as nd_label
+
+        def _label(x):
+            return nd_label(x)[0]  # default structure: the 4-connected cross
 
     B, H, W = masks.shape
     stride = W + 1  # the +1 is the blank separator column
     montage = torch.zeros((H, B * stride), dtype=torch.uint8, device=masks.device)
     montage.view(H, B, stride)[:, :, :W] = masks.permute(1, 0, 2).to(torch.uint8)
 
-    labelled = cu_label(cp.from_dlpack(to_dlpack(montage)), connectivity=1, background=0)
-    labels = from_dlpack(labelled.astype(cp.int32).toDlpack()).long()
+    labelled = _label(cp.from_dlpack(to_dlpack(montage)))
+    labels = from_dlpack(labelled.astype(cp.int32)).long()
 
     n = int(labels.max().item())
     if n == 0:
