@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -46,16 +47,17 @@ def _encode_segment(
     seg_model,
     batch_u8: torch.Tensor,
     amp_dtype: torch.dtype,
-    keep_largest_cc: bool = True,
+    keep_largest_cc: bool = False,
+    threshold: float = 0.5,
 ) -> tuple[torch.Tensor, list[torch.Tensor]]:
     """One encode, two outputs: the mask and the pyramid the regressor wants."""
     with torch.autocast("cuda", dtype=amp_dtype):
         feats = seg_model.model.encoder(_normalise(batch_u8))
         logits = seg_model.model.segmentation_head(seg_model.model.decoder(feats))
+    # Compare logits to logit(threshold) instead of applying a sigmoid
+    mask = logits.squeeze(1).float() > math.log(threshold / (1.0 - threshold))
     if keep_largest_cc:
-        mask = keep_largest_connected_component_gpu(logits.squeeze(1) > 0.0)
-    else:
-        mask = logits.squeeze(1) > 0.0
+        mask = keep_largest_connected_component_gpu(mask)
     # feats[0] and feats[1] are the stride-1 input and an empty stride-2 stage
     return mask, list(feats[2:])
 
@@ -190,7 +192,9 @@ def segment_and_register(
         probe_feats: list = []
         for s in range(0, n_probe, batch):
             sel = probe_idx[s : s + batch]
-            mask, feats = _encode_segment(seg_model, d_frames[sel], amp_dtype)
+            mask, feats = _encode_segment(
+                seg_model, d_frames[sel], amp_dtype, threshold=config.seg_threshold
+            )
             probe_area[s : s + len(sel)] = mask.sum(dim=(1, 2)).double()
             probe_feats.append(feats)
         # Concatenate into one pyramid over all probe frames: (N, C, h, w) per scale.
@@ -227,7 +231,11 @@ def segment_and_register(
     ):
         e = min(s + batch, T)
         mask, feats = _encode_segment(
-            seg_model, d_frames[s:e], amp_dtype, keep_largest_cc=config.keep_largest_cc
+            seg_model,
+            d_frames[s:e],
+            amp_dtype,
+            keep_largest_cc=config.keep_largest_cc,
+            threshold=config.seg_threshold,
         )
         d_masks[s:e] = mask
         areas[s:e] = mask.sum(dim=(1, 2)).double().cpu()

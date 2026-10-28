@@ -21,7 +21,7 @@ from ocularrigidity.consts import (
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.data.measurements.dataframe import load_measurements
 from ocularrigidity.data.measurements.studies import Study
-from ocularrigidity.friedenwald import (
+from ocularrigidity.rigidity.friedenwald import (
     cycle_amplitude,
     deltaA_to_deltaCT_mm,
     friedenwald_K,

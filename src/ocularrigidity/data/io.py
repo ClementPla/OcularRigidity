@@ -8,6 +8,9 @@ import numpy as np
 import smbclient
 from dotenv import load_dotenv
 from tqdm.auto import tqdm
+import av
+
+from ocularrigidity.consts import ASCAN_LENGTH_PX
 
 
 def load_cube_mp4(path: str, collapse_rgb: bool = True) -> np.ndarray:
@@ -98,10 +101,9 @@ def _read_all(path: str, chunk_size: int = 64 * 1024 * 1024) -> bytes:
     return b"".join(chunks)
 
 
-DEPTH = 1536  # A-scan length, in samples
 
 
-def load_octa(root: Path, depth: int = DEPTH):
+def load_octa(root: Path, depth: int = ASCAN_LENGTH_PX):
     """Memory-map amplitude/phase volumes as (n_bscans, n_ascans, depth) uint8."""
     ts = np.loadtxt(root / "timestamp.txt", dtype=np.int64)
     n_bscans = ts.size
@@ -153,7 +155,7 @@ def load_cube(
     data = data.transpose(0, 2, 1)
     return data
 
-import av
+
 
 
 def read_mp4_frames(path, n: int) -> np.ndarray:

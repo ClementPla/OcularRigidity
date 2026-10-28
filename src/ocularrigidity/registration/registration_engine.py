@@ -15,7 +15,7 @@ from ocularrigidity.data.compression import (
 from ocularrigidity.data.io import load_cube, load_mask, save_mask
 
 
-from ocularrigidity.registration.rigid import register_videos
+from ocularrigidity.registration.conventional.rigid import register_videos
 from ocularrigidity.thickness.features import (
     compute_deltaY_boundaries,
 )

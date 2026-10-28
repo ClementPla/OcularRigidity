@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-from ocularrigidity.registration.sparse_demons import track_points_with_demons
+from ocularrigidity.motion.tracking.sparse_demons import track_points_with_demons
 from ocularrigidity.segmentation.postprocess.interfaces import (
     clean_boundaries,
     extract_boundaries_fast,

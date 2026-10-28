@@ -1,7 +1,7 @@
 from typing import Literal
 
 import numpy as np
-from sklearn.decomposition import PCA, FastICA, MiniBatchSparsePCA, SparsePCA
+from sklearn.decomposition import PCA, FastICA, SparsePCA
 
 
 def project_into_separable_components(

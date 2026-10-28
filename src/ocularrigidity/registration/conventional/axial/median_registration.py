@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
 
-from ocularrigidity.registration.axial.utils import temporal_median
+from ocularrigidity.registration.conventional.axial.utils import temporal_median
 from ocularrigidity.registration.layout import restore_layout, to_bchw, to_gray
 
 

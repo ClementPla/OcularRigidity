@@ -56,7 +56,7 @@ from ocularrigidity.registration.registration_engine import (
     cache_is_valid,
 )
 from ocularrigidity.scripts._logging import setup_logging
-from ocularrigidity.motion.displacement import extract_displacement
+from ocularrigidity.motion.tracking.displacement import extract_displacement
 from ocularrigidity.segmentation.postprocess.temporal_smoothing import (
     postprocess_cycles,
 )

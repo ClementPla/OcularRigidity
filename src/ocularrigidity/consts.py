@@ -44,8 +44,7 @@ HEYEX_ONH_PATH = _env_path(
 
 OIMHS_ROOT = Path("/home/clement/Documents/data/OIMHS/Images/")
 
-# Didascalie choroid masks, split by scripts/segmentation/split_choroid_dataset.py:
-# <split>/<device>/{images,masks}/<name>.png
+
 CHOROID_SEGMENTATION_ROOT = Path(
     "/home/clement/Documents/data/OcularRigidityAnnotated/dataset/ChoroidSegmentation/"
 )
@@ -82,6 +81,7 @@ AXIAL_PIXEL_SIZE_MM = 1.95e-3
 TRANVERSAL_PIXEL_SIZE_MM = 5.9e-3
 
 BSCAN_WIDTH_PX = 1024
+ASCAN_LENGTH_PX = 1536
 # Columns dropped on each side of the choroid mask before tracking its
 # boundary and measuring ΔCT / deltaA. The one trim setting: tracking, the
 # cohort tables, the viewer and the Spectralis script all read it. 0 = the

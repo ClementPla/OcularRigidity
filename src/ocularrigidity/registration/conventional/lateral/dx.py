@@ -1,11 +1,11 @@
 import torch
 import torch.nn.functional as F
-from ocularrigidity.registration.lateral.correlation import (
+from ocularrigidity.registration.conventional.lateral.correlation import (
     frame_correlation_dx,
     profile_correlation_dx,
 )
 from ocularrigidity.registration.layout import restore_layout, to_bchw, to_gray
-from ocularrigidity.registration.lateral.utils import (
+from ocularrigidity.registration.conventional.lateral.utils import (
     robust_temporal_dx,
     smooth_translations,
 )

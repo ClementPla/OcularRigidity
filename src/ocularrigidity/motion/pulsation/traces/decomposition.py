@@ -1,7 +1,5 @@
-"""ICA/PCA as a trace-source *wrapper* rather than a separate leaf class."""
-
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 

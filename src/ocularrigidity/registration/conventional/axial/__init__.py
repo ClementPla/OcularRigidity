@@ -1,11 +1,11 @@
 """Recalage axial (2e passe) : alignement de chaque A-scan sur la mediane du volume."""
 
-from ocularrigidity.registration.axial.shadow import correct_shadow
-from ocularrigidity.registration.axial.log_filter import (
+from ocularrigidity.registration.conventional.axial.shadow import correct_shadow
+from ocularrigidity.registration.conventional.axial.log_filter import (
     fspecial_log,
     laplacian_of_gaussian,
 )
-from ocularrigidity.registration.axial.median_registration import (
+from ocularrigidity.registration.conventional.axial.median_registration import (
     estimate_ascan_vshift_to_median,
     register_ascans_to_median,
 )

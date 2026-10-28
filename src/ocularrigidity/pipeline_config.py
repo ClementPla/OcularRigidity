@@ -9,7 +9,7 @@ from ocularrigidity.consts import (  # noqa: F401  (AXIAL_PIXEL_SIZE_MM re-expor
     CHOROID_TRIM_PX,
     SINC_REVISION,
 )
-from ocularrigidity.friedenwald import FRIEDENWALD, FriedenwaldConfig  # noqa: F401
+from ocularrigidity.rigidity.friedenwald import FRIEDENWALD, FriedenwaldConfig  # noqa: F401
 from ocularrigidity.motion.pulsation import (
     BandPassFilterTraceConfig,
     CardiacBand,

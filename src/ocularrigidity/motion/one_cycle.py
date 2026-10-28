@@ -165,7 +165,7 @@ def amplify_one_cycle(cycle, amplification_factor=3.0, n_components=3):
 
 def correct_shadow_cycle(cycle, n=4.0, a=1.0, clip_percentile=99.5):
     """A-scan shadow compensation applied across a whole folded cycle."""
-    from ocularrigidity.registration.axial.shadow import correct_shadow
+    from ocularrigidity.registration.conventional.axial.shadow import correct_shadow
 
     corrected = correct_shadow(np.asarray(cycle, dtype=np.float32), n=n, a=a)
     hi = np.percentile(corrected, clip_percentile)
@@ -173,17 +173,6 @@ def correct_shadow_cycle(cycle, n=4.0, a=1.0, clip_percentile=99.5):
         hi = float(corrected.max()) or 1.0
     return (np.clip(corrected / hi, 0.0, 1.0) * 255.0).astype(np.uint8)
 
-
-def _auto_n_bins(
-    n_good_frames: int,
-    fs: float,
-    cardiac_freq: float,
-    target_per_bin: int = 25,
-) -> int:
-    """Choose n_bins from frame budget, capped by per-cycle sampling resolution."""
-    from_count = max(8, n_good_frames // target_per_bin)
-    from_resolution = max(1, int(0.5 * fs / cardiac_freq))
-    return min(from_count, from_resolution)
 
 
 def fit_cardiac_amplitude(y: np.ndarray, n_harmonics: int = 1) -> float:

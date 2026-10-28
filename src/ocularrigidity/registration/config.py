@@ -52,6 +52,8 @@ class RegistrationConfig:
     # Blank the A-scan columns whose BM is unreliable, in frames and masks alike.
     filter_bad_columns: bool = False
     keep_largest_cc: bool = False
+    # Probability above which a pixel is choroid (0.5 = logits > 0). Lower it to grow the mask.
+    seg_threshold: float = 0.5
 
     dy_bulk_only: bool = False
 

@@ -7,6 +7,12 @@
     python -m ocularrigidity.scripts.segmentation.train --model upernet_convnext_t \\
         --scheduler cosine --epochs 60 --patience 0
 
+    # Fine-tune the Hub model's decoder and head only: its encoder, which the
+    # registration model reads, is left untouched (checked at the end)
+    python -m ocularrigidity.scripts.segmentation.train \\
+        --init-revision version-3.0.0 --freeze-encoder \\
+        --scheduler cosine --epochs 30 --warmup-epochs 1 --patience 0
+
 Started by ``wandb agent`` (see ``scripts/segmentation/sweep.py``), the run's
 sweep parameters override the command line; their names are the argparse dest
 names (``batch_size``, ``w_smooth``, ...). The best checkpoint (on
@@ -19,6 +25,7 @@ import argparse
 import json
 from pathlib import Path
 
+import torch
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -30,6 +37,7 @@ from ocularrigidity.segmentation.trainer.presets import MODELS, registration_ok
 # metric -> mode
 MONITORS = {"dice": "max", "thickness_mae_um": "min", "csi_mae_um": "min"}
 SWEEP_ROOT = Path("checkpoints/segmentation_sweep")
+HUB_REPO = "ClementP/ChoroidSegmentationModule"
 
 
 def build_parser():
@@ -56,6 +64,17 @@ def build_parser():
         default=[Database.ANNOTATED, Database.OIMHS],
         choices=[Database.ANNOTATED, Database.OIMHS],
     )
+    ap.add_argument(
+        "--init-revision",
+        default=None,
+        help="start from this revision of the Hub model (e.g. version-3.0.0); "
+        "its arch and encoder replace --arch / --encoder / --model",
+    )
+    ap.add_argument(
+        "--freeze-encoder",
+        action="store_true",
+        help="train the decoder and head only (needs --init-revision)",
+    )
     ap.add_argument("--num-workers", type=int, default=6)
     ap.add_argument("--precision", default="bf16-mixed")
     ap.add_argument("--seed", type=int, default=42)
@@ -80,7 +99,26 @@ def apply_preset(args, ap, explicit: set[str]):
 
 
 def run_name(args) -> str:
-    return args.model or f"{args.arch}_{args.encoder}"
+    name = args.model or f"{args.arch}_{args.encoder}"
+    if args.init_revision:
+        name += f"_from-{args.init_revision}"
+    if args.freeze_encoder:
+        name += "_frozen-encoder"
+    return name
+
+
+def load_init(args):
+    """The Hub model at ``--init-revision``; its arch and encoder go into ``args``."""
+    if args.init_revision is None:
+        if args.freeze_encoder:
+            raise SystemExit("--freeze-encoder needs --init-revision")
+        return None
+    init = ChoroidSegmentationModule.from_pretrained(HUB_REPO, revision=args.init_revision)
+    args.model = None
+    args.arch = init.hparams["arch"]
+    args.encoder = init.hparams["encoder_name"]
+    args.encoder_weights = "none"  # replaced by the Hub weights anyway
+    return init
 
 
 def _plain(args) -> dict:
@@ -125,6 +163,8 @@ def init_wandb(args, ap):
 
 def train(args, ap):
     run = None
+    # First, so the Hub model's arch / encoder are what W&B records
+    init = load_init(args)
     if args.no_wandb:
         apply_preset(args, ap, explicit=set())
     else:
@@ -151,7 +191,15 @@ def train(args, ap):
         scheduler=args.scheduler,
         max_epochs=args.epochs,
         warmup_epochs=args.warmup_epochs,
+        freeze_encoder=args.freeze_encoder,
     )
+    initial_encoder = None
+    if init is not None:
+        model.model.load_state_dict(init.model.state_dict())
+        initial_encoder = {
+            k: v.detach().clone() for k, v in model.model.encoder.state_dict().items()
+        }
+        del init
 
     mode = MONITORS[args.monitor]
     checkpoint = ModelCheckpoint(
@@ -200,7 +248,23 @@ def train(args, ap):
     # Best checkpoint on --monitor: what the sweep ranks on
     best = checkpoint.best_model_path
     val = validate(best or None)
+
+    # With a frozen encoder, the best checkpoint must still hold the Hub
+    # encoder bit for bit, or the registration model would no longer fit it
+    encoder_unchanged = None
+    if initial_encoder is not None:
+        current = model.model.encoder.state_dict()
+        encoder_unchanged = all(
+            torch.equal(v, current[k].detach().to(v.device)) for k, v in initial_encoder.items()
+        )
+        print(f"encoder identical to {args.init_revision}: {encoder_unchanged}")
+        if args.freeze_encoder and not encoder_unchanged:
+            raise RuntimeError("the frozen encoder changed during training")
+
     results = {
+        "init_revision": args.init_revision,
+        "freeze_encoder": args.freeze_encoder,
+        "encoder_unchanged": encoder_unchanged,
         "arch": args.arch,
         "encoder": args.encoder,
         "registration_ok": registration_ok(args.encoder),

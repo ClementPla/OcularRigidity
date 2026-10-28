@@ -8,7 +8,7 @@ from ocularrigidity.viewer.streamlit_explorer._common import (
     cached_cohort,
     require_selection,
 )
-from ocularrigidity.registration.rigid import register_videos
+from ocularrigidity.registration.conventional.rigid import register_videos
 from ocularrigidity.registration.config import RegistrationConfig
 
 st.set_page_config(page_title="Registration", layout="wide")

@@ -6,7 +6,6 @@ from typing import Literal, Optional
 import numpy as np
 
 from ocularrigidity.motion.one_cycle import (
-    _auto_n_bins,
     fold_video_numba_mean,
     fold_video_numba_median,
     fold_video_numba_quantile,
@@ -78,12 +77,7 @@ class NCycleReconstructor:
         n_good = int(good_per_frame.sum())
 
         if n_bins is None:
-            n_bins = _auto_n_bins(
-                n_good // max(1, n_cycle),
-                fs=ex.fs,
-                cardiac_freq=cardiac_freq,
-                target_per_bin=cfg.target_frames_per_bin,
-            )
+            n_bins = 30
             if verbose:
                 print(
                     f"Auto-selected n_bins = {n_bins} "

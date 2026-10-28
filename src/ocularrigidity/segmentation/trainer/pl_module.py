@@ -36,12 +36,14 @@ class ChoroidSegmentationModule(pl.LightningModule, PyTorchModelHubMixin):
         scheduler: str = "restarts",
         max_epochs: int | None = None,
         warmup_epochs: int = 0,
+        freeze_encoder: bool = False,
         *args,
         **kwargs,
     ):
         super().__init__()
         self.lr = lr
         self.weight_decay = weight_decay
+        self.freeze_encoder = freeze_encoder
         self.save_hyperparameters()
         self.model = smp.create_model(
             arch=arch,
@@ -63,6 +65,17 @@ class ChoroidSegmentationModule(pl.LightningModule, PyTorchModelHubMixin):
         self.max_epochs = max_epochs
         self.warmup_epochs = warmup_epochs
         self._reset_boundary_errors()
+        if freeze_encoder:
+            # The registration model reads this encoder's features: training
+            # only the decoder and head keeps them, and that model, valid.
+            self.model.encoder.requires_grad_(False)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self.freeze_encoder:
+            # No dropout / drop-path / norm statistics updates in the frozen part
+            self.model.encoder.eval()
+        return self
 
     def _reset_boundary_errors(self):
         # sums (pixels) and column counts over the validation epoch
@@ -138,7 +151,9 @@ class ChoroidSegmentationModule(pl.LightningModule, PyTorchModelHubMixin):
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(
-            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+            [p for p in self.parameters() if p.requires_grad],
+            lr=self.lr,
+            weight_decay=self.weight_decay,
         )
 
         if self.scheduler == "restarts":

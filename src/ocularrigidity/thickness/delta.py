@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.ndimage import uniform_filter1d
 
-from ocularrigidity.motion.displacement import extract_displacement_at_boundaries
+from ocularrigidity.motion.tracking.displacement import extract_displacement_at_boundaries
 from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM, TRANVERSAL_PIXEL_SIZE_MM
 from ocularrigidity.pipeline_config import DELTA_A
 from ocularrigidity.segmentation.postprocess.interfaces import (

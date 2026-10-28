@@ -5,11 +5,11 @@ import pickle
 import warnings
 import numpy as np
 from ocularrigidity.consts import AXIAL_PIXEL_SIZE_MM, CHOROID_TRIM_PX
-from ocularrigidity.friedenwald import FRIEDENWALD
+from ocularrigidity.rigidity.friedenwald import FRIEDENWALD
 from ocularrigidity.pipeline_config import N_CYCLES
 from ocularrigidity.data.io import load_mask
 from ocularrigidity.data.measurements.dataframe import load_measurements
-from ocularrigidity.friedenwald import K_from_deltaCT_mm, PV_ratio_deltaCT_mm, deltaCT_to_deltaV_uL
+from ocularrigidity.rigidity.friedenwald import K_from_deltaCT_mm, PV_ratio_deltaCT_mm, deltaCT_to_deltaV_uL
 from ocularrigidity.motion.pipeline_results import (
     CardiacPipelineResults,
     peek_cardiac_freq,
